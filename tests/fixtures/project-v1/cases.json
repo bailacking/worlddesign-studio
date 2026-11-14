@@ -34,5 +34,29 @@
   {
     "case": "invalid_entry_scene",
     "expected": "invalid_entry_scene"
+  },
+  {
+    "case": "revision-overflow",
+    "expected": "invalid_manifest"
+  },
+  {
+    "case": "unknown-resource-field",
+    "expected": "invalid_manifest"
+  },
+  {
+    "case": "invalid-resource-id",
+    "expected": "invalid_manifest"
+  },
+  {
+    "case": "device-path",
+    "expected": "invalid_path"
+  },
+  {
+    "case": "backslash-path",
+    "expected": "invalid_path"
+  },
+  {
+    "case": "wrong-case-file",
+    "expected": "unsafe_path"
   }
 ]

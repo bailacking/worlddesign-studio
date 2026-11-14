@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "project_id": "demo",
+  "revision": 0,
+  "entry_scene": "intro",
+  "resources": [
+    {
+      "id": "intro",
+      "kind": "scene",
+      "path": "assets/intro.json",
+      "refs": [
+        "rules"
+      ]
+    },
+    {
+      "id": "rules",
+      "kind": "data",
+      "path": "assets\\rules.json",
+      "refs": []
+    }
+  ]
+}
