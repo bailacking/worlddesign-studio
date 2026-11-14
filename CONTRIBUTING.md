@@ -4,13 +4,13 @@ WDS 欢迎引擎开发、游戏设计、美术与音频、交互、测试、文�
 
 ## 开始参与
 
-先阅读 [文档中心](docs/README.md)、[产品范围](docs/product/scope.md) 和所涉及的架构章节。当前优先工作包括插件契约、共享操作、资源身份、技术比较和真实创作场景。
+先从 [开发任务](docs/project/development-tasks.md) 选取可认领的工作，再阅读 [文档中心](docs/README.md) 和相关规格。
 
 提交设计时，说明用户问题、约束、候选方案、推荐理由、影响范围和验证方法；实验结果记录环境、步骤、实际结果与失败。小型文档修正可直接提供差异和理由，不要求额外建立独立提案文件。
 
 ## 提交与评审
 
-在独立副本或分支中准备范围清楚的修改，保持无关内容不变。在 [GitHub Issues](https://github.com/bailacking/worlddesign-studio/issues) 讨论问题和设计建议，通过 [Pull Request](https://github.com/bailacking/worlddesign-studio/pulls) 提交修改。
+在独立分支中准备范围清楚的修改。同一台机器上并行开发时，每个任务使用独立工作树。在 [GitHub Issues](https://github.com/bailacking/worlddesign-studio/issues) 认领和讨论，通过 [Pull Request](https://github.com/bailacking/worlddesign-studio/pulls) 提交修改。提交前运行 [质量检查](docs/engineering/quality.md#当前自动检查)，评审通过后由维护者合并。
 
 涉及产品行为或架构变化时，同步更新对应主题、概览和验收标准。评审应检查职责归属、插件边界、数据恢复、平台与许可影响。没有运行的检查标为未验证，不引用不存在的构建命令或测试结果。
 

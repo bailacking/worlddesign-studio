@@ -30,6 +30,7 @@
 - [质量与验证](engineering/quality.md)：契约测试、故障矩阵、平台证据和可玩性验收。
 - [技术评估](engineering/technical-evaluation.md)：语言、框架、隔离、数据模型等开放问题与评估方法。
 - [实施路线](project/roadmap.md)：从基础程序到游戏闭环、生态与自动化创作。
+- [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
 
 ## 社区、许可与研究
 

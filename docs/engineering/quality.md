@@ -1,8 +1,23 @@
 # 质量与验证
 
+## 当前自动检查
+
+GitHub Actions 的 `Repository checks` 在提交到 `main` 和面向 `main` 的 PR 上运行。它检查 Python 工具的静态规则与格式、Markdown 本地链接目标、离线架构页的外部资源声明与页内锚点，以及内联 JavaScript 语法。页面交互与布局另行实测。
+
+在仓库根目录复跑相同检查。需要 Python 3.14 和 Node.js 22，建议在 Python 虚拟环境中安装：
+
+```sh
+python -m pip install -r scripts/requirements-quality.txt
+python -m ruff check scripts
+python -m ruff format --check scripts
+python scripts/check_docs.py
+```
+
+待 [首轮工具链](../project/development-tasks.md#最小基础程序) 确定后，首批引擎代码与对应的格式、静态检查、构建和测试步骤一起提交，并使用可在本地复跑的命令。
+
 ## 证据要求
 
-以下是未来实现的验收标准，不表示已有测试套件或测试通过。每项结果记录版本、配置、环境、任务、预期、实际结果、失败与限制。文档检查、代码检查、构建、运行和可玩性分别验收。
+以下各层用于验收引擎实现。每项结果记录版本、配置、环境、任务、预期、实际结果、失败与限制。文档检查、代码检查、构建、运行和可玩性分别验收。
 
 ## 验证层次
 
