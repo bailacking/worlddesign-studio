@@ -69,6 +69,12 @@ Copy-Item -Recurse examples/m0-project build/gui-demo
 
 窗口中点击 **Open / Recover**，确认修订号为 0，再点击 **Rename**。两个项目的修订号都应变为 1，`assets/stone.txt` 保留源文件内容。用 `wds_cli PROJECT open` 可重开并检查修订。改名请求需指定当前修订号。
 
+## 运行方块沙盒
+
+Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。WASD 移动，方向键转向和抬头低头，空格跳跃。将准星对准方块，左键破坏，右键放置石块。F5 保存，Esc 退出。再次打开会恢复已保存的地形，玩家回到出生点。关闭前手动保存修改。
+
+存档位于 `%LOCALAPPDATA%\WDS\sandbox-v1.dat`。首次打开生成默认地形，损坏的旧存档会保留并提示当前会话无法覆盖。
+
 ## 文档检查
 
 检查本地链接与页面锚点、术语与实现状态、要求的主题归属、来源和许可说明。HTML 应保持单文件自包含，不能依赖远程字体、脚本、图片或运行时获取的文档内容。

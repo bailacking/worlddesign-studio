@@ -36,6 +36,10 @@ target_link_libraries(wds_m0 PRIVATE wds_compile_options)
 add_executable(wds_cli src/cli.cpp)
 target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
 
+add_library(wds_voxel STATIC src/voxel_world.cpp)
+target_include_directories(wds_voxel PUBLIC src)
+target_link_libraries(wds_voxel PRIVATE wds_compile_options)
+
 if(WIN32)
   add_executable(wds_editor WIN32 src/windows_editor.cpp)
   target_link_libraries(wds_editor PRIVATE wds_m0 wds_compile_options shell32 user32 gdi32)
@@ -43,11 +47,21 @@ if(WIN32)
     target_link_options(wds_editor PRIVATE -municode)
   endif()
   set(wds_gui_option -DGUI=$<TARGET_FILE:wds_editor>)
+
+  add_executable(wds_sandbox WIN32 src/windows_sandbox.cpp)
+  target_link_libraries(wds_sandbox PRIVATE wds_voxel wds_compile_options user32 gdi32)
+  if(MINGW)
+    target_link_options(wds_sandbox PRIVATE -municode)
+  endif()
 endif()
 
 add_executable(wds_plugin_test tests/plugin_host.cpp)
 target_link_libraries(wds_plugin_test PRIVATE wds_m0 wds_compile_options)
 add_test(NAME plugin_host COMMAND wds_plugin_test)
+
+add_executable(wds_voxel_test tests/voxel_world.cpp)
+target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
+add_test(NAME voxel_world COMMAND wds_voxel_test)
 add_test(
   NAME rename_flow
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

@@ -63,4 +63,4 @@ jobs:
       - name: Check C++ formatting
         run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
       - name: Analyze C++ sources
-        run: clang-tidy-18 -p build/dev src/plugin_host.cpp src/project_store.cpp src/workspace.cpp src/cli.cpp
+        run: clang-tidy-18 -p build/dev src/plugin_host.cpp src/project_store.cpp src/workspace.cpp src/cli.cpp src/voxel_world.cpp
