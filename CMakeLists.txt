@@ -94,6 +94,13 @@ add_test(
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/platform_project.cmake
 )
 add_test(
+  NAME scene_play
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/scene-play
+          -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
+)
+add_test(
   NAME sandbox_rules
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
           -DROOT=${CMAKE_CURRENT_BINARY_DIR}/rules-fixture

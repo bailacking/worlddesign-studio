@@ -309,6 +309,87 @@ ProjectResult open_project(const fs::path& directory) {
   }
 }
 
+bool SceneSession::advance(std::uint64_t ticks) {
+  if (ticks > max_ticks - state_.ticks) return false;
+  const auto steps = static_cast<std::int64_t>(ticks);
+  for (auto& entity : state_.entities) {
+    entity.x += entity.vx * steps;
+    entity.y += entity.vy * steps;
+  }
+  state_.ticks += ticks;
+  return true;
+}
+
+SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revision) {
+  if (expected_revision > max_revision) return {std::nullopt, "invalid_argument", "/revision"};
+  const auto opened = open_project(directory);
+  if (!opened.project) return {std::nullopt, opened.code, opened.location};
+  const auto& project = *opened.project;
+  if (project.revision != expected_revision) {
+    return {std::nullopt, "revision_conflict", "/revision", {}, project.revision};
+  }
+
+  const auto scene = std::ranges::find(project.resources, project.entry_scene, &Resource::id);
+  const auto fail = [&](std::string code, std::string location) -> SceneResult {
+    return {std::nullopt, std::move(code), std::move(location), scene->path, project.revision};
+  };
+  SceneSession session;
+  session.state_ = {project.revision, project.entry_scene, 0, {}};
+  try {
+    const auto bytes = read_bytes(directory / scene->path, max_edit_bytes);
+    if (!bytes) return fail("scene_too_large", "/");
+    const auto json = parse_json(*bytes);
+    // Previously created projects used an empty object as their entry scene.
+    if (json.is_object() && json.empty()) return {std::move(session), "ok"};
+    if (!json.is_object() || !json.contains("format_version") ||
+        !json["format_version"].is_number_integer()) {
+      return fail("invalid_scene", "/format_version");
+    }
+    if (json["format_version"] != 1) return fail("unsupported_scene_version", "/format_version");
+    if (!has_fields(json, {"format_version", "entities"})) return fail("invalid_scene", "/");
+    const auto& entities = json["entities"];
+    constexpr std::size_t max_entities = 1024;
+    if (!entities.is_array()) return fail("invalid_scene", "/entities");
+    if (entities.size() > max_entities) return fail("scene_too_large", "/entities");
+
+    std::set<std::string> ids;
+    for (const auto& row : entities) {
+      const auto where = "/entities/" + std::to_string(session.state_.entities.size());
+      if (!row.is_object() || !row.contains("id") || !row["id"].is_string() ||
+          !valid_id(row["id"].get_ref<const std::string&>())) {
+        return fail("invalid_scene", where + "/id");
+      }
+      SceneEntity entity{row["id"].get<std::string>()};
+      if (!ids.insert(entity.id).second) return fail("duplicate_entity_id", where + "/id");
+      for (auto it = row.begin(); it != row.end(); ++it) {
+        if (it.key() == "id") continue;
+        std::int64_t* field = nullptr;
+        if (it.key() == "x") field = &entity.x;
+        if (it.key() == "y") field = &entity.y;
+        if (it.key() == "vx") field = &entity.vx;
+        if (it.key() == "vy") field = &entity.vy;
+        if (!field) return fail("invalid_scene", where);
+        constexpr std::int64_t limit = 1'000'000;
+        if (!it->is_number_integer() ||
+            (it->is_number_unsigned() && it->get<std::uint64_t>() > limit)) {
+          return fail("invalid_scene", where + "/" + it.key());
+        }
+        const auto value = it->get<std::int64_t>();
+        if (value < -limit || value > limit) return fail("invalid_scene", where + "/" + it.key());
+        *field = value;
+      }
+      session.state_.entities.push_back(std::move(entity));
+    }
+    return {std::move(session), "ok"};
+  } catch (const std::length_error&) {
+    return fail("invalid_scene", "/");
+  } catch (const Json::exception&) {
+    return fail("invalid_scene", "/");
+  } catch (const fs::filesystem_error&) {
+    return fail("io_error", "/");
+  }
+}
+
 ProjectResult create_project(const fs::path& directory, std::string_view id) {
   if (!valid_id(id)) return failure("invalid_manifest", "/project_id");
   const auto parent = directory.has_parent_path() ? directory.parent_path() : fs::path(".");
@@ -335,7 +416,8 @@ ProjectResult create_project(const fs::path& directory, std::string_view id) {
                                               {"refs", Json::array()}}})}};
   std::error_code error;
   if (fs::create_directory(assets, error)) {
-    if (write_file(scene, "{}\n") && write_file(staging, json.dump(2) + "\n")) {
+    if (write_file(scene, "{\"format_version\":1,\"entities\":[]}\n") &&
+        write_file(staging, json.dump(2) + "\n")) {
       fs::rename(staging, directory / manifest_name, error);
       if (!error) return open_project(directory);
     }
@@ -522,6 +604,30 @@ std::string project_resources_json(const ProjectResult& result) {
       .dump();
 }
 
+std::string scene_result_json(const SceneResult& result) {
+  if (!result.session) {
+    Json json{{"code", result.code}, {"location", result.location}};
+    if (!result.resource_path.empty()) json["resource_path"] = result.resource_path;
+    if (result.revision) json["revision"] = *result.revision;
+    return json.dump();
+  }
+  const auto& scene = result.session->snapshot();
+  auto entities = Json::array();
+  for (const auto& entity : scene.entities) {
+    entities.push_back({{"id", entity.id},
+                        {"x", entity.x},
+                        {"y", entity.y},
+                        {"vx", entity.vx},
+                        {"vy", entity.vy}});
+  }
+  return Json{{"code", result.code},
+              {"revision", scene.revision},
+              {"scene_id", scene.scene_id},
+              {"ticks", scene.ticks},
+              {"entities", std::move(entities)}}
+      .dump();
+}
+
 std::string project_operations_json() {
   auto operations = Json::array();
   const auto add = [&operations](std::string_view id, std::string_view command, bool writes,
@@ -545,6 +651,13 @@ std::string project_operations_json() {
   add("project.validate", "project validate DIRECTORY", false, path_input, read_errors);
   add("project.resources", "project resources DIRECTORY", false, path_input, read_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  auto scene_errors = read_errors;
+  for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_scene",
+                           "unsupported_scene_version", "scene_too_large", "duplicate_entity_id"})
+    scene_errors.push_back(code);
+  add("project.play", "project play DIRECTORY REVISION TICKS", false,
+      {{"directory", "path"}, {"expected_revision", "integer"}, {"ticks", "integer 0 through 600"}},
+      scene_errors);
   const Json edit_input{{"directory", "path"},
                         {"resource_id", "data resource identifier"},
                         {"field", "top-level field"},

@@ -81,7 +81,7 @@ Copy-Item -Recurse examples/m0-project build/gui-demo
 ./build/dev/wds_cli.exe --project-operations
 ```
 
-命令输出 JSON，包含状态、项目 ID 和修订号。打开与验证还返回入口场景和资源数量，`resources` 列出 ID、类型、路径及引用。失败附错误码和位置。当前生成的入口场景是占位资源。
+命令输出 JSON，包含状态、项目 ID 和修订号。打开与验证还返回入口场景和资源数量，`resources` 列出 ID、类型、路径及引用。失败附错误码和位置。新项目包含一个可启动的空场景。
 
 Windows 可运行 `./build/dev/wds_studio.exe`，填入项目路径，选择 **Open** 或指定项目 ID 后选择 **Create**。窗口显示当前修订、入口场景、资源列表或诊断。窗口和 CLI 使用同一项目服务。[格式与诊断](../architecture/project-format.md)
 
@@ -97,6 +97,16 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 ```
 
 工作台打开项目后，输入资源 ID `rules`、字段 `jump_speed` 和新整数，先点击 **Preview**，核对差异，再点击 **Apply**。修改输入或目录会取消旧预览。若项目修订已变化，重新打开再预览。中断后若项目提示 `recovery_required`，使用 **Recover** 或 `wds_cli project recover DIRECTORY`。无法确认的磁盘状态会保留供检查。该样例演示项目数据编辑，运行时接入另行实现。
+
+### 试玩通用场景
+
+在仓库根执行以下命令，按入口场景的修订 0 运行 30 步。输出中的 `marker` 位于 `(-230, -25)`。传入 0 步可查看初始状态。
+
+```powershell
+./build/dev/wds_cli.exe project play examples/scene-motion 0 30
+```
+
+Windows 工作台填入同一项目路径，点击 **Open** 和 **Play**。下方画布显示静止的原点和移动的标记。点击 **Stop** 结束试玩，再点击 **Play** 可从源位置开始。CLI 与工作台都使用同一个会话核心。[场景格式与限制](../architecture/runtime.md#场景与试玩会话-v1)
 
 ## 运行方块沙盒
 

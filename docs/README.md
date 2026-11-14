@@ -41,6 +41,7 @@
 - [贡献指南](../CONTRIBUTING.md)、[社区规范](../CODE_OF_CONDUCT.md)、[社区治理](community/governance.md)。
 - [MIT 许可说明](legal/license.md)。
 - [DeepSeek Harness 专题研究](research/deepseek-harness.md)、[相关项目调研](research/landscape.md)。
+- [Windows 工作台首轮验收](research/studio-windows-check.md)。
 
 ## 文档维护规则
 

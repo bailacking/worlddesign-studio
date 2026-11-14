@@ -21,6 +21,12 @@ std::filesystem::path path_from_utf8(std::string_view text) {
   return std::filesystem::path(std::u8string(text.begin(), text.end()));
 }
 
+bool parse_integer(std::string_view input, auto& value) {
+  const auto end = input.data() + input.size();
+  const auto parsed = std::from_chars(input.data(), end, value);
+  return parsed.ec == std::errc{} && parsed.ptr == end;
+}
+
 int rules(int argc, char** argv, bool project = false) {
   using namespace wds::voxel;
   const auto input = path_from_utf8(argv[2]);
@@ -112,16 +118,27 @@ int run(int argc, char** argv) {
       std::string_view(argv[2]) != "asset.rename") {
     const std::string_view action(argv[2]);
     const auto directory = path_from_utf8(argv[3]);
+    if (argc == 6 && action == "play") {
+      std::uint64_t revision = 0;
+      std::uint64_t ticks = 0;
+      wds::platform::SceneResult result{std::nullopt, "invalid_argument", "/revision"};
+      if (parse_integer(argv[4], revision)) {
+        if (parse_integer(argv[5], ticks) && ticks <= wds::platform::SceneSession::max_ticks) {
+          result = wds::platform::start_scene(directory, revision);
+          if (result.session) result.session->advance(ticks);
+        } else {
+          result.location = "/ticks";
+        }
+      }
+      std::cout << wds::platform::scene_result_json(result) << '\n';
+      return result.session ? 0 : 1;
+    }
     if (argc == 8 && (action == "preview-field" || action == "set-field")) {
       wds::platform::FieldEdit edit{argv[4], argv[5], 0, 0};
-      const auto parse = [](std::string_view input, auto& value) {
-        const auto end = input.data() + input.size();
-        const auto parsed = std::from_chars(input.data(), end, value);
-        return parsed.ec == std::errc{} && parsed.ptr == end;
-      };
-      const auto result = parse(argv[6], edit.revision) && parse(argv[7], edit.value)
-                              ? wds::platform::edit_field(directory, edit, action == "set-field")
-                              : wds::platform::FieldResult{"invalid_argument", "/input"};
+      const auto result =
+          parse_integer(argv[6], edit.revision) && parse_integer(argv[7], edit.value)
+              ? wds::platform::edit_field(directory, edit, action == "set-field")
+              : wds::platform::FieldResult{"invalid_argument", "/input"};
       std::cout << wds::platform::field_result_json(result) << '\n';
       return result.code == "ok" ? 0 : 1;
     }
@@ -131,7 +148,8 @@ int run(int argc, char** argv) {
         argc == 4 && (action == "validate" || action == "open" || action == "resources");
     if (!create && !read && !recover) {
       std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
-                   "DIRECTORY\n";
+                   "DIRECTORY\n"
+                   "       wds_cli project play DIRECTORY REVISION TICKS\n";
       return 2;
     }
     const auto result = create    ? wds::platform::create_project(directory, argv[4])
@@ -152,13 +170,8 @@ int run(int argc, char** argv) {
     return 2;
   }
   std::uint64_t revision = 0;
-  if (renaming) {
-    const std::string_view value(argv[5]);
-    const auto end = value.data() + value.size();
-    const auto parsed = std::from_chars(value.data(), end, revision);
-    if (parsed.ec != std::errc{} || parsed.ptr != end) {
-      return print_result({wds::RenameStatus::invalid_argument, 0});
-    }
+  if (renaming && !parse_integer(argv[5], revision)) {
+    return print_result({wds::RenameStatus::invalid_argument, 0});
   }
 
   wds::Workspace workspace(path_from_utf8(argv[1]));

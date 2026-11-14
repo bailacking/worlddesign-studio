@@ -23,12 +23,19 @@ enum ControlId {
   preview_button,
   apply_button,
   recover_button,
-  edit_status
+  edit_status,
+  play_button,
+  stop_button,
+  play_status
 };
+
+constexpr UINT_PTR play_timer = 1;
+constexpr RECT viewport{16, 465, 660, 601};
 
 struct Studio {
   std::optional<std::uint64_t> revision;
   std::optional<wds::platform::FieldEdit> preview;
+  std::optional<wds::platform::SceneSession> session;
 };
 
 std::wstring text(HWND control) {
@@ -81,11 +88,72 @@ void present(HWND window, const wds::platform::ProjectResult& result) {
   }
 }
 
+void stop_play(HWND window, Studio& studio) {
+  KillTimer(window, play_timer);
+  studio.session.reset();
+  EnableWindow(GetDlgItem(window, play_button), studio.revision.has_value());
+  EnableWindow(GetDlgItem(window, stop_button), FALSE);
+  SetDlgItemTextW(window, play_status, L"");
+  InvalidateRect(window, &viewport, FALSE);
+}
+
 void set_project(HWND window, Studio& studio, const wds::platform::ProjectResult& result) {
   studio.revision = result.project ? std::optional(result.project->revision) : std::nullopt;
+  stop_play(window, studio);
   studio.preview.reset();
   EnableWindow(GetDlgItem(window, apply_button), FALSE);
   present(window, result);
+}
+
+void show_play(HWND window, const wds::platform::SceneSnapshot& scene) {
+  const auto summary = widen(scene.scene_id) + L"  |  Revision " + std::to_wstring(scene.revision) +
+                       L"  |  Tick " + std::to_wstring(scene.ticks) + L"  |  Entities " +
+                       std::to_wstring(scene.entities.size());
+  SetDlgItemTextW(window, play_status, summary.c_str());
+  InvalidateRect(window, &viewport, FALSE);
+}
+
+void play(HWND window, Studio& studio) {
+  if (!studio.revision || studio.session) return;
+  auto result =
+      wds::platform::start_scene(text(GetDlgItem(window, folder_input)), *studio.revision);
+  if (!result.session) {
+    auto message = widen(result.code) + L" at " + widen(result.location);
+    if (!result.resource_path.empty()) message += L" in " + widen(result.resource_path);
+    if (result.code == "revision_conflict") message += L". Reopen the project.";
+    SetDlgItemTextW(window, play_status, message.c_str());
+    return;
+  }
+  if (SetTimer(window, play_timer, 33, nullptr) == 0) {
+    SetDlgItemTextW(window, play_status, L"Could not start the preview timer.");
+    return;
+  }
+  studio.session = std::move(result.session);
+  EnableWindow(GetDlgItem(window, play_button), FALSE);
+  EnableWindow(GetDlgItem(window, stop_button), TRUE);
+  SetFocus(GetDlgItem(window, stop_button));
+  show_play(window, studio.session->snapshot());
+}
+
+void paint_play(HWND window, const Studio& studio) {
+  PAINTSTRUCT paint{};
+  const auto canvas = BeginPaint(window, &paint);
+  FillRect(canvas, &viewport, GetSysColorBrush(COLOR_BTNFACE));
+  FrameRect(canvas, &viewport, GetSysColorBrush(COLOR_BTNSHADOW));
+  if (studio.session) {
+    constexpr LONG radius = 4;
+    for (const auto& entity : studio.session->snapshot().entities) {
+      const auto x = (viewport.left + viewport.right) / 2 + entity.x;
+      const auto y = (viewport.top + viewport.bottom) / 2 - entity.y;
+      if (x - radius <= viewport.left || x + radius >= viewport.right ||
+          y - radius <= viewport.top || y + radius >= viewport.bottom)
+        continue;
+      const RECT marker{static_cast<LONG>(x) - radius, static_cast<LONG>(y) - radius,
+                        static_cast<LONG>(x) + radius, static_cast<LONG>(y) + radius};
+      FillRect(canvas, &marker, GetSysColorBrush(COLOR_HIGHLIGHT));
+    }
+  }
+  EndPaint(window, &paint);
 }
 
 void edit(HWND window, Studio& studio, bool apply) {
@@ -162,7 +230,23 @@ LRESULT CALLBACK handle(HWND window, UINT message, WPARAM param, LPARAM data) {
                   apply_button);
       add_control(window, L"STATIC", L"Open a project to edit an existing integer field.", 0, 16,
                   391, 644, 30, edit_status);
+      add_control(window, L"BUTTON", L"Play", WS_TABSTOP | WS_DISABLED, 16, 427, 80, 28,
+                  play_button);
+      add_control(window, L"BUTTON", L"Stop", WS_TABSTOP | WS_DISABLED, 104, 427, 80, 28,
+                  stop_button);
+      add_control(window, L"STATIC", L"", 0, 195, 431, 465, 26, play_status);
       return GetDlgItem(window, resources) && GetDlgItem(window, folder_input) ? 0 : -1;
+    case WM_PAINT:
+      paint_play(window, *studio);
+      return 0;
+    case WM_TIMER:
+      if (param == play_timer && studio->session) {
+        studio->session->advance(1);
+        const auto& scene = studio->session->snapshot();
+        if (scene.ticks == wds::platform::SceneSession::max_ticks) KillTimer(window, play_timer);
+        show_play(window, scene);
+      }
+      return 0;
     case WM_COMMAND: {
       const auto action = LOWORD(param);
       if (HIWORD(param) == EN_CHANGE && (action == folder_input || action == resource_id ||
@@ -175,6 +259,15 @@ LRESULT CALLBACK handle(HWND window, UINT message, WPARAM param, LPARAM data) {
         return 0;
       }
       if (HIWORD(param) != BN_CLICKED) break;
+      if (action == play_button) {
+        play(window, *studio);
+        return 0;
+      }
+      if (action == stop_button) {
+        stop_play(window, *studio);
+        SetFocus(GetDlgItem(window, play_button));
+        return 0;
+      }
       if (action == preview_button || action == apply_button) {
         edit(window, *studio, action == apply_button);
         return 0;
@@ -216,7 +309,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   const auto window =
       CreateWindowExW(0, type.lpszClassName, L"WDS Studio | Project Workspace",
                       WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT,
-                      CW_USEDEFAULT, 700, 470, nullptr, nullptr, instance, &studio);
+                      CW_USEDEFAULT, 700, 660, nullptr, nullptr, instance, &studio);
   if (!window) return 2;
   ShowWindow(window, show);
   SetFocus(GetDlgItem(window, folder_input));
