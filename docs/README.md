@@ -28,8 +28,9 @@
 
 - [开发指南](engineering/development.md)：工作目录、当前可执行检查、设计与原型工作流。
 - [质量与验证](engineering/quality.md)：契约测试、故障矩阵、平台证据和可玩性验收。
-- [技术评估](engineering/technical-evaluation.md)：语言、框架、隔离、数据模型等开放问题与评估方法。
+- [技术评估](engineering/technical-evaluation.md)：C++ 核心的选定理由、工具链与依赖调研、进入编码的条件。
 - [实施路线](project/roadmap.md)：从基础程序到游戏闭环、生态与自动化创作。
+- [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
 
 ## 社区、许可与研究
 

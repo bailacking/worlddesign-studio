@@ -1,0 +1,31 @@
+set(path "${ROOT}/rules.txt")
+file(MAKE_DIRECTORY "${ROOT}")
+file(REMOVE "${path}")
+
+function(run expected pattern)
+  execute_process(
+    COMMAND "${CLI}" --sandbox-rules "${path}" ${ARGN}
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE detail
+  )
+  if(NOT status STREQUAL expected OR NOT "${output}${detail}" MATCHES "${pattern}")
+    message(FATAL_ERROR "Unexpected result: ${status} ${output}${detail}")
+  endif()
+endfunction()
+
+run(0 "jump_speed=6" show)
+run(0 "preview: jump_speed 6 -> 8" preview 6 8)
+if(EXISTS "${path}")
+  message(FATAL_ERROR "Preview changed the rules file")
+endif()
+run(1 "invalid_argument" apply 6 99)
+run(0 "applied: jump_speed 6 -> 8" apply 6 8)
+run(1 "rule_conflict: jump_speed=8" apply 6 7)
+run(0 "jump_speed=8" show)
+run(0 "applied: jump_speed 8 -> 6" apply 8 6)
+run(0 "jump_speed=6" show)
+file(WRITE "${path}" "invalid\n")
+run(1 "invalid_rules" apply 6 8)
+file(READ "${path}" after)
+if(NOT after STREQUAL "invalid\n")
+  message(FATAL_ERROR "Invalid rules must remain unchanged")
+endif()

@@ -1,0 +1,60 @@
+# 开发任务
+
+首个里程碑是**最小基础程序**。在可复现的本地环境中启动两个试验插件，使用 GUI 和 CLI 执行同一项资源修改，保存并重新打开项目。同步记录错误和恢复结果。达到里程碑后，再以 [首个 3D 方块沙盒](../product/scope.md#首个验证游戏) 验证实际游戏流程。
+
+## 认领与交接
+
+在 [GitHub Issues](https://github.com/bailacking/worlddesign-studio/issues) 用任务编号创建或认领工作，先搜索已有 Issue，记录负责人、当前状态（待认领、进行中、待评审、完成）和阻塞项。下表维护范围与依赖，Issue 维护具体进度。每个实现任务使用独立分支，并在 PR 中关联 Issue 或任务编号、列出验收结果。多位贡献者同时修改同一台电脑上的仓库时，使用独立工作树。
+
+## 当前手动派发
+
+Codex 负责技术调研、选型、契约和关键实现评审。用户按任务编号派发已有明确输入、产出和检查命令的工作。其他 Agent 可承担骨架配置、批量补充已有规格的测试数据、跨环境复跑或文档同步。遇到设计取舍时把具体问题交回 Codex。交付只需一行「任务编号｜提交或变更路径｜检查结果｜阻塞」，在共享库留一条简短记录即可。
+
+### M0-05A 搭建 C++ 构建骨架
+
+使用 [首轮试行基线](../engineering/technical-evaluation.md#首轮试行基线)，交付下面这批文件。此任务只验证构建与检查链路，插件、项目格式、共享操作和界面契约由 M0-02 至 M0-04 约定。
+
+| 文件 | 要做的事 |
+| --- | --- |
+| `CMakeLists.txt`、`CMakePresets.json` | CMake 3.25 起，使用 Ninja，添加名为 `dev` 的 configure、build、test presets，产物放 `build/dev`。目标要求 C++20、关闭编译器扩展。MSVC 启用 `/W4 /WX`，GCC/Clang 启用 `-Wall -Wextra -Wpedantic -Werror` |
+| `tests/smoke.cpp` | 一个可执行的基础程序，确认实际 C++ 标准模式并返回成功，注册一个 CTest。只使用标准库 |
+| `.gitignore` | 忽略仓库根目录的 `build/` 和 `CMakeUserPresets.json` |
+| `.github/workflows/quality.yml` | 保留现有文档 job，新增 C++ job，在 Linux 环境跑下方构建和测试命令。Windows 先用本机 MSVC 实测 |
+| `docs/engineering/development.md` | 补齐试行构建命令及 Windows 的 x64 开发者命令环境说明 |
+
+在干净构建目录完成下面三步，测试必须实际执行且通过。Windows 的测试日志保留工具版本。若当前分支没有远端运行，交付时将 Linux CI 标为待验证。按 [现有质量检查](../engineering/quality.md#当前自动检查) 复查文档。只提交到任务分支。
+
+```sh
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev --output-on-failure --no-tests=error
+```
+
+## 最小基础程序
+
+| 任务 | 交付物 | 依赖 | 验收 |
+| --- | --- | --- | --- |
+| [M0-01 调研 C++ 标准与首轮工具链](https://github.com/bailacking/worlddesign-studio/issues/2) | [C++ 调研报告](../engineering/technical-evaluation.md#首轮工具链调研)与可复跑样例，涵盖编译器、构建工具、测试、依赖管理与首轮平台 | 可开始 | 用至少两套可行组合运行同一试验，说明最低适用标准、推荐工具链、替代方案和限制 |
+| [M0-02 约定插件契约](https://github.com/bailacking/worlddesign-studio/issues/3) | [插件](../architecture/plugins.md)章节补齐注册、依赖、停用与释放的流程和用例 | 可开始 | 用例定义成功装配、缺依赖、必需与可选插件失败、停用清理的可观察结果 |
+| [M0-03 约定共享操作](https://github.com/bailacking/worlddesign-studio/issues/4) | [操作](../architecture/commands.md)章节定义首个资源改名操作的输入、结果、错误和修订冲突 | 可开始 | 明确 GUI、CLI 的等价输入、预期状态及过时修订的行为 |
+| [M0-04 约定资源与保存边界](https://github.com/bailacking/worlddesign-studio/issues/5) | [资源](../architecture/assets.md)章节给出最小项目样例，说明编号、路径及写入失败后的恢复 | 可开始 | 改名后引用仍有效，保存中断后可重开最近完整版本，重复编号有诊断 |
+| M0-05 建立引擎源码和 CI | 先交付 M0-05A 的构建骨架，再补首批引擎源码的格式与静态分析 | M0-05A 可开始；引擎实现依赖工具链与相关契约评审 | 新检出可按文档运行检查、构建及自动测试。PR 能看到结果 |
+| M0-06 实现插件宿主 | 宿主及两个最小试验插件 | M0-02、M0-05 | 两个插件可装配。缺依赖或初始化失败有诊断，停用后释放已注册资源 |
+| M0-07 实现项目存取 | 最小项目样例、资源索引、保存与打开接口 | M0-04、M0-05 | 改名保留编号，保存并重开后读取一致。失败时可恢复且错误可定位 |
+| M0-08 实现共享操作 | 资源改名入口、统一结果和契约测试 | M0-03、M0-05；与 M0-07 联调 | 同一请求得到相同结果。过时修订会被拒绝，原数据保持完整 |
+| M0-09 接入 GUI 和 CLI | 两个最小入口与集成验收脚本 | M0-06 至 M0-08 | 从同一初始项目分别执行改名，重开后对比资源身份和持久化结果，并验证一次失败恢复 |
+
+M0-02 至 M0-04 的首轮规格已形成，分别见 [插件宿主](../architecture/plugins.md#m0-插件宿主契约)、[资源改名](../architecture/commands.md#m0-资源改名契约) 和 [项目保存](../architecture/assets.md#m0-项目保存契约)。M0-05A 构建骨架已合入本地开发分支，Windows x64 复验通过，Linux CI 待运行。按 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 核对工具链和契约后，再分配引擎实现。M0-07 与 M0-08 使用同一资源样例，M0-09 验收 GUI 与 CLI 的组合行为。
+
+M0-06 至 M0-09 已在本地集成。Windows 自动测试通过，使用原生窗口的按钮处理路径验证 GUI 改名，再与 CLI 的磁盘结果比较。参见 [运行样例](../engineering/development.md#运行-m0-样例)。人工窗口体验和 Linux CI 仍需验证。
+
+## 首个可玩沙盒
+
+M1-01 至 M1-04 的最小路径已在本机 Windows x64 验证，包含外部 Agent 通过命令行预览和恢复规则，以及从本地 Release 产物目录独立启动。进一步体验验收需人工检查操作手感和画面，见 [运行方块沙盒](../engineering/development.md#运行方块沙盒)。
+
+| 任务 | 交付物 | 依赖 | 验收 |
+| --- | --- | --- | --- |
+| M1-01 方块世界与移动 | 有限地形、渲染和玩家控制 | M0 | 玩家能进入场景、移动，遇到地形时发生预期碰撞 |
+| M1-02 方块编辑与持久化 | 放置、破坏、保存和重开 | M1-01 | 放置和破坏结果在关闭重开后保留，失败有清晰提示 |
+| M1-03 可检查的 AI 修改 | 一次经共享操作的规则修改及验证 | M1-02 | 创作者可查看差异，运行验证，并恢复到修改前 |
+| M1-04 独立运行与验收 | 至少一个平台的可复现运行产物和实测记录 | M1-03 | 在声明的环境中完整走通进入世界、编辑、重开、规则修改与恢复 |
