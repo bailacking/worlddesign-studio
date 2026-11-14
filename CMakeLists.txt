@@ -9,7 +9,8 @@ project(
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-if(MSVC)
+option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
+if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
@@ -44,6 +45,24 @@ target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options)
 target_link_libraries(wds_cli PRIVATE wds_project)
+
+if(WDS_BUILD_MODERN_STUDIO)
+  find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
+  qt_add_executable(wds_studio_modern WIN32
+    src/studio/main.cpp
+    src/studio/bridge.cpp
+    src/studio/scene_tree.cpp
+    src/studio/viewport.cpp
+  )
+  target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
+  add_dependencies(wds_studio_modern wds_cli)
+  qt_add_resources(wds_studio_modern studio_theme PREFIX "/studio" BASE "src/studio"
+    FILES src/studio/theme/workbench.qss)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/studio/resource_panel.cpp")
+    target_sources(wds_studio_modern PRIVATE src/studio/resource_panel.cpp)
+    target_compile_definitions(wds_studio_modern PRIVATE WDS_STUDIO_RESOURCE_PANEL)
+  endif()
+endif()
 
 add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)

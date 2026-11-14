@@ -8,9 +8,9 @@
 
 ## 首版技术路线
 
-首版采用 **Qt 6 Widgets**，这是可替换的编辑器前端。用 `QMainWindow` 与停靠组件实现面板，场景视口独立于窗口布局。先交付 Windows x64 构建；最低 Qt 6.8，实际使用的补丁版、安装来源与构建命令由 WKB-01 记录。首次勘查的本机常用目录与命令入口未发现 Qt SDK，首批模块可先按接口并行开发。核心和 CLI 沿用 C++20 与现有默认构建。使用 `WDS_BUILD_MODERN_STUDIO` 显式启用，Qt 目标的运行库配置与所选 SDK 一致。编辑器发行任务负责 Qt 运行库、许可材料及第三方声明。 [停靠组件](https://doc.qt.io/qt-6/qdockwidget.html) · [高 DPI](https://doc.qt.io/qt-6/highdpi.html) · [Windows 工具链](https://doc.qt.io/qt-6.8/windows.html) · [Qt 开源分发说明](https://www.qt.io/development/open-source-lgpl-obligations)
+首版采用 **Qt 6 Widgets**，这是可替换的编辑器前端。用 `QMainWindow` 与停靠组件实现面板，场景视口独立于窗口布局。先交付 Windows x64 构建；最低 Qt 6.8，实际使用的补丁版、安装来源与构建命令由 WKB-01 记录。本地已从 Qt 下载仓库获取 Qt 6.8.3 MSVC 2022 x64 SDK。可在独立构建目录编译并运行现代工作台。核心和 CLI 沿用 C++20 与现有默认构建。使用 `WDS_BUILD_MODERN_STUDIO` 显式启用，Qt 目标的运行库配置与所选 SDK 一致。编辑器发行任务负责 Qt 运行库、许可材料及第三方声明。 [停靠组件](https://doc.qt.io/qt-6/qdockwidget.html) · [高 DPI](https://doc.qt.io/qt-6/highdpi.html) · [Windows 工具链](https://doc.qt.io/qt-6.8/windows.html) · [Qt 开源分发说明](https://www.qt.io/development/open-source-lgpl-obligations)
 
-首版 UI 通过独立进程调用同一构建的 `wds_cli`，以参数数组传参，读取已有的 JSON 结果。启动与响应异步，项目切换时丢弃旧请求结果，同项目的修改串行。项目数据仍由 C++ 项目服务验证和写入。进程桥接用于项目操作与离散运行快照，交互式视口另接运行会话，由 SIM-01 与 WKB-08 定义。首个二维视口直接绘制已有场景数据，首轮工作台交付独立于正式图形后端选型。以后可在保留操作语义的前提下替换桥接方式。
+首版 UI 异步调用同一构建的 `wds_cli` 进行项目查询和写入。请求完成前禁止切换项目和提交另一条改动。项目数据由 C++ 项目服务验证和落盘。二维视口直接读取共享 C++ 会话的逐步状态，正式图形与输入适配由 SIM-01 和 WKB-08 继续推进。
 
 ## 模块边界
 

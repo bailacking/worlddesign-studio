@@ -108,6 +108,21 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 
 Windows 工作台填入同一项目路径，点击 **Open** 和 **Play**。下方画布显示静止的原点和移动的标记。点击 **Stop** 结束试玩，再点击 **Play** 可从源位置开始。CLI 与工作台都使用同一个会话核心。[场景格式与限制](../architecture/runtime.md#场景与试玩会话-v1)
 
+### 运行现代工作台
+
+在 [MSVC 开发环境](#windows-x64-开发者命令环境)中配置独立构建目录。已用 Qt 6.8.3 MSVC 2022 x64 构建。将示例里的路径替换成本机 Qt SDK 路径。
+
+```powershell
+$qt = 'C:/Qt/6.8.3/msvc2022_64'
+cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DCMAKE_PREFIX_PATH=$qt"
+cmake --build build/studio --target wds_studio_modern
+& "$qt/bin/windeployqt.exe" --no-translations --no-compiler-runtime ./build/studio/wds_studio_modern.exe
+Copy-Item -Recurse examples/scene-motion build/studio-demo
+./build/studio/wds_studio_modern.exe build/studio-demo
+```
+
+选中 `marker`，修改 **Velocity X** 并点击 **Save Property**。界面显示新修订后，点击 **Play** 和 **Stop**。一轮可保存一个字段，未保存改动可在 **Project** 菜单放弃。停靠面板与窗口布局在关闭后保留。运行目录中需同时有 `wds_cli.exe` 和 Qt 运行库。上述命令用于本地开发，编辑器发行包由 SHIP-05 完成。 [工作台规格](../architecture/workbench.md)
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。
