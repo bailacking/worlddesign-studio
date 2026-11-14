@@ -36,3 +36,23 @@ jobs:
         run: python -m ruff format --check scripts
       - name: Check project documentation
         run: python scripts/check_docs.py
+
+  cpp-build:
+    name: C++ build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Show toolchain versions
+        run: |
+          cmake --version
+          ninja --version
+          c++ --version
+      - name: Configure
+        run: cmake --preset dev
+      - name: Build
+        run: cmake --build --preset dev
+      - name: Test
+        run: ctest --preset dev --output-on-failure --no-tests=error

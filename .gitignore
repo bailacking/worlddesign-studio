@@ -1,0 +1,5 @@
+# 构建产物目录，配置由 CMakePresets.json 决定。
+/build/
+
+# 本地个人预设，不进入仓库。
+CMakeUserPresets.json
