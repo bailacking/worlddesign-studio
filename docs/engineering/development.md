@@ -129,6 +129,14 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 用 **编辑 → 撤销场景改动** 或 **重做场景改动** 恢复本次打开项目后的编辑，操作会保存为新的修订。重新打开项目会清空界面历史。[CLI 恢复接口](../architecture/commands.md#事务撤销与外部副作用)
 
+[四方汇流示例](../../examples/scene-editing/README.md) 用四个实体演示运动、属性编辑和资源引用。在二维视口按住中键拖动可平移，滚轮以鼠标所在点为中心缩放，双击中键复位。资源区显示选中项引用谁、被谁引用。输出区可按级别筛选并复制消息。
+
+可把同一项目的资源、实体与修订生成 Markdown，交给另一个创作者或 Agent。
+
+```powershell
+python scripts/project_handoff.py --cli ./build/studio/wds_cli.exe --project ./examples/scene-editing
+```
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。

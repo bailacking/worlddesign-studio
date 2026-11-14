@@ -52,6 +52,7 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/main.cpp
     src/studio/bridge.cpp
     src/studio/i18n/language.cpp
+    src/studio/output_panel.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
     src/studio/viewport.cpp

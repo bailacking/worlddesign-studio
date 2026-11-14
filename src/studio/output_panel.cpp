@@ -23,9 +23,6 @@
 namespace wds::studio {
 namespace {
 
-// 面板自用文案走独立上下文，与调用方传入的记录文本分开翻译。
-QString translated(const char* text) { return QCoreApplication::translate("OutputPanel", text); }
-
 constexpr int kLevelColumn = 0;
 constexpr int kTextColumn = 1;
 
@@ -137,19 +134,24 @@ void OutputPanel::rebuildRows() {
 }
 
 void OutputPanel::retranslate() {
-  tree_->setHeaderLabels({translated("Level"), translated("Message")});
-  tree_->setAccessibleName(translated("Output entries"));
-  level_filter_->setAccessibleName(translated("Output level filter"));
-  copy_->setText(translated("Copy"));
-  copy_->setToolTip(translated("Copy the selected entry (Ctrl+C)"));
+  tree_->setHeaderLabels({QCoreApplication::translate("OutputPanel", "Level"),
+                          QCoreApplication::translate("OutputPanel", "Message")});
+  tree_->setAccessibleName(QCoreApplication::translate("OutputPanel", "Output entries"));
+  level_filter_->setAccessibleName(
+      QCoreApplication::translate("OutputPanel", "Output level filter"));
+  copy_->setText(QCoreApplication::translate("OutputPanel", "Copy"));
+  copy_->setToolTip(QCoreApplication::translate("OutputPanel", "Copy the selected entry (Ctrl+C)"));
 
   const QString selected = level_filter_->currentData().toString();
   const QSignalBlocker blocker(level_filter_);
   level_filter_->clear();
-  level_filter_->addItem(translated("All levels"), QString());
-  level_filter_->addItem(translated("Info"), QStringLiteral("info"));
-  level_filter_->addItem(translated("Warning"), QStringLiteral("warning"));
-  level_filter_->addItem(translated("Error"), QStringLiteral("error"));
+  level_filter_->addItem(QCoreApplication::translate("OutputPanel", "All levels"), QString());
+  level_filter_->addItem(QCoreApplication::translate("OutputPanel", "Info"),
+                         QStringLiteral("info"));
+  level_filter_->addItem(QCoreApplication::translate("OutputPanel", "Warning"),
+                         QStringLiteral("warning"));
+  level_filter_->addItem(QCoreApplication::translate("OutputPanel", "Error"),
+                         QStringLiteral("error"));
   const int restored = level_filter_->findData(selected);
   level_filter_->setCurrentIndex(restored >= 0 ? restored : 0);
 
@@ -175,12 +177,12 @@ void OutputPanel::applyLevelFilter() {
 
 void OutputPanel::updateEmptyState() {
   if (tree_->topLevelItemCount() == 0) {
-    empty_state_->setText(translated("No output yet."));
+    empty_state_->setText(QCoreApplication::translate("OutputPanel", "No output yet."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }
   if (!hasVisibleRow()) {
-    empty_state_->setText(translated("No entries for this level."));
+    empty_state_->setText(QCoreApplication::translate("OutputPanel", "No entries for this level."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }
@@ -200,9 +202,10 @@ void OutputPanel::copySelection() {
 }
 
 QString OutputPanel::levelLabel(const QString& level) const {
-  if (level == QLatin1String("warning")) return translated("Warning");
-  if (level == QLatin1String("error")) return translated("Error");
-  return translated("Info");
+  if (level == QLatin1String("warning"))
+    return QCoreApplication::translate("OutputPanel", "Warning");
+  if (level == QLatin1String("error")) return QCoreApplication::translate("OutputPanel", "Error");
+  return QCoreApplication::translate("OutputPanel", "Info");
 }
 
 QTreeWidgetItem* OutputPanel::currentRow() const { return tree_->currentItem(); }

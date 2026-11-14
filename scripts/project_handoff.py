@@ -33,8 +33,11 @@ def run_cli(cli: Path, *arguments: str) -> dict[str, Any]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=15,
             check=False,
         )
+    except subprocess.TimeoutExpired as error:
+        raise HandoffError(f"{label} 超时") from error
     except OSError as error:
         reason = error.strerror or str(error)
         raise HandoffError(f"无法执行 {cli}：{reason}") from error
@@ -172,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return EXIT_ERROR
     else:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
         sys.stdout.write(text)
     return 0
 

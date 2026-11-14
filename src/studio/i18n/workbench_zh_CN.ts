@@ -2,6 +2,57 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en">
     <context>
+        <name>OutputPanel</name>
+        <message>
+            <source>Level</source>
+            <translation>级别</translation>
+        </message>
+        <message>
+            <source>Message</source>
+            <translation>消息</translation>
+        </message>
+        <message>
+            <source>Output entries</source>
+            <translation>输出记录</translation>
+        </message>
+        <message>
+            <source>Output level filter</source>
+            <translation>输出级别筛选</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>复制</translation>
+        </message>
+        <message>
+            <source>Copy the selected entry (Ctrl+C)</source>
+            <translation>复制选中的记录（Ctrl+C）</translation>
+        </message>
+        <message>
+            <source>All levels</source>
+            <translation>全部级别</translation>
+        </message>
+        <message>
+            <source>Info</source>
+            <translation>信息</translation>
+        </message>
+        <message>
+            <source>Warning</source>
+            <translation>警告</translation>
+        </message>
+        <message>
+            <source>Error</source>
+            <translation>错误</translation>
+        </message>
+        <message>
+            <source>No output yet.</source>
+            <translation>暂无输出。</translation>
+        </message>
+        <message>
+            <source>No entries for this level.</source>
+            <translation>该级别暂无记录。</translation>
+        </message>
+    </context>
+    <context>
         <name>ProjectDiagnostic</name>
         <message>
             <source> · Reopen the project to load its current revision.</source>
@@ -173,6 +224,26 @@
         <message>
             <source>No resource matches the current filter.</source>
             <translation>没有符合筛选条件的资源。</translation>
+        </message>
+        <message>
+            <source>References</source>
+            <translation>引用</translation>
+        </message>
+        <message>
+            <source>Referenced by</source>
+            <translation>被引用</translation>
+        </message>
+        <message>
+            <source>Selected resource references</source>
+            <translation>选中资源的引用</translation>
+        </message>
+        <message>
+            <source>Resources referencing the selection</source>
+            <translation>引用选中资源的资源</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>无</translation>
         </message>
     </context>
     <context>

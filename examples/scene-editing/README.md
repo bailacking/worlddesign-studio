@@ -24,11 +24,11 @@
 2. 校验项目：`./build/dev/wds_cli.exe project validate examples/scene-editing`，返回 `ok` 与 `resource_count` 2。
 3. 看初始位置：`./build/dev/wds_cli.exe project play examples/scene-editing 0 0`，四个实体停在上表起点。
 4. 走 30 步：`./build/dev/wds_cli.exe project play examples/scene-editing 0 30`，三个动点汇到中轴。
-5. 想看画面就开窗口：运行 `./build/dev/wds_studio.exe`，路径填 `examples/scene-editing`，点 **Open**（资源列表出现 `field` 与 `tuning`），再点 **Play**，画布上的方块标记开始移动；**Stop** 结束。Qt 现代工作台需按开发指南另开 `WDS_BUILD_MODERN_STUDIO` 构建，入口与试玩相同。
+5. 在现代工作台打开示例副本，选中 `drifter` 后修改 **X 速度**，点击 **保存属性** 和 **试玩**。点击 **停止** 回到编辑态。资源面板选中 `field` 可看到引用 `tuning`，选中 `tuning` 可看到被 `field` 引用。[工作台构建与运行](../../docs/engineering/development.md#运行现代工作台)
 
 ## 三项可改参数
 
-改 `assets/field.json` 里对应实体的字段后，直接重跑第 4 步即可看到变化；会话每次启动都从磁盘重新读取。
+在工作台中改动示例副本，或使用 `wds_cli project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存同样的属性。再次试玩时使用保存返回的新修订。
 
 | 参数 | 当前值 | 改成什么 | 预期效果 |
 | --- | --- | --- | --- |

@@ -52,6 +52,8 @@ void Viewport::setSelectedId(QString id) {
 }
 
 void Viewport::resetView() {
+  panning_ = false;
+  unsetCursor();
   scale_ = kDefaultScale;
   offset_ = {};
   update();
@@ -135,8 +137,6 @@ void Viewport::mouseReleaseEvent(QMouseEvent* event) {
 
 void Viewport::mouseDoubleClickEvent(QMouseEvent* event) {
   if (running_ || event->button() != Qt::MiddleButton) return;
-  panning_ = false;
-  unsetCursor();
   resetView();
 }
 

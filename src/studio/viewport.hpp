@@ -12,6 +12,7 @@ class Viewport final : public QWidget {
   explicit Viewport(std::function<void(QString)> select, QWidget* parent = nullptr);
   void setScene(QJsonArray entities, bool running);
   void setSelectedId(QString id);
+  void resetView();
 
  protected:
   void changeEvent(QEvent* event) override;
@@ -24,7 +25,6 @@ class Viewport final : public QWidget {
 
  private:
   QPointF screenPosition(const QJsonObject& entity) const;
-  void resetView();
 
   QJsonArray entities_;
   bool running_ = false;

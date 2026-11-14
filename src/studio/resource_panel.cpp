@@ -98,6 +98,7 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   backlinks_value_->setObjectName(QStringLiteral("resourceBacklinks"));
   for (QLabel* value : {references_value_, backlinks_value_}) {
     value->setWordWrap(true);
+    value->setTextFormat(Qt::PlainText);
     // 只读：可选中复制 ID，但不能编辑。
     value->setTextInteractionFlags(Qt::TextSelectableByMouse);
   }
@@ -215,7 +216,6 @@ QStringList ResourcePanel::referencedBy(const QString& id) const {
   for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
     const QTreeWidgetItem* row = tree_->topLevelItem(index);
     const QString owner = row->data(kIdColumn, Qt::UserRole).toString();
-    if (owner == id) continue;  // 自引用不列为“被引用”
     if (!row->data(kIdColumn, kRefsRole).toStringList().contains(id)) continue;
     if (!result.contains(owner)) result.append(owner);
   }

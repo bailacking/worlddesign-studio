@@ -12,7 +12,6 @@
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
-#include <QListWidget>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -32,6 +31,7 @@
 
 #include "bridge.hpp"
 #include "i18n/language.hpp"
+#include "output_panel.hpp"
 #include "platform_project.hpp"
 #include "resource_panel.hpp"
 #include "scene_tree.hpp"
@@ -120,6 +120,14 @@ class Workbench final : public QMainWindow {
     const char* pattern = nullptr;
     QStringList arguments;
     QJsonObject error;
+    QString level = "info";
+
+    QString severity() const {
+      if (error.isEmpty()) return level;
+      const auto code = error.value("code").toString();
+      return (code == "revision_conflict" || code == "scene_content_conflict") ? "warning"
+                                                                               : "error";
+    }
 
     QString text() const {
       if (!error.isEmpty()) return diagnostic(error);
@@ -212,7 +220,7 @@ class Workbench final : public QMainWindow {
 
     resources_ = new ResourcePanel([this](const QString& id) { showResource(id); }, this);
     assets_ = dock("resources", Qt::BottomDockWidgetArea, resources_);
-    output_ = new QListWidget(this);
+    output_ = new OutputPanel(this);
     output_dock_ = dock("output", Qt::BottomDockWidgetArea, output_);
     tabifyDockWidget(assets_, output_dock_);
     assets_->raise();
@@ -305,8 +313,7 @@ class Workbench final : public QMainWindow {
       fields_[index]->setAccessibleName(labels[index]);
     }
     entity_label_->setText(selected_.isEmpty() ? tr("Select an entity") : selected_);
-    for (int row = 0; row < output_->count(); ++row)
-      output_->item(row)->setText(messages_[static_cast<std::size_t>(row)].text());
+    updateOutput();
     statusBar()->showMessage(status_.text());
     updateActions();
   }
@@ -349,7 +356,7 @@ class Workbench final : public QMainWindow {
                                           QLineEdit::Normal, "my-game", &accepted);
     if (!accepted || id.isEmpty() || !canDiscard()) return;
     if (id.contains('/') || id.contains('\\') || id == "." || id == "..") {
-      report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}});
+      report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}, "warning"});
       return;
     }
     const auto path = QDir(parent).filePath(id);
@@ -383,6 +390,9 @@ class Workbench final : public QMainWindow {
   }
 
   void clearProject() {
+    messages_.clear();
+    updateOutput();
+    viewport_->resetView();
     undo_history_.clear();
     redo_history_.clear();
     project_id_.clear();
@@ -668,15 +678,18 @@ class Workbench final : public QMainWindow {
     statusBar()->showMessage(status_.text());
   }
 
+  void updateOutput() {
+    QJsonArray entries;
+    for (const auto& message : messages_)
+      entries.append(QJsonObject{{"text", message.text()}, {"level", message.severity()}});
+    output_->setEntries(entries);
+  }
+
   void report(Message message) {
-    if (output_->count() == 200) {
-      delete output_->takeItem(0);
-      messages_.pop_front();
-    }
+    if (messages_.size() == 200) messages_.pop_front();
     status_ = message;
-    output_->addItem(message.text());
     messages_.push_back(std::move(message));
-    output_->scrollToBottom();
+    updateOutput();
     statusBar()->showMessage(status_.text());
   }
 
@@ -728,7 +741,7 @@ class Workbench final : public QMainWindow {
   Viewport* viewport_;
   SceneTreePanel* scene_tree_;
   ResourcePanel* resources_;
-  QListWidget* output_;
+  OutputPanel* output_;
   QLabel* project_label_;
   QLabel* revision_label_;
   QLabel* entity_label_;
