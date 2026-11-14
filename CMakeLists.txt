@@ -47,18 +47,24 @@ target_link_libraries(wds_project PRIVATE wds_compile_options)
 target_link_libraries(wds_cli PRIVATE wds_project)
 
 if(WDS_BUILD_MODERN_STUDIO)
-  find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
+  find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets LinguistTools)
   qt_add_executable(wds_studio_modern WIN32
     src/studio/main.cpp
     src/studio/bridge.cpp
+    src/studio/i18n/language.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
     src/studio/viewport.cpp
   )
+  set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
   target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
   add_dependencies(wds_studio_modern wds_cli)
   qt_add_resources(wds_studio_modern studio_theme PREFIX "/studio" BASE "src/studio"
     FILES src/studio/theme/workbench.qss)
+  qt_add_translations(wds_studio_modern
+    SOURCE_TARGETS wds_studio_modern
+    TS_FILES src/studio/i18n/workbench_zh_CN.ts
+    RESOURCE_PREFIX "/studio/i18n")
 endif()
 
 add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)

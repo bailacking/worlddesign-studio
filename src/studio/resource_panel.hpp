@@ -25,7 +25,7 @@ namespace wds::studio {
 //
 // 首批不自定义 Qt 信号，故不声明 Q_OBJECT：调用方只需一个 std::function 回调，
 // 也避免 Qt 目标强制开启 AUTOMOC。文案统一走 QCoreApplication::translate，
-// 由 WKB-12 接入翻译，翻译上下文为 "wds::studio::ResourcePanel"。
+// 文案使用独立的 ResourcePanel 翻译上下文。
 class ResourcePanel final : public QWidget {
  public:
   explicit ResourcePanel(std::function<void(QString)> onSelect, QWidget* parent = nullptr);
@@ -40,9 +40,11 @@ class ResourcePanel final : public QWidget {
   [[nodiscard]] QString selectedId() const;
 
  protected:
+  void changeEvent(QEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
+  void retranslate();
   void rebuildKindFilter();
   void applyFilter();
   void updateEmptyState();

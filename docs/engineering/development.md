@@ -110,18 +110,20 @@ Windows 工作台填入同一项目路径，点击 **Open** 和 **Play**。下�
 
 ### 运行现代工作台
 
-在 [MSVC 开发环境](#windows-x64-开发者命令环境)中配置独立构建目录。已用 Qt 6.8.3 MSVC 2022 x64 构建。将示例里的路径替换成本机 Qt SDK 路径。
+在 [MSVC 开发环境](#windows-x64-开发者命令环境)中配置独立构建目录。已用 Qt 6.8.3 MSVC 2022 x64 构建，需安装 Qt Widgets 和 Linguist Tools。将示例里的路径替换成本机 Qt SDK 路径。
 
 ```powershell
 $qt = 'C:/Qt/6.8.3/msvc2022_64'
 cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DCMAKE_PREFIX_PATH=$qt"
 cmake --build build/studio --target wds_studio_modern
-& "$qt/bin/windeployqt.exe" --no-translations --no-compiler-runtime ./build/studio/wds_studio_modern.exe
+& "$qt/bin/windeployqt.exe" --translations zh_CN --no-compiler-runtime ./build/studio/wds_studio_modern.exe
 Copy-Item -Recurse examples/scene-motion build/studio-demo
 ./build/studio/wds_studio_modern.exe build/studio-demo
 ```
 
-选中 `marker`，修改 **Velocity X** 并点击 **Save Property**。界面显示新修订后，点击 **Play** 和 **Stop**。一轮可保存一个字段，未保存改动可在 **Project** 菜单放弃。停靠面板与窗口布局在关闭后保留。运行目录中需同时有 `wds_cli.exe` 和 Qt 运行库。上述命令用于本地开发，编辑器发行包由 SHIP-05 完成。 [工作台规格](../architecture/workbench.md)
+选中 `marker`，修改 **X 速度** 并点击 **保存属性**。界面显示新修订后，点击 **试玩** 和 **停止**。一轮可保存一个字段，未保存改动可在 **项目** 菜单放弃。停靠面板与窗口布局在关闭后保留。运行目录中需同时有 `wds_cli.exe` 和 Qt 运行库。上述命令用于本地开发，编辑器发行包由 SHIP-05 完成。 [工作台规格](../architecture/workbench.md)
+
+工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
 ## 运行方块沙盒
 

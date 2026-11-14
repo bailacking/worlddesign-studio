@@ -23,8 +23,7 @@ namespace wds::studio {
 //   - 过滤时保留逻辑选中 ID，清除过滤后恢复可见选中。
 //
 // 首批不自定义 Qt 信号，故不声明 Q_OBJECT：调用方只需一个 std::function 回调，
-// 也避免 Qt 目标强制开启 AUTOMOC。文案统一走 QCoreApplication::translate，
-// 由 WKB-12 接入翻译，翻译上下文为 "wds::studio::SceneTreePanel"。
+// 也避免 Qt 目标强制开启 AUTOMOC。文案使用独立的 SceneTreePanel 翻译上下文。
 class SceneTreePanel final : public QWidget {
  public:
   explicit SceneTreePanel(std::function<void(QString)> onSelect, QWidget* parent = nullptr);
@@ -39,9 +38,11 @@ class SceneTreePanel final : public QWidget {
   [[nodiscard]] QString selectedId() const;
 
  protected:
+  void changeEvent(QEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
+  void retranslate();
   void applyFilter();
   void updateEmptyState();
   void handleCurrentChanged(QTreeWidgetItem* current);

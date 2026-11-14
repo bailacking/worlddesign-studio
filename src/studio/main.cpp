@@ -1,5 +1,8 @@
 #include <QApplication>
 #include <QCloseEvent>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
@@ -13,6 +16,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPalette>
+#include <QPushButton>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -20,10 +24,13 @@
 #include <QStyleFactory>
 #include <QTimer>
 #include <QToolBar>
+#include <algorithm>
+#include <deque>
 #include <optional>
 #include <utility>
 
 #include "bridge.hpp"
+#include "i18n/language.hpp"
 #include "platform_project.hpp"
 #include "resource_panel.hpp"
 #include "scene_tree.hpp"
@@ -59,66 +66,118 @@ void applyTheme(QApplication& app) {
 }
 
 QString diagnostic(const QJsonObject& result) {
-  auto message = result.value("code").toString();
+  static constexpr std::array codes{
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "already_exists"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_invalid_result"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_timeout"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_unavailable"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cleanup_incomplete"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_entity_id"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_id"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "edit_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_argument"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entity"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entry_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "recovery_required"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsafe_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_version"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_version")};
+  const auto code = result.value("code").toString();
+  const auto found = std::ranges::find_if(codes, [&](const char* key) { return code == key; });
+  auto message =
+      found == codes.end() ? code : QCoreApplication::translate("ProjectDiagnostic", *found);
+  if (message != code) message += " (" + code + ")";
   const auto location = result.value("location").toString();
   const auto path = result.value("resource_path").toString();
   if (!location.isEmpty()) message += " · " + location;
   if (!path.isEmpty()) message += " · " + path;
-  if (result.value("code") == "revision_conflict")
-    message += QObject::tr(" · Reopen the project to load its current revision.");
+  if (code == "revision_conflict")
+    message += QCoreApplication::translate("ProjectDiagnostic",
+                                           " · Reopen the project to load its current revision.");
   return message;
 }
 
 class Workbench final : public QMainWindow {
+  Q_OBJECT
+
+ private:
+  struct Message {
+    const char* pattern = nullptr;
+    QStringList arguments;
+    QJsonObject error;
+
+    QString text() const {
+      if (!error.isEmpty()) return diagnostic(error);
+      if (!pattern) return arguments.value(0);
+      const auto translated = tr(pattern);
+      if (arguments.size() == 3) return translated.arg(arguments[0], arguments[1], arguments[2]);
+      return arguments.isEmpty() ? translated : translated.arg(arguments[0]);
+    }
+  };
+
  public:
-  Workbench() {
+  explicit Workbench(LanguageSettings& language) : language_(language) {
     setObjectName("workbench");
-    setWindowTitle(tr("WDS Studio"));
     resize(1360, 840);
     setDockOptions(AllowTabbedDocks | AllowNestedDocks | AnimatedDocks);
 
-    auto* project = menuBar()->addMenu(tr("&Project"));
-    open_ = project->addAction(tr("&Open Project…"), this, &Workbench::chooseProject);
+    project_menu_ = menuBar()->addMenu(QString{});
+    open_ = project_menu_->addAction(QString{}, this, &Workbench::chooseProject);
     open_->setShortcut(QKeySequence::Open);
-    create_ = project->addAction(tr("&New Project…"), this, &Workbench::createProject);
+    create_ = project_menu_->addAction(QString{}, this, &Workbench::createProject);
     create_->setShortcut(QKeySequence::New);
-    save_ = project->addAction(tr("&Save Property"), this, &Workbench::saveProperty);
+    save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
     save_->setShortcut(QKeySequence::Save);
-    revert_ = project->addAction(tr("Discard Property Draft"), this, &Workbench::discardProperty);
-    close_ = project->addAction(tr("Close Project"), this, &Workbench::closeProject);
-    auto* scene = menuBar()->addMenu(tr("&Scene"));
-    play_ = scene->addAction(tr("&Play"), this, &Workbench::play);
+    revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
+    close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
+    scene_menu_ = menuBar()->addMenu(QString{});
+    play_ = scene_menu_->addAction(QString{}, this, &Workbench::play);
     play_->setShortcut(QKeySequence(Qt::Key_F5));
-    stop_ = scene->addAction(tr("S&top"), this, &Workbench::stop);
+    stop_ = scene_menu_->addAction(QString{}, this, &Workbench::stop);
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
-    auto* view = menuBar()->addMenu(tr("&View"));
+    view_menu_ = menuBar()->addMenu(QString{});
+    settings_menu_ = menuBar()->addMenu(QString{});
+    settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
 
-    auto* toolbar = addToolBar(tr("Workspace"));
-    toolbar->setObjectName("workspaceToolbar");
-    toolbar->setMovable(false);
-    toolbar->addActions({open_, create_, save_});
-    toolbar->addSeparator();
-    toolbar->addActions({play_, stop_});
-    toolbar->addSeparator();
-    project_label_ = new QLabel(tr("No project open"), toolbar);
-    toolbar->addWidget(project_label_);
+    toolbar_ = addToolBar(QString{});
+    toolbar_->setObjectName("workspaceToolbar");
+    toolbar_->setMovable(false);
+    toolbar_->addActions({open_, create_, save_});
+    toolbar_->addSeparator();
+    toolbar_->addActions({play_, stop_});
+    toolbar_->addSeparator();
+    project_label_ = new QLabel(toolbar_);
+    toolbar_->addWidget(project_label_);
 
     viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
     setCentralWidget(viewport_);
     scene_tree_ = new SceneTreePanel([this](const QString& id) { selectEntity(id); }, this);
-    auto* hierarchy = dock("sceneTree", tr("Scene"), Qt::LeftDockWidgetArea, scene_tree_, view);
+    hierarchy_ = dock("sceneTree", Qt::LeftDockWidgetArea, scene_tree_);
 
     auto* property_panel = new QWidget(this);
     auto* form = new QFormLayout(property_panel);
     form->setContentsMargins(12, 14, 12, 14);
-    entity_label_ = new QLabel(tr("Select an entity"), property_panel);
+    entity_label_ = new QLabel(property_panel);
     form->addRow(entity_label_);
-    const std::array labels{tr("Position X"), tr("Position Y"), tr("Velocity X"), tr("Velocity Y")};
     for (std::size_t index = 0; index < fields_.size(); ++index) {
       auto* value = new QSpinBox(property_panel);
-      value->setAccessibleName(labels[index]);
       fields_[index] = value;
-      form->addRow(labels[index], value);
+      field_labels_[index] = new QLabel(property_panel);
+      field_labels_[index]->setBuddy(value);
+      form->addRow(field_labels_[index], value);
       connect(value, &QSpinBox::valueChanged, this, [this, index](int) {
         if (!dirty_) editing_ = index;
         dirty_ = fields_[editing_]->value() != committed_[editing_];
@@ -128,21 +187,20 @@ class Workbench final : public QMainWindow {
     draft_label_ = new QLabel(property_panel);
     draft_label_->setProperty("state", "modified");
     form->addRow(draft_label_);
-    auto* inspector =
-        dock("inspector", tr("Inspector"), Qt::RightDockWidgetArea, property_panel, view);
+    inspector_ = dock("inspector", Qt::RightDockWidgetArea, property_panel);
 
     resources_ = new ResourcePanel([this](const QString& id) { showResource(id); }, this);
-    auto* assets = dock("resources", tr("Resources"), Qt::BottomDockWidgetArea, resources_, view);
+    assets_ = dock("resources", Qt::BottomDockWidgetArea, resources_);
     output_ = new QListWidget(this);
-    auto* output = dock("output", tr("Output"), Qt::BottomDockWidgetArea, output_, view);
-    tabifyDockWidget(assets, output);
-    assets->raise();
-    resizeDocks({hierarchy, inspector}, {225, 285}, Qt::Horizontal);
-    resizeDocks({assets}, {190}, Qt::Vertical);
+    output_dock_ = dock("output", Qt::BottomDockWidgetArea, output_);
+    tabifyDockWidget(assets_, output_dock_);
+    assets_->raise();
+    resizeDocks({hierarchy_, inspector_}, {225, 285}, Qt::Horizontal);
+    resizeDocks({assets_}, {190}, Qt::Vertical);
 
     revision_label_ = new QLabel(statusBar());
     statusBar()->addPermanentWidget(revision_label_);
-    statusBar()->showMessage(tr("Open a WDS project to begin."));
+    setStatus(QT_TR_NOOP("Open a WDS project to begin."));
     const QSettings settings;
     restoreGeometry(settings.value("workbench/geometry").toByteArray());
     restoreState(settings.value("workbench/layout").toByteArray(), 1);
@@ -150,12 +208,12 @@ class Workbench final : public QMainWindow {
     connect(&timer_, &QTimer::timeout, this, [this] {
       if (!session_->advance(1)) {
         timer_.stop();
-        statusBar()->showMessage(tr("Playback reached its final tick. Select Stop to edit."));
+        setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
         return;
       }
       drawSession();
     });
-    updateActions();
+    retranslate();
   }
 
   void openProject(const QString& path) {
@@ -167,6 +225,11 @@ class Workbench final : public QMainWindow {
   }
 
  protected:
+  void changeEvent(QEvent* event) override {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) retranslate();
+  }
+
   void closeEvent(QCloseEvent* event) override {
     if (busy_ || !canDiscard()) {
       event->ignore();
@@ -179,37 +242,92 @@ class Workbench final : public QMainWindow {
   }
 
  private:
-  QDockWidget* dock(const QString& id, const QString& title, Qt::DockWidgetArea area,
-                    QWidget* panel, QMenu* menu) {
-    auto* widget = new QDockWidget(title, this);
+  QDockWidget* dock(const QString& id, Qt::DockWidgetArea area, QWidget* panel) {
+    auto* widget = new QDockWidget(this);
     widget->setObjectName(id);
     widget->setWidget(panel);
     addDockWidget(area, widget);
-    menu->addAction(widget->toggleViewAction());
+    view_menu_->addAction(widget->toggleViewAction());
     return widget;
   }
 
+  void retranslate() {
+    project_menu_->setTitle(tr("&Project"));
+    scene_menu_->setTitle(tr("&Scene"));
+    view_menu_->setTitle(tr("&View"));
+    settings_menu_->setTitle(tr("Se&ttings"));
+    settings_action_->setText(tr("Interface Language…"));
+    open_->setText(tr("&Open Project…"));
+    create_->setText(tr("&New Project…"));
+    save_->setText(tr("&Save Property"));
+    revert_->setText(tr("Discard Property Draft"));
+    close_->setText(tr("Close Project"));
+    play_->setText(tr("&Play"));
+    stop_->setText(tr("S&top"));
+    toolbar_->setWindowTitle(tr("Workspace"));
+    hierarchy_->setWindowTitle(tr("Scene"));
+    inspector_->setWindowTitle(tr("Inspector"));
+    assets_->setWindowTitle(tr("Resources"));
+    output_dock_->setWindowTitle(tr("Output"));
+    output_->setAccessibleName(tr("Output"));
+    const std::array labels{tr("Position X"), tr("Position Y"), tr("Velocity X"), tr("Velocity Y")};
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      field_labels_[index]->setText(labels[index]);
+      fields_[index]->setAccessibleName(labels[index]);
+    }
+    entity_label_->setText(selected_.isEmpty() ? tr("Select an entity") : selected_);
+    for (int row = 0; row < output_->count(); ++row)
+      output_->item(row)->setText(messages_[static_cast<std::size_t>(row)].text());
+    statusBar()->showMessage(status_.text());
+    updateActions();
+  }
+
+  void showSettings() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Settings"));
+    auto* form = new QFormLayout(&dialog);
+    auto* languages = new QComboBox(&dialog);
+    languages->addItem(QStringLiteral("简体中文"), QStringLiteral("zh_CN"));
+    languages->addItem(QStringLiteral("English"), QStringLiteral("en"));
+    languages->setCurrentIndex(languages->findData(language_.language()));
+    languages->setAccessibleName(tr("Interface language"));
+    form->addRow(tr("Interface language"), languages);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form->addRow(buttons);
+    if (dialog.exec() == QDialog::Accepted &&
+        !language_.setLanguage(languages->currentData().toString()))
+      QMessageBox::warning(this, tr("Settings"), tr("Could not apply the interface language."));
+  }
+
   void chooseProject() {
-    const auto path = QFileDialog::getExistingDirectory(this, tr("Open WDS Project"), root_);
+    const auto path = QFileDialog::getExistingDirectory(
+        this, tr("Open WDS Project"), root_,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
     if (!path.isEmpty()) openProject(path);
   }
 
   void createProject() {
-    const auto parent = QFileDialog::getExistingDirectory(this, tr("Choose Project Parent"), root_);
+    const auto parent = QFileDialog::getExistingDirectory(
+        this, tr("Choose Project Parent"), root_,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
     if (parent.isEmpty()) return;
     bool accepted = false;
     const auto id = QInputDialog::getText(this, tr("New WDS Project"), tr("Project ID"),
                                           QLineEdit::Normal, "my-game", &accepted);
     if (!accepted || id.isEmpty() || !canDiscard()) return;
     if (id.contains('/') || id.contains('\\') || id == "." || id == "..") {
-      report(tr("Use a project ID, such as my-game."));
+      report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}});
       return;
     }
     const auto path = QDir(parent).filePath(id);
     setBusy(true);
     bridge_.run({"project", "create", path, id}, [this, path](const QJsonObject& result) {
       if (result.value("code") != "ok") {
-        report(diagnostic(result));
+        report({nullptr, {}, result});
         setBusy(false);
         return;
       }
@@ -232,7 +350,7 @@ class Workbench final : public QMainWindow {
     stop();
     root_.clear();
     clearProject();
-    statusBar()->showMessage(tr("Project closed."));
+    setStatus(QT_TR_NOOP("Project closed."));
   }
 
   void clearProject() {
@@ -255,7 +373,7 @@ class Workbench final : public QMainWindow {
     bridge_.run({"project", "resources", root_}, [this](const QJsonObject& result) {
       if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
           !result.value("resources").isArray() || !result.value("project_id").isString()) {
-        report(diagnostic(result));
+        report({nullptr, {}, result});
         setBusy(false);
         return;
       }
@@ -278,7 +396,10 @@ class Workbench final : public QMainWindow {
           field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
           setEntities();
           populateInspector();
-          report(scene_ready_ ? tr("Project ready · %1").arg(root_) : diagnostic(result));
+          if (scene_ready_)
+            report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
+          else
+            report({nullptr, {}, result});
           setBusy(false);
         });
   }
@@ -330,7 +451,7 @@ class Workbench final : public QMainWindow {
     if (id.isEmpty()) return;
     for (const auto item : resources_model_) {
       const auto resource = item.toObject();
-      if (resource.value("id") == id) statusBar()->showMessage(resource.value("path").toString());
+      if (resource.value("id") == id) setStatus(nullptr, {resource.value("path").toString()});
     }
   }
 
@@ -349,23 +470,24 @@ class Workbench final : public QMainWindow {
     setBusy(true);
     bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
       if (preview.value("code") != "ok") {
-        report(diagnostic(preview));
+        report({nullptr, {}, preview});
         setBusy(false);
         return;
       }
       args[1] = "set-scene-field";
       bridge_.run(args, [this](const QJsonObject& result) {
         if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-          report(diagnostic(result));
+          report({nullptr, {}, result});
           setBusy(false);
           return;
         }
         revision_ = result.value("revision").toInteger();
         dirty_ = false;
-        report(tr("Saved %1 · %2 → %3")
-                   .arg(result.value("location").toString(),
-                        argument(result.value("old_value").toInteger()),
-                        argument(result.value("new_value").toInteger())));
+        report(
+            {QT_TR_NOOP("Saved %1 · %2 → %3"),
+             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
+              argument(result.value("new_value").toInteger())},
+             {}});
         readScene();
       });
     });
@@ -380,7 +502,10 @@ class Workbench final : public QMainWindow {
 #endif
     auto result = platform::start_scene(path, static_cast<std::uint64_t>(*revision_));
     if (!result.session) {
-      report(QString::fromStdString(result.code + " · " + result.location));
+      report({nullptr,
+              {},
+              {{"code", QString::fromStdString(result.code)},
+               {"location", QString::fromStdString(result.location)}}});
       return;
     }
     session_ = std::move(result.session);
@@ -397,7 +522,7 @@ class Workbench final : public QMainWindow {
                                   {"y", static_cast<qint64>(entity.y)}});
     }
     viewport_->setScene(std::move(entities), true);
-    statusBar()->showMessage(tr("Playing · tick %1").arg(session_->snapshot().ticks));
+    setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(session_->snapshot().ticks)});
   }
 
   void stop() {
@@ -405,15 +530,25 @@ class Workbench final : public QMainWindow {
     timer_.stop();
     session_.reset();
     viewport_->setScene(entities_, false);
-    statusBar()->showMessage(tr("Playback stopped."));
+    setStatus(QT_TR_NOOP("Playback stopped."));
     updateActions();
   }
 
-  void report(const QString& message) {
-    if (output_->count() == 200) delete output_->takeItem(0);
-    output_->addItem(message);
+  void setStatus(const char* pattern, QStringList arguments = {}) {
+    status_ = {pattern, std::move(arguments), {}};
+    statusBar()->showMessage(status_.text());
+  }
+
+  void report(Message message) {
+    if (output_->count() == 200) {
+      delete output_->takeItem(0);
+      messages_.pop_front();
+    }
+    status_ = message;
+    output_->addItem(message.text());
+    messages_.push_back(std::move(message));
     output_->scrollToBottom();
-    statusBar()->showMessage(message);
+    statusBar()->showMessage(status_.text());
   }
 
   void setBusy(bool busy) {
@@ -445,7 +580,10 @@ class Workbench final : public QMainWindow {
                        : tr("%1%2 — WDS Studio").arg(project_id_, dirty_ ? "*" : ""));
   }
 
+  LanguageSettings& language_;
   ProjectBridge bridge_{this};
+  Message status_;
+  std::deque<Message> messages_;
   QTimer timer_;
   Viewport* viewport_;
   SceneTreePanel* scene_tree_;
@@ -455,6 +593,16 @@ class Workbench final : public QMainWindow {
   QLabel* revision_label_;
   QLabel* entity_label_;
   QLabel* draft_label_;
+  QMenu* project_menu_;
+  QMenu* scene_menu_;
+  QMenu* view_menu_;
+  QMenu* settings_menu_;
+  QToolBar* toolbar_;
+  QDockWidget* hierarchy_;
+  QDockWidget* inspector_;
+  QDockWidget* assets_;
+  QDockWidget* output_dock_;
+  QAction* settings_action_;
   QAction* open_;
   QAction* create_;
   QAction* close_;
@@ -463,6 +611,7 @@ class Workbench final : public QMainWindow {
   QAction* play_;
   QAction* stop_;
   std::array<QSpinBox*, platform::scene_fields.size()> fields_{};
+  std::array<QLabel*, platform::scene_fields.size()> field_labels_{};
   std::array<int, platform::scene_fields.size()> committed_{};
   QString root_;
   QString project_id_;
@@ -481,12 +630,15 @@ class Workbench final : public QMainWindow {
 }  // namespace
 }  // namespace wds::studio
 
+#include "main.moc"
+
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
   QCoreApplication::setOrganizationName("WDS");
   QCoreApplication::setApplicationName("WDS Studio");
   wds::studio::applyTheme(app);
-  wds::studio::Workbench window;
+  wds::studio::LanguageSettings language;
+  wds::studio::Workbench window(language);
   window.show();
   if (app.arguments().size() == 2) window.openProject(app.arguments().at(1));
   return app.exec();

@@ -16,14 +16,6 @@
 #include <utility>
 
 namespace wds::studio {
-namespace {
-
-// 首批文案为英文，与现有 Win32 工作台一致；WKB-12 接入翻译时按此上下文取条目。
-QString translated(const char* text) {
-  return QCoreApplication::translate("wds::studio::SceneTreePanel", text);
-}
-
-}  // namespace
 
 SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* parent)
     : QWidget(parent), on_select_(std::move(onSelect)) {
@@ -32,9 +24,7 @@ SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* p
   layout->setSpacing(4);
 
   search_ = new QLineEdit(this);
-  search_->setPlaceholderText(translated("Search entities"));
   search_->setClearButtonEnabled(true);
-  search_->setAccessibleName(translated("Entity search"));
   search_->installEventFilter(this);
   layout->addWidget(search_);
 
@@ -50,7 +40,6 @@ SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* p
   tree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
   tree_->setTextElideMode(Qt::ElideMiddle);
   tree_->setFocusPolicy(Qt::StrongFocus);
-  tree_->setAccessibleName(translated("Scene entities"));
   tree_->installEventFilter(this);
 
   empty_state_ = new QLabel(this);
@@ -70,6 +59,18 @@ SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* p
   connect(tree_, &QTreeWidget::currentItemChanged, this,
           [this](QTreeWidgetItem* current) { handleCurrentChanged(current); });
 
+  retranslate();
+}
+
+void SceneTreePanel::changeEvent(QEvent* event) {
+  QWidget::changeEvent(event);
+  if (event->type() == QEvent::LanguageChange) retranslate();
+}
+
+void SceneTreePanel::retranslate() {
+  search_->setPlaceholderText(QCoreApplication::translate("SceneTreePanel", "Search entities"));
+  search_->setAccessibleName(QCoreApplication::translate("SceneTreePanel", "Entity search"));
+  tree_->setAccessibleName(QCoreApplication::translate("SceneTreePanel", "Scene entities"));
   updateEmptyState();
 }
 
@@ -138,12 +139,14 @@ void SceneTreePanel::applyFilter() {
 
 void SceneTreePanel::updateEmptyState() {
   if (tree_->topLevelItemCount() == 0) {
-    empty_state_->setText(translated("This scene has no entities."));
+    empty_state_->setText(
+        QCoreApplication::translate("SceneTreePanel", "This scene has no entities."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }
   if (!hasVisibleRow()) {
-    empty_state_->setText(translated("No entity matches the search."));
+    empty_state_->setText(
+        QCoreApplication::translate("SceneTreePanel", "No entity matches the search."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }

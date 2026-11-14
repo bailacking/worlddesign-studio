@@ -13,6 +13,7 @@ class Viewport final : public QWidget {
   void setSelectedId(QString id);
 
  protected:
+  void changeEvent(QEvent* event) override;
   void paintEvent(QPaintEvent*) override;
   void mousePressEvent(QMouseEvent* event) override;
 

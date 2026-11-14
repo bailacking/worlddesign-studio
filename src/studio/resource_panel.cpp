@@ -21,9 +21,10 @@
 namespace wds::studio {
 namespace {
 
-// 首批文案为英文，与现有 Win32 工作台一致；WKB-12 接入翻译时按此上下文取条目。
-QString translated(const char* text) {
-  return QCoreApplication::translate("wds::studio::ResourcePanel", text);
+QString displayKind(const QString& kind) {
+  if (kind == "scene") return QCoreApplication::translate("ResourcePanel", "Scene");
+  if (kind == "data") return QCoreApplication::translate("ResourcePanel", "Data");
+  return kind;
 }
 
 constexpr int kIdColumn = 0;
@@ -39,19 +40,15 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   layout->setSpacing(4);
 
   search_ = new QLineEdit(this);
-  search_->setPlaceholderText(translated("Search ID or path"));
   search_->setClearButtonEnabled(true);
-  search_->setAccessibleName(translated("Resource search"));
   search_->installEventFilter(this);
   layout->addWidget(search_);
 
   kind_filter_ = new QComboBox(this);
-  kind_filter_->setAccessibleName(translated("Resource type filter"));
   layout->addWidget(kind_filter_);
 
   tree_ = new QTreeWidget(this);
   tree_->setColumnCount(3);
-  tree_->setHeaderLabels({translated("ID"), translated("Type"), translated("Path")});
   tree_->setRootIsDecorated(false);
   tree_->setUniformRowHeights(true);
   tree_->setAllColumnsShowFocus(true);
@@ -62,7 +59,6 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   tree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
   tree_->setTextElideMode(Qt::ElideMiddle);
   tree_->setFocusPolicy(Qt::StrongFocus);
-  tree_->setAccessibleName(translated("Project resources"));
   tree_->installEventFilter(this);
   // 路径列吃掉剩余宽度；省略号由 ElideMiddle 给出，完整路径在悬停提示里。
   tree_->header()->setSectionResizeMode(kIdColumn, QHeaderView::Interactive);
@@ -88,6 +84,27 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   connect(tree_, &QTreeWidget::currentItemChanged, this,
           [this](QTreeWidgetItem* current) { handleCurrentChanged(current); });
 
+  retranslate();
+}
+
+void ResourcePanel::changeEvent(QEvent* event) {
+  QWidget::changeEvent(event);
+  if (event->type() == QEvent::LanguageChange) retranslate();
+}
+
+void ResourcePanel::retranslate() {
+  search_->setPlaceholderText(QCoreApplication::translate("ResourcePanel", "Search ID or path"));
+  search_->setAccessibleName(QCoreApplication::translate("ResourcePanel", "Resource search"));
+  kind_filter_->setAccessibleName(
+      QCoreApplication::translate("ResourcePanel", "Resource type filter"));
+  tree_->setAccessibleName(QCoreApplication::translate("ResourcePanel", "Project resources"));
+  tree_->setHeaderLabels({QCoreApplication::translate("ResourcePanel", "ID"),
+                          QCoreApplication::translate("ResourcePanel", "Type"),
+                          QCoreApplication::translate("ResourcePanel", "Path")});
+  for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
+    auto* row = tree_->topLevelItem(index);
+    row->setText(kKindColumn, displayKind(row->data(kKindColumn, Qt::UserRole).toString()));
+  }
   rebuildKindFilter();
   updateEmptyState();
 }
@@ -108,7 +125,9 @@ void ResourcePanel::setResources(const QJsonArray& resources) {
 
     auto* row = new QTreeWidgetItem(tree_);
     row->setText(kIdColumn, stable_id);
-    row->setText(kKindColumn, fields.value(QStringLiteral("kind")).toString());
+    const auto kind = fields.value(QStringLiteral("kind")).toString();
+    row->setData(kKindColumn, Qt::UserRole, kind);
+    row->setText(kKindColumn, displayKind(kind));
     row->setText(kPathColumn, fields.value(QStringLiteral("path")).toString());
     row->setData(kIdColumn, Qt::UserRole, stable_id);
     row->setToolTip(kIdColumn, stable_id);
@@ -154,7 +173,7 @@ void ResourcePanel::rebuildKindFilter() {
   const QString previous = kind_filter_->currentData().toString();
   QSet<QString> kinds;
   for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
-    const QString kind = tree_->topLevelItem(index)->text(kKindColumn);
+    const QString kind = tree_->topLevelItem(index)->data(kKindColumn, Qt::UserRole).toString();
     if (!kind.isEmpty()) kinds.insert(kind);
   }
   QStringList ordered = kinds.values();
@@ -162,8 +181,8 @@ void ResourcePanel::rebuildKindFilter() {
 
   const QSignalBlocker blocker(kind_filter_);
   kind_filter_->clear();
-  kind_filter_->addItem(translated("All types"), QString());
-  for (const QString& kind : ordered) kind_filter_->addItem(kind, kind);
+  kind_filter_->addItem(QCoreApplication::translate("ResourcePanel", "All types"), QString());
+  for (const QString& kind : ordered) kind_filter_->addItem(displayKind(kind), kind);
   const int restored = kind_filter_->findData(previous);
   kind_filter_->setCurrentIndex(restored >= 0 ? restored : 0);
 }
@@ -173,7 +192,7 @@ void ResourcePanel::applyFilter() {
   const QString kind = kind_filter_->currentData().toString();
   for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
     QTreeWidgetItem* row = tree_->topLevelItem(index);
-    const bool kind_ok = kind.isEmpty() || row->text(kKindColumn) == kind;
+    const bool kind_ok = kind.isEmpty() || row->data(kKindColumn, Qt::UserRole).toString() == kind;
     const bool term_ok = term.isEmpty() ||
                          row->text(kIdColumn).contains(term, Qt::CaseInsensitive) ||
                          row->text(kPathColumn).contains(term, Qt::CaseInsensitive);
@@ -186,12 +205,14 @@ void ResourcePanel::applyFilter() {
 
 void ResourcePanel::updateEmptyState() {
   if (tree_->topLevelItemCount() == 0) {
-    empty_state_->setText(translated("This project has no resources."));
+    empty_state_->setText(
+        QCoreApplication::translate("ResourcePanel", "This project has no resources."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }
   if (!hasVisibleRow()) {
-    empty_state_->setText(translated("No resource matches the current filter."));
+    empty_state_->setText(
+        QCoreApplication::translate("ResourcePanel", "No resource matches the current filter."));
     stack_->setCurrentWidget(empty_state_);
     return;
   }

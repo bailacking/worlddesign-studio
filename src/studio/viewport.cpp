@@ -1,5 +1,6 @@
 #include "viewport.hpp"
 
+#include <QCoreApplication>
 #include <QJsonObject>
 #include <QMouseEvent>
 #include <QPainter>
@@ -10,7 +11,15 @@ namespace wds::studio {
 Viewport::Viewport(std::function<void(QString)> select, QWidget* parent)
     : QWidget(parent), select_(std::move(select)) {
   setMinimumSize(320, 240);
-  setAccessibleName(tr("Scene viewport"));
+  setAccessibleName(QCoreApplication::translate("Viewport", "Scene viewport"));
+}
+
+void Viewport::changeEvent(QEvent* event) {
+  QWidget::changeEvent(event);
+  if (event->type() == QEvent::LanguageChange) {
+    setAccessibleName(QCoreApplication::translate("Viewport", "Scene viewport"));
+    update();
+  }
 }
 
 void Viewport::setScene(QJsonArray entities, bool running) {
@@ -57,10 +66,13 @@ void Viewport::paintEvent(QPaintEvent*) {
     painter.drawText(position + QPointF(12, -8), name);
   }
   painter.setPen(running_ ? QColor("#57c08a") : QColor("#a9adb5"));
-  painter.drawText(QPointF(16, 25), running_ ? tr("Play mode") : tr("2D · Scene"));
+  painter.drawText(QPointF(16, 25), running_
+                                        ? QCoreApplication::translate("Viewport", "Play mode")
+                                        : QCoreApplication::translate("Viewport", "2D · Scene"));
   if (entities_.isEmpty()) {
     painter.setPen(QColor("#a9adb5"));
-    painter.drawText(rect(), Qt::AlignCenter, tr("No entities to display"));
+    painter.drawText(rect(), Qt::AlignCenter,
+                     QCoreApplication::translate("Viewport", "No entities to display"));
   }
 }
 

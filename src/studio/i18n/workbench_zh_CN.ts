@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.1" language="zh_CN" sourcelanguage="en">
+    <context>
+        <name>ProjectDiagnostic</name>
+        <message>
+            <source> · Reopen the project to load its current revision.</source>
+            <translation> · 请重新打开项目以载入最新修订。</translation>
+        </message>
+        <message>
+            <source>already_exists</source>
+            <translation>目标目录已存在</translation>
+        </message>
+        <message>
+            <source>cli_invalid_result</source>
+            <translation>项目工具返回了无效结果</translation>
+        </message>
+        <message>
+            <source>cli_timeout</source>
+            <translation>项目工具响应超时</translation>
+        </message>
+        <message>
+            <source>cli_unavailable</source>
+            <translation>无法启动项目工具</translation>
+        </message>
+        <message>
+            <source>cleanup_incomplete</source>
+            <translation>操作已提交，临时文件尚未清理</translation>
+        </message>
+        <message>
+            <source>duplicate_entity_id</source>
+            <translation>实体 ID 重复</translation>
+        </message>
+        <message>
+            <source>duplicate_id</source>
+            <translation>资源 ID 重复</translation>
+        </message>
+        <message>
+            <source>duplicate_path</source>
+            <translation>资源路径重复</translation>
+        </message>
+        <message>
+            <source>edit_too_large</source>
+            <translation>待编辑文件超出大小限制</translation>
+        </message>
+        <message>
+            <source>invalid_argument</source>
+            <translation>操作参数无效</translation>
+        </message>
+        <message>
+            <source>invalid_entity</source>
+            <translation>找不到指定实体</translation>
+        </message>
+        <message>
+            <source>invalid_entry_scene</source>
+            <translation>入口场景无效</translation>
+        </message>
+        <message>
+            <source>invalid_field</source>
+            <translation>属性或属性值无效</translation>
+        </message>
+        <message>
+            <source>invalid_manifest</source>
+            <translation>项目清单格式无效</translation>
+        </message>
+        <message>
+            <source>invalid_path</source>
+            <translation>资源路径无效</translation>
+        </message>
+        <message>
+            <source>invalid_resource</source>
+            <translation>找不到有效的指定资源</translation>
+        </message>
+        <message>
+            <source>invalid_scene</source>
+            <translation>场景数据无效</translation>
+        </message>
+        <message>
+            <source>io_error</source>
+            <translation>文件读取或写入失败</translation>
+        </message>
+        <message>
+            <source>missing_file</source>
+            <translation>找不到资源文件</translation>
+        </message>
+        <message>
+            <source>missing_manifest</source>
+            <translation>找不到项目清单</translation>
+        </message>
+        <message>
+            <source>missing_reference</source>
+            <translation>资源引用的目标不存在</translation>
+        </message>
+        <message>
+            <source>recovery_required</source>
+            <translation>项目有未完成的写入，需要恢复</translation>
+        </message>
+        <message>
+            <source>revision_conflict</source>
+            <translation>项目修订已变更</translation>
+        </message>
+        <message>
+            <source>revision_exhausted</source>
+            <translation>项目修订号已到上限</translation>
+        </message>
+        <message>
+            <source>scene_too_large</source>
+            <translation>场景超出文件大小或实体数量限制</translation>
+        </message>
+        <message>
+            <source>unsafe_path</source>
+            <translation>无法访问此路径，请检查目录和链接</translation>
+        </message>
+        <message>
+            <source>unsupported_scene_version</source>
+            <translation>当前工作台不支持此场景版本</translation>
+        </message>
+        <message>
+            <source>unsupported_version</source>
+            <translation>当前工作台不支持此项目版本</translation>
+        </message>
+    </context>
+    <context>
+        <name>ResourcePanel</name>
+        <message>
+            <source>Scene</source>
+            <translation>场景</translation>
+        </message>
+        <message>
+            <source>Data</source>
+            <translation>数据</translation>
+        </message>
+        <message>
+            <source>Search ID or path</source>
+            <translation>搜索 ID 或路径</translation>
+        </message>
+        <message>
+            <source>Resource search</source>
+            <translation>资源搜索</translation>
+        </message>
+        <message>
+            <source>Resource type filter</source>
+            <translation>资源类型筛选</translation>
+        </message>
+        <message>
+            <source>Project resources</source>
+            <translation>项目资源</translation>
+        </message>
+        <message>
+            <source>ID</source>
+            <translation>ID</translation>
+        </message>
+        <message>
+            <source>Type</source>
+            <translation>类型</translation>
+        </message>
+        <message>
+            <source>Path</source>
+            <translation>路径</translation>
+        </message>
+        <message>
+            <source>All types</source>
+            <translation>全部类型</translation>
+        </message>
+        <message>
+            <source>This project has no resources.</source>
+            <translation>当前项目没有资源。</translation>
+        </message>
+        <message>
+            <source>No resource matches the current filter.</source>
+            <translation>没有符合筛选条件的资源。</translation>
+        </message>
+    </context>
+    <context>
+        <name>SceneTreePanel</name>
+        <message>
+            <source>Search entities</source>
+            <translation>搜索实体</translation>
+        </message>
+        <message>
+            <source>Entity search</source>
+            <translation>实体搜索</translation>
+        </message>
+        <message>
+            <source>Scene entities</source>
+            <translation>场景实体</translation>
+        </message>
+        <message>
+            <source>This scene has no entities.</source>
+            <translation>当前场景没有实体。</translation>
+        </message>
+        <message>
+            <source>No entity matches the search.</source>
+            <translation>没有符合搜索条件的实体。</translation>
+        </message>
+    </context>
+    <context>
+        <name>Viewport</name>
+        <message>
+            <source>Scene viewport</source>
+            <translation>场景视口</translation>
+        </message>
+        <message>
+            <source>Play mode</source>
+            <translation>试玩模式</translation>
+        </message>
+        <message>
+            <source>2D · Scene</source>
+            <translation>二维场景</translation>
+        </message>
+        <message>
+            <source>No entities to display</source>
+            <translation>没有可显示的实体</translation>
+        </message>
+    </context>
+    <context>
+        <name>wds::studio::Workbench</name>
+        <message>
+            <source>Open a WDS project to begin.</source>
+            <translation>打开一个 WDS 项目开始编辑。</translation>
+        </message>
+        <message>
+            <source>Playback reached its final tick. Select Stop to edit.</source>
+            <translation>试玩已到达最后一帧。点击“停止”返回编辑。</translation>
+        </message>
+        <message>
+            <source>&amp;Project</source>
+            <translation>项目(&amp;P)</translation>
+        </message>
+        <message>
+            <source>&amp;Scene</source>
+            <translation>场景(&amp;S)</translation>
+        </message>
+        <message>
+            <source>&amp;View</source>
+            <translation>视图(&amp;V)</translation>
+        </message>
+        <message>
+            <source>Se&amp;ttings</source>
+            <translation>设置(&amp;T)</translation>
+        </message>
+        <message>
+            <source>Interface Language…</source>
+            <translation>界面语言…</translation>
+        </message>
+        <message>
+            <source>&amp;Open Project…</source>
+            <translation>打开项目(&amp;O)…</translation>
+        </message>
+        <message>
+            <source>&amp;New Project…</source>
+            <translation>新建项目(&amp;N)…</translation>
+        </message>
+        <message>
+            <source>&amp;Save Property</source>
+            <translation>保存属性(&amp;S)</translation>
+        </message>
+        <message>
+            <source>Discard Property Draft</source>
+            <translation>放弃属性草稿</translation>
+        </message>
+        <message>
+            <source>Close Project</source>
+            <translation>关闭项目</translation>
+        </message>
+        <message>
+            <source>&amp;Play</source>
+            <translation>试玩(&amp;P)</translation>
+        </message>
+        <message>
+            <source>S&amp;top</source>
+            <translation>停止(&amp;T)</translation>
+        </message>
+        <message>
+            <source>Workspace</source>
+            <translation>工作区</translation>
+        </message>
+        <message>
+            <source>Scene</source>
+            <translation>场景</translation>
+        </message>
+        <message>
+            <source>Inspector</source>
+            <translation>属性</translation>
+        </message>
+        <message>
+            <source>Resources</source>
+            <translation>资源</translation>
+        </message>
+        <message>
+            <source>Output</source>
+            <translation>输出</translation>
+        </message>
+        <message>
+            <source>Position X</source>
+            <translation>X 位置</translation>
+        </message>
+        <message>
+            <source>Position Y</source>
+            <translation>Y 位置</translation>
+        </message>
+        <message>
+            <source>Velocity X</source>
+            <translation>X 速度</translation>
+        </message>
+        <message>
+            <source>Velocity Y</source>
+            <translation>Y 速度</translation>
+        </message>
+        <message>
+            <source>Select an entity</source>
+            <translation>选择一个实体</translation>
+        </message>
+        <message>
+            <source>Settings</source>
+            <translation>设置</translation>
+        </message>
+        <message>
+            <source>Interface language</source>
+            <translation>界面语言</translation>
+        </message>
+        <message>
+            <source>Apply</source>
+            <translation>应用</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
+            <source>Could not apply the interface language.</source>
+            <translation>无法应用界面语言。请检查工作台设置是否可写。</translation>
+        </message>
+        <message>
+            <source>Open WDS Project</source>
+            <translation>打开 WDS 项目</translation>
+        </message>
+        <message>
+            <source>Choose Project Parent</source>
+            <translation>选择项目的上级目录</translation>
+        </message>
+        <message>
+            <source>New WDS Project</source>
+            <translation>新建 WDS 项目</translation>
+        </message>
+        <message>
+            <source>Project ID</source>
+            <translation>项目 ID</translation>
+        </message>
+        <message>
+            <source>Use a project ID, such as my-game.</source>
+            <translation>请输入项目 ID，例如 my-game。</translation>
+        </message>
+        <message>
+            <source>Unsaved Property</source>
+            <translation>属性尚未保存</translation>
+        </message>
+        <message>
+            <source>Discard the unsaved property change?</source>
+            <translation>放弃尚未保存的属性改动吗？</translation>
+        </message>
+        <message>
+            <source>Project closed.</source>
+            <translation>项目已关闭。</translation>
+        </message>
+        <message>
+            <source>Project ready · %1</source>
+            <translation>项目已打开 · %1</translation>
+        </message>
+        <message>
+            <source>Saved %1 · %2 → %3</source>
+            <translation>已保存 %1 · %2 → %3</translation>
+        </message>
+        <message>
+            <source>Playing · tick %1</source>
+            <translation>正在试玩 · 第 %1 步</translation>
+        </message>
+        <message>
+            <source>Playback stopped.</source>
+            <translation>已停止试玩。</translation>
+        </message>
+        <message>
+            <source>No project open</source>
+            <translation>未打开项目</translation>
+        </message>
+        <message>
+            <source>Revision %1</source>
+            <translation>修订 %1</translation>
+        </message>
+        <message>
+            <source> · Unsaved</source>
+            <translation> · 未保存</translation>
+        </message>
+        <message>
+            <source>Unsaved · %1 → %2</source>
+            <translation>未保存 · %1 → %2</translation>
+        </message>
+        <message>
+            <source>WDS Studio</source>
+            <translation>WDS 工作台</translation>
+        </message>
+        <message>
+            <source>%1%2 — WDS Studio</source>
+            <translation>%1%2 — WDS 工作台</translation>
+        </message>
+    </context>
+</TS>
