@@ -169,7 +169,8 @@ void World::write(std::ostream& output) const {
   output.put('\n');
 }
 
-void Player::step(const World& world, double forward, double strafe, bool jump, double seconds) {
+void Player::step(const World& world, double forward, double strafe, bool jump, double seconds,
+                  int jump_speed) {
   if (!(seconds > 0) || !std::isfinite(seconds) || !std::isfinite(forward) ||
       !std::isfinite(strafe)) {
     return;
@@ -184,7 +185,7 @@ void Player::step(const World& world, double forward, double strafe, bool jump, 
   if (!world.collides({feet.x + dx, feet.y, feet.z})) feet.x += dx;
   if (!world.collides({feet.x, feet.y, feet.z + dz})) feet.z += dz;
 
-  if (jump && grounded) fall_speed = 6;
+  if (jump && grounded) fall_speed = jump_speed;
   fall_speed = std::max(-12.0, fall_speed - 18 * seconds);
   const double dy = fall_speed * seconds;
   if (!world.collides({feet.x, feet.y + dy, feet.z})) {

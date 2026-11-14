@@ -75,6 +75,34 @@ Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。WASD 移动，方�
 
 存档位于 `%LOCALAPPDATA%\WDS\sandbox-v1.dat`。首次打开生成默认地形，损坏的旧存档会保留并提示当前会话无法覆盖。
 
+### 预览、应用与恢复规则
+
+外部 Agent 可先查询当前跳跃速度并展示差异。用户确认后，用当前值作为前置条件应用修改。以下示例假定原值为 6：
+
+```powershell
+$rulesPath = Join-Path $env:LOCALAPPDATA 'WDS/sandbox-rules-v1.txt'
+./build/dev/wds_cli.exe --sandbox-rules $rulesPath show
+./build/dev/wds_cli.exe --sandbox-rules $rulesPath preview 6 8
+./build/dev/wds_cli.exe --sandbox-rules $rulesPath apply 6 8
+# 重开沙盒，观察 Jump speed: 8 并尝试跳跃。
+./build/dev/wds_cli.exe --sandbox-rules $rulesPath apply 8 6
+```
+
+窗口在启动时读取规则。有效整数为 3 到 9。预期值过时会返回冲突，文件保持原值。试验按单写入者运行，规则文件与地形存档独立。
+
+### 生成独立运行目录
+
+在 Windows x64 的 MSVC 开发者终端执行：
+
+```powershell
+cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/release
+ctest --test-dir build/release --output-on-failure --no-tests=error
+cmake --install build/release --prefix build/m1-windows-x64
+```
+
+产物含 `wds_sandbox.exe`、`wds_cli.exe` 与 `LICENSE`。从产物目录直接启动沙盒，Release 版采用静态 MSVC 运行库。
+
 ## 文档检查
 
 检查本地链接与页面锚点、术语与实现状态、要求的主题归属、来源和许可说明。HTML 应保持单文件自包含，不能依赖远程字体、脚本、图片或运行时获取的文档内容。

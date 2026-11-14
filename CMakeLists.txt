@@ -9,6 +9,9 @@ project(
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # 编译告警统一挂在接口目标上，后续引擎目标直接链接即可继承同一组规则。
 add_library(wds_compile_options INTERFACE)
@@ -36,9 +39,10 @@ target_link_libraries(wds_m0 PRIVATE wds_compile_options)
 add_executable(wds_cli src/cli.cpp)
 target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
 
-add_library(wds_voxel STATIC src/voxel_world.cpp)
+add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
+target_link_libraries(wds_cli PRIVATE wds_voxel)
 
 if(WIN32)
   add_executable(wds_editor WIN32 src/windows_editor.cpp)
@@ -53,7 +57,11 @@ if(WIN32)
   if(MINGW)
     target_link_options(wds_sandbox PRIVATE -municode)
   endif()
+  install(TARGETS wds_sandbox RUNTIME DESTINATION .)
 endif()
+
+install(TARGETS wds_cli RUNTIME DESTINATION .)
+install(FILES LICENSE DESTINATION .)
 
 add_executable(wds_plugin_test tests/plugin_host.cpp)
 target_link_libraries(wds_plugin_test PRIVATE wds_m0 wds_compile_options)
@@ -62,6 +70,12 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_test(
+  NAME sandbox_rules
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/rules-fixture
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_rules.cmake
+)
 add_test(
   NAME rename_flow
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

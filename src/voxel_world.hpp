@@ -47,7 +47,8 @@ struct Player {
   double fall_speed = 0;
   bool grounded = false;
 
-  void step(const World& world, double forward, double strafe, bool jump, double seconds);
+  void step(const World& world, double forward, double strafe, bool jump, double seconds,
+            int jump_speed = 6);
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
 };

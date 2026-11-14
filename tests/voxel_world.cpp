@@ -56,4 +56,11 @@ int main() {
   std::istringstream corrupt("wds-voxel-v1 24 12 24\n00");
   check(!reloaded.read(corrupt) && reloaded.block(12, 3, 11) == Block::air,
         "invalid save must preserve the current world");
+
+  Player standard_jump, higher_jump;
+  standard_jump.step(world, 0, 0, false, 0.01);
+  higher_jump.step(world, 0, 0, false, 0.01);
+  standard_jump.step(world, 0, 0, true, 0.01, 6);
+  higher_jump.step(world, 0, 0, true, 0.01, 8);
+  check(higher_jump.feet.y > standard_jump.feet.y, "rule must change actual jump motion");
 }

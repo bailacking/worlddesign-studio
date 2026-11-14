@@ -1,3 +1,4 @@
+#include "sandbox_rules.hpp"
 #include "voxel_world.hpp"
 
 #define WIN32_LEAN_AND_MEAN
@@ -32,6 +33,8 @@ struct Sandbox {
   fs::path save_path;
   std::wstring status;
   bool save_blocked = false;
+  int jump_speed = wds::voxel::default_jump;
+  bool invalid_rules = false;
 };
 
 void load(Sandbox& app) {
@@ -48,6 +51,9 @@ void load(Sandbox& app) {
   }
   local.resize(length);
   app.save_path = fs::path(local) / L"WDS" / L"sandbox-v1.dat";
+  const auto jump = wds::voxel::read_jump(app.save_path.parent_path() / L"sandbox-rules-v1.txt");
+  if (jump) app.jump_speed = *jump;
+  app.invalid_rules = !jump;
   std::error_code error;
   const auto existing = fs::symlink_status(app.save_path, error);
   if (existing.type() == fs::file_type::not_found) {
@@ -106,7 +112,8 @@ void tick(HWND window, Sandbox& app) {
   player.yaw = std::remainder(player.yaw + axis(VK_RIGHT, VK_LEFT) * seconds * 1.8, 6.2831853);
   player.pitch = std::clamp(player.pitch + axis(VK_UP, VK_DOWN) * seconds * 1.4, -1.3, 1.3);
   const bool jump_down = down(VK_SPACE);
-  player.step(app.world, axis('W', 'S'), axis('D', 'A'), jump_down && !app.jump_was_down, seconds);
+  player.step(app.world, axis('W', 'S'), axis('D', 'A'), jump_down && !app.jump_was_down, seconds,
+              app.jump_speed);
   app.jump_was_down = jump_down;
   InvalidateRect(window, nullptr, FALSE);
 }
@@ -158,6 +165,9 @@ void paint(HWND window, Sandbox& app) {
   SetTextColor(dc, RGB(20, 33, 45));
   TextOutW(dc, 16, 16, controls, static_cast<int>(std::size(controls) - 1));
   TextOutW(dc, 16, 36, app.status.c_str(), static_cast<int>(app.status.size()));
+  const auto rule = L"Jump speed: " + std::to_wstring(app.jump_speed) +
+                    (app.invalid_rules ? L" (invalid rules file, using default)" : L"");
+  TextOutW(dc, 16, 56, rule.c_str(), static_cast<int>(rule.size()));
   EndPaint(window, &paint_data);
 }
 
