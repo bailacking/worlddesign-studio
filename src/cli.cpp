@@ -2,28 +2,49 @@
 #include <cstdint>
 #include <iostream>
 #include <string_view>
+#include <vector>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #include "sandbox_rules.hpp"
 #include "workspace.hpp"
 
 namespace {
 
-int rules(int argc, char** argv) {
+std::filesystem::path path_from_utf8(std::string_view text) {
+  return std::filesystem::path(std::u8string(text.begin(), text.end()));
+}
+
+int rules(int argc, char** argv, bool project = false) {
   using namespace wds::voxel;
+  const auto input = path_from_utf8(argv[2]);
+  const auto file = project ? input / project_rules : input;
+  if (project && argc == 4 && std::string_view(argv[3]) == "create") {
+    if (!create_sandbox_project(input)) {
+      std::cerr << "create_failed: choose a new directory under an existing folder\n";
+      return 1;
+    }
+    std::cout << "created: voxel-sandbox-v1 jump_speed=" << default_jump << '\n';
+    return 0;
+  }
   const bool show = argc == 4 && std::string_view(argv[3]) == "show";
   const bool preview = argc == 6 && std::string_view(argv[3]) == "preview";
   const bool apply = argc == 6 && std::string_view(argv[3]) == "apply";
   if (!show && !preview && !apply) {
-    std::cerr << "Usage: wds_cli --sandbox-rules FILE show | --sandbox-rules FILE "
-                 "preview|apply EXPECTED NEW\n";
+    std::cerr << "Usage: wds_cli --sandbox-project DIR create|show|preview|apply\n"
+                 "       preview and apply take EXPECTED NEW.\n";
     return 2;
   }
-  const auto current = read_jump(argv[2]);
+  const auto current = project ? read_project_jump(input) : read_jump(file);
   if (!current) {
     std::cerr << "invalid_rules\n";
     return 1;
   }
   if (show) {
+    if (project) std::cout << "template=voxel-sandbox-v1\n";
     std::cout << "jump_speed=" << *current << '\n';
     return 0;
   }
@@ -43,7 +64,7 @@ int rules(int argc, char** argv) {
     std::cerr << "rule_conflict: jump_speed=" << *current << '\n';
     return 1;
   }
-  if (apply && next != *current && !write_jump(argv[2], next)) {
+  if (apply && next != *current && !write_jump(file, next)) {
     std::cerr << "save_failed\n";
     return 1;
   }
@@ -63,7 +84,8 @@ int print_result(const wds::RenameResult& result) {
 }
 
 int run(int argc, char** argv) {
-  if (argc > 1 && std::string_view(argv[1]) == "--sandbox-rules") return rules(argc, argv);
+  if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-rules") return rules(argc, argv);
+  if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-project") return rules(argc, argv, true);
   const bool opening = argc == 3 && std::string_view(argv[2]) == "open";
   const bool renaming = argc == 6 && std::string_view(argv[2]) == "asset.rename";
   if (!opening && !renaming) {
@@ -80,11 +102,31 @@ int run(int argc, char** argv) {
     }
   }
 
-  wds::Workspace workspace(argv[1]);
+  wds::Workspace workspace(path_from_utf8(argv[1]));
   if (opening) return print_result(workspace.open());
   return print_result(workspace.rename({argv[3], argv[4], revision}));
 }
 
 }  // namespace
 
+#ifdef _WIN32
+int wmain(int argc, wchar_t** argv) {
+  std::vector<std::string> arguments;
+  for (int index = 0; index < argc; ++index) {
+    const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1, nullptr, 0,
+                                         nullptr, nullptr);
+    if (size <= 0) return 2;
+    std::string value(static_cast<std::size_t>(size), '\0');
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1, value.data(), size,
+                            nullptr, nullptr) == 0)
+      return 2;
+    value.pop_back();
+    arguments.push_back(std::move(value));
+  }
+  std::vector<char*> pointers;
+  for (auto& arg : arguments) pointers.push_back(arg.data());
+  return run(argc, pointers.data());
+}
+#else
 int main(int argc, char** argv) { return run(argc, argv); }
+#endif

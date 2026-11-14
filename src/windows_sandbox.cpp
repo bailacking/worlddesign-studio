@@ -3,7 +3,10 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+// clang-format off
 #include <windows.h>
+#include <shellapi.h>
+// clang-format on
 
 #include <algorithm>
 #include <array>
@@ -35,25 +38,43 @@ struct Sandbox {
   bool save_blocked = false;
   int jump_speed = wds::voxel::default_jump;
   bool invalid_rules = false;
+  bool mouse_look = false;
+  int pending_jump = 0;
+  fs::path rules_path;
+  Clock::time_point edit_feedback{};
+  bool project_mode = false;
 };
 
-void load(Sandbox& app) {
-  const auto size = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
-  if (size == 0) {
-    app.status = L"Save folder unavailable";
-    return;
+void load(Sandbox& app, const fs::path& project) {
+  if (!project.empty()) {
+    app.project_mode = true;
+    const auto jump = wds::voxel::read_project_jump(project);
+    if (!jump) {
+      app.invalid_rules = true;
+      return;
+    }
+    app.jump_speed = *jump;
+    app.rules_path = project / wds::voxel::project_rules;
+    app.save_path = project / wds::voxel::project_save;
+  } else {
+    const auto size = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+    if (size == 0) {
+      app.status = L"Save folder unavailable";
+      return;
+    }
+    std::wstring local(size, L'\0');
+    const auto length = GetEnvironmentVariableW(L"LOCALAPPDATA", local.data(), size);
+    if (length == 0 || length >= size) {
+      app.status = L"Save folder unavailable";
+      return;
+    }
+    local.resize(length);
+    app.save_path = fs::path(local) / L"WDS" / wds::voxel::project_save;
+    app.rules_path = app.save_path.parent_path() / wds::voxel::project_rules;
+    const auto jump = wds::voxel::read_jump(app.rules_path);
+    if (jump) app.jump_speed = *jump;
+    app.invalid_rules = !jump;
   }
-  std::wstring local(size, L'\0');
-  const auto length = GetEnvironmentVariableW(L"LOCALAPPDATA", local.data(), size);
-  if (length == 0 || length >= size) {
-    app.status = L"Save folder unavailable";
-    return;
-  }
-  local.resize(length);
-  app.save_path = fs::path(local) / L"WDS" / L"sandbox-v1.dat";
-  const auto jump = wds::voxel::read_jump(app.save_path.parent_path() / L"sandbox-rules-v1.txt");
-  if (jump) app.jump_speed = *jump;
-  app.invalid_rules = !jump;
   std::error_code error;
   const auto existing = fs::symlink_status(app.save_path, error);
   if (existing.type() == fs::file_type::not_found) {
@@ -69,6 +90,23 @@ void load(Sandbox& app) {
   }
   app.save_blocked = true;
   app.status = L"Save unreadable. Original file kept.";
+}
+
+void mouse_mode(HWND window, Sandbox& app, bool enabled) {
+  if (enabled == app.mouse_look) return;
+  if (enabled) {
+    RAWINPUTDEVICE input{1, 2, 0, window};
+    if (!RegisterRawInputDevices(&input, 1, sizeof(input))) return;
+    RECT area{};
+    GetClientRect(window, &area);
+    MapWindowPoints(window, nullptr, reinterpret_cast<POINT*>(&area), 2);
+    if (!ClipCursor(&area)) return;
+  } else {
+    ClipCursor(nullptr);
+  }
+  app.mouse_look = enabled;
+  ShowCursor(!enabled);
+  InvalidateRect(window, nullptr, FALSE);
 }
 
 void save(Sandbox& app) {
@@ -104,7 +142,7 @@ void tick(HWND window, Sandbox& app) {
   const auto seconds =
       std::clamp(std::chrono::duration<double>(now - app.previous).count(), 0.0, 0.025);
   app.previous = now;
-  if (GetForegroundWindow() != window) {
+  if (GetForegroundWindow() != window || app.pending_jump != 0) {
     app.jump_was_down = down(VK_SPACE);
     return;
   }
@@ -153,13 +191,21 @@ void paint(HWND window, Sandbox& app) {
 
   const int cx = width / 2;
   const int cy = height / 2;
-  SelectObject(dc, GetStockObject(WHITE_PEN));
+  const auto target = app.world.cast(eye, forward, 7);
+  const auto feedback = Clock::now() < app.edit_feedback;
+  const auto pen = CreatePen(PS_SOLID, 2,
+                             feedback                                 ? RGB(115, 255, 153)
+                             : target.block == wds::voxel::Block::air ? RGB(235, 239, 245)
+                                                                      : RGB(255, 216, 80));
+  const auto previous_pen = pen ? SelectObject(dc, pen) : nullptr;
   MoveToEx(dc, cx - 5, cy, nullptr);
   LineTo(dc, cx + 6, cy);
   MoveToEx(dc, cx, cy - 5, nullptr);
   LineTo(dc, cx, cy + 6);
+  if (previous_pen) SelectObject(dc, previous_pen);
+  if (pen) DeleteObject(pen);
   constexpr wchar_t controls[] =
-      L"WASD Move   Arrows Look   Space Jump   LMB Break   RMB Place   F5 Save";
+      L"WASD Move   Mouse / arrows Look   Space Jump   LMB Break   RMB Place   F5 Save";
   SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
   SetBkMode(dc, TRANSPARENT);
   SetTextColor(dc, RGB(20, 33, 45));
@@ -168,6 +214,13 @@ void paint(HWND window, Sandbox& app) {
   const auto rule = L"Jump speed: " + std::to_wstring(app.jump_speed) +
                     (app.invalid_rules ? L" (invalid rules file, using default)" : L"");
   TextOutW(dc, 16, 56, rule.c_str(), static_cast<int>(rule.size()));
+  const auto edit =
+      app.pending_jump != 0
+          ? L"Jump speed: " + std::to_wstring(app.jump_speed) + L" -> " +
+                std::to_wstring(app.pending_jump) + L"   +/- Adjust   Enter Apply   Esc Cancel"
+          : std::wstring(app.mouse_look ? L"Esc Release mouse" : L"Click to capture mouse") +
+                L"   F6 Edit jump rule";
+  TextOutW(dc, 16, 76, edit.c_str(), static_cast<int>(edit.size()));
   EndPaint(window, &paint_data);
 }
 
@@ -186,22 +239,83 @@ LRESULT CALLBACK handle(HWND window, UINT message, WPARAM param, LPARAM data) {
     case WM_PAINT:
       paint(window, *app);
       return 0;
+    case WM_KILLFOCUS:
+      mouse_mode(window, *app, false);
+      return 0;
+    case WM_INPUT: {
+      RAWINPUT input{};
+      UINT size = sizeof(input);
+      if (app->mouse_look &&
+          GetRawInputData(reinterpret_cast<HRAWINPUT>(data), RID_INPUT, &input, &size,
+                          sizeof(RAWINPUTHEADER)) == sizeof(input) &&
+          input.header.dwType == RIM_TYPEMOUSE &&
+          (input.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+        app->player.yaw =
+            std::remainder(app->player.yaw + input.data.mouse.lLastX * 0.0025, 6.2831853);
+        app->player.pitch =
+            std::clamp(app->player.pitch - input.data.mouse.lLastY * 0.0025, -1.3, 1.3);
+      }
+      return DefWindowProcW(window, message, param, data);
+    }
     case WM_KEYDOWN:
-      if (param == VK_ESCAPE) DestroyWindow(window);
+      if (param == VK_ESCAPE) {
+        if (app->pending_jump != 0)
+          app->pending_jump = 0;
+        else if (app->mouse_look)
+          mouse_mode(window, *app, false);
+        else
+          DestroyWindow(window);
+      }
+      if (param == VK_F6 && app->pending_jump == 0 && !app->rules_path.empty() &&
+          !app->invalid_rules) {
+        mouse_mode(window, *app, false);
+        app->pending_jump = app->jump_speed;
+      }
+      if (app->pending_jump != 0) {
+        if (param == VK_ADD || param == VK_OEM_PLUS)
+          app->pending_jump = std::min(9, app->pending_jump + 1);
+        if (param == VK_SUBTRACT || param == VK_OEM_MINUS)
+          app->pending_jump = std::max(3, app->pending_jump - 1);
+        if (param == VK_RETURN) {
+          const auto current = app->project_mode
+                                   ? wds::voxel::read_project_jump(app->rules_path.parent_path())
+                                   : wds::voxel::read_jump(app->rules_path);
+          if (current != app->jump_speed) {
+            app->status = L"Rules changed on disk. Reopen the project.";
+          } else if (app->pending_jump == app->jump_speed ||
+                     wds::voxel::write_jump(app->rules_path, app->pending_jump)) {
+            app->jump_speed = app->pending_jump;
+            app->status = L"Jump rule saved";
+          } else {
+            app->status = L"Could not save jump rule";
+          }
+          app->pending_jump = 0;
+        }
+      }
       if (param == VK_F5 && (data & (1L << 30)) == 0) {
         save(*app);
         InvalidateRect(window, nullptr, FALSE);
       }
+      InvalidateRect(window, nullptr, FALSE);
       return 0;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
-      app->status = app->world.edit(app->player.feet, app->player.eye(), app->player.view(),
-                                    message == WM_RBUTTONDOWN)
-                        ? L"World changed. F5 to save."
-                        : L"Cannot edit that block";
+      if (app->pending_jump != 0) return 0;
+      if (!app->mouse_look) {
+        mouse_mode(window, *app, true);
+        return 0;
+      }
+      if (app->world.edit(app->player.feet, app->player.eye(), app->player.view(),
+                          message == WM_RBUTTONDOWN)) {
+        app->status = message == WM_RBUTTONDOWN ? L"Block placed" : L"Block broken";
+        app->edit_feedback = Clock::now() + std::chrono::milliseconds(160);
+      } else {
+        app->status = L"Cannot edit that block";
+      }
       InvalidateRect(window, nullptr, FALSE);
       return 0;
     case WM_DESTROY:
+      mouse_mode(window, *app, false);
       KillTimer(window, frame_timer);
       PostQuitMessage(0);
       return 0;
@@ -220,8 +334,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_window) {
   type.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
   if (!RegisterClassW(&type)) return 2;
 
+  int argc = 0;
+  auto* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  if (!argv) return 2;
+  const bool project_mode = argc == 3 && std::wstring_view(argv[1]) == L"--project";
+  const auto project = project_mode ? fs::path(argv[2]) : fs::path{};
+  LocalFree(argv);
+  if (argc != 1 && (!project_mode || project.empty())) {
+    MessageBoxW(nullptr, L"Usage: wds_sandbox --project DIRECTORY", L"WDS", MB_OK | MB_ICONERROR);
+    return 2;
+  }
   Sandbox app;
-  load(app);
+  load(app, project);
+  if (project_mode && app.invalid_rules) {
+    MessageBoxW(nullptr, L"Cannot open the project rules file.", L"WDS", MB_OK | MB_ICONERROR);
+    return 1;
+  }
   const auto window =
       CreateWindowExW(0, type.lpszClassName, L"WDS | Block World",
                       WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT,

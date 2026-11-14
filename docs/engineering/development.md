@@ -71,9 +71,23 @@ Copy-Item -Recurse examples/m0-project build/gui-demo
 
 ## 运行方块沙盒
 
-Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。WASD 移动，方向键转向和抬头低头，空格跳跃。将准星对准方块，左键破坏，右键放置石块。F5 保存，Esc 退出。再次打开会恢复已保存的地形，玩家回到出生点。关闭前手动保存修改。
+Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。
 
 存档位于 `%LOCALAPPDATA%\WDS\sandbox-v1.dat`。首次打开生成默认地形，损坏的旧存档会保留并提示当前会话无法覆盖。
+
+### 从模板创建可编辑项目
+
+在一个已有目录下为项目选一个新的目录名。命令行创建的项目可交给人类继续编辑。
+
+```powershell
+./build/dev/wds_cli.exe --sandbox-project build/stone-island create
+./build/dev/wds_cli.exe --sandbox-project build/stone-island show
+./build/dev/wds_cli.exe --sandbox-project build/stone-island preview 6 8
+./build/dev/wds_cli.exe --sandbox-project build/stone-island apply 6 8
+./build/dev/wds_sandbox.exe --project build/stone-island
+```
+
+窗口中按 F6 编辑跳跃规则，用加减键预览数值，Enter 应用，Esc 取消。变更保存到项目的 `sandbox-rules-v1.txt`，命令行可再次读取。F5 将地形保存到同一项目的 `sandbox-v1.dat`。项目内的规则和地形可随目录复制和交接。
 
 ### 预览、应用与恢复规则
 

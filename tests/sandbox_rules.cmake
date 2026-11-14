@@ -29,3 +29,28 @@ file(READ "${path}" after)
 if(NOT after STREQUAL "invalid\n")
   message(FATAL_ERROR "Invalid rules must remain unchanged")
 endif()
+
+function(project_run directory expected pattern)
+  execute_process(
+    COMMAND "${CLI}" --sandbox-project "${directory}" ${ARGN}
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE detail
+  )
+  if(NOT status STREQUAL expected OR NOT "${output}${detail}" MATCHES "${pattern}")
+    message(FATAL_ERROR "Unexpected project result: ${status} ${output}${detail}")
+  endif()
+endfunction()
+
+string(RANDOM LENGTH 12 nonce)
+set(first "${ROOT}/试验 ${nonce}")
+set(second "${ROOT}/second-${nonce}")
+project_run("${first}" 1 "invalid_rules" show)
+project_run("${first}" 0 "created: voxel-sandbox-v1" create)
+project_run("${second}" 0 "created: voxel-sandbox-v1" create)
+project_run("${first}" 0 "applied: jump_speed 6 -> 8" apply 6 8)
+project_run("${first}" 1 "create_failed" create)
+project_run("${first}" 0 "jump_speed=8" show)
+project_run("${second}" 0 "jump_speed=6" show)
+foreach(directory IN ITEMS "${first}" "${second}")
+  file(REMOVE "${directory}/sandbox-rules-v1.txt")
+  # Leave the empty test directory in build; no recursive removal is needed.
+endforeach()
