@@ -69,6 +69,22 @@ Copy-Item -Recurse examples/m0-project build/gui-demo
 
 窗口中点击 **Open / Recover**，确认修订号为 0，再点击 **Rename**。两个项目的修订号都应变为 1，`assets/stone.txt` 保留源文件内容。用 `wds_cli PROJECT open` 可重开并检查修订。改名请求需指定当前修订号。
 
+## 创建通用平台项目
+
+从仓库根运行以下命令。目标目录须为新目录，父目录须已存在：
+
+```powershell
+./build/dev/wds_cli.exe project create build/first-project first-project
+./build/dev/wds_cli.exe project open build/first-project
+./build/dev/wds_cli.exe project validate build/first-project
+./build/dev/wds_cli.exe project resources build/first-project
+./build/dev/wds_cli.exe --project-operations
+```
+
+命令输出 JSON，包含状态、项目 ID 和修订号。打开与验证还返回入口场景和资源数量，`resources` 列出 ID、类型、路径及引用。失败附错误码和位置。当前生成的入口场景是占位资源。
+
+Windows 可运行 `./build/dev/wds_studio.exe`，填入项目路径，选择 **Open** 或指定项目 ID 后选择 **Create**。窗口显示当前修订、入口场景、资源列表或诊断。窗口和 CLI 使用同一项目服务。[格式与诊断](../architecture/project-format.md)
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。
@@ -125,7 +141,7 @@ ctest --test-dir build/release --output-on-failure --no-tests=error
 cmake --install build/release --prefix build/m1-windows-x64
 ```
 
-产物含 `wds_sandbox.exe`、`wds_cli.exe` 与 `LICENSE`。从产物目录直接启动沙盒，Release 版采用静态 MSVC 运行库。
+产物含 `wds_sandbox.exe`、`wds_cli.exe`、`LICENSE` 与 JSON 依赖许可。可从产物目录直接启动沙盒，Release 版采用静态 MSVC 运行库。
 
 ## 文档检查
 

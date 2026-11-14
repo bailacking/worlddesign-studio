@@ -10,6 +10,7 @@
 #include <windows.h>
 #endif
 
+#include "platform_project.hpp"
 #include "sandbox_rules.hpp"
 #include "voxel_content.hpp"
 #include "workspace.hpp"
@@ -103,12 +104,36 @@ int print_result(const wds::RenameResult& result) {
 }
 
 int run(int argc, char** argv) {
+  if (argc == 2 && std::string_view(argv[1]) == "--project-operations") {
+    std::cout << wds::platform::project_operations_json() << '\n';
+    return 0;
+  }
+  if (argc >= 4 && std::string_view(argv[1]) == "project" &&
+      std::string_view(argv[2]) != "asset.rename") {
+    const std::string_view action(argv[2]);
+    const bool create = action == "create" && argc == 5;
+    const bool read =
+        argc == 4 && (action == "validate" || action == "open" || action == "resources");
+    if (!create && !read) {
+      std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
+                   "DIRECTORY\n";
+      return 2;
+    }
+    const auto directory = path_from_utf8(argv[3]);
+    const auto result = create ? wds::platform::create_project(directory, argv[4])
+                               : wds::platform::open_project(directory);
+    std::cout << (action == "resources" ? wds::platform::project_resources_json(result)
+                                        : wds::platform::project_result_json(result))
+              << '\n';
+    return result.project ? 0 : 1;
+  }
   if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-rules") return rules(argc, argv);
   if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-project") return rules(argc, argv, true);
   const bool opening = argc == 3 && std::string_view(argv[2]) == "open";
   const bool renaming = argc == 6 && std::string_view(argv[2]) == "asset.rename";
   if (!opening && !renaming) {
-    std::cerr << "Usage: wds_cli PROJECT open | wds_cli PROJECT asset.rename ID NAME REVISION\n";
+    std::cerr << "Usage: wds_cli --project-operations | wds_cli PROJECT open | "
+                 "wds_cli PROJECT asset.rename ID NAME REVISION\n";
     return 2;
   }
   std::uint64_t revision = 0;
