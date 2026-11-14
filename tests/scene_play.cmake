@@ -87,3 +87,56 @@ string(JSON count LENGTH "${result}" entities)
 if(NOT count EQUAL 0)
   message(FATAL_ERROR "New project scene was not empty: ${result}")
 endif()
+
+set(scene "${project}/assets/intro.json")
+file(WRITE "${scene}" "{}\n")
+file(SHA256 "${scene}" original_bytes)
+execute_process(
+  COMMAND "${CLI}" project edit-entity "${project}" add marker 0 --capture-change
+  RESULT_VARIABLE status OUTPUT_VARIABLE result)
+if(NOT status STREQUAL "0")
+  message(FATAL_ERROR "Could not record an entity edit: ${result}")
+endif()
+string(JSON change GET "${result}" scene_change)
+# Quotes and escaped newlines stay inside the JSON literal.
+string(REGEX MATCH "\"before\"[ \n\r]*:[ \n\r]*(\"([^\"\\\\]|\\\\.)*\")" before_match "${change}")
+set(before "${CMAKE_MATCH_1}")
+string(REGEX MATCH "\"after\"[ \n\r]*:[ \n\r]*(\"([^\"\\\\]|\\\\.)*\")" after_match "${change}")
+set(after "${CMAKE_MATCH_1}")
+string(JSON undo SET "${change}" before "${after}")
+string(JSON undo SET "${undo}" after "${before}")
+set(request "${ROOT}/restore-${nonce}.json")
+file(WRITE "${request}" "${undo}")
+
+file(COPY_FILE "${scene}" "${request}.saved")
+file(APPEND "${scene}" " ")
+file(SHA256 "${scene}" externally_edited_bytes)
+execute_process(
+  COMMAND "${CLI}" project restore-scene "${project}" 1
+  INPUT_FILE "${request}" RESULT_VARIABLE status OUTPUT_VARIABLE result)
+string(JSON code GET "${result}" code)
+file(SHA256 "${scene}" actual_bytes)
+if(NOT status STREQUAL "1" OR NOT code STREQUAL "scene_content_conflict" OR
+   NOT actual_bytes STREQUAL externally_edited_bytes)
+  message(FATAL_ERROR "Restore did not preserve an external edit: ${result}")
+endif()
+file(COPY_FILE "${request}.saved" "${scene}")
+execute_process(
+  COMMAND "${CLI}" project restore-scene "${project}" 1
+  INPUT_FILE "${request}" RESULT_VARIABLE status OUTPUT_VARIABLE result)
+file(SHA256 "${scene}" actual_bytes)
+if(NOT status STREQUAL "0" OR NOT actual_bytes STREQUAL original_bytes)
+  message(FATAL_ERROR "Undo did not restore the original scene bytes: ${result}")
+endif()
+file(WRITE "${request}" "${change}")
+execute_process(
+  COMMAND "${CLI}" project restore-scene "${project}" 2
+  INPUT_FILE "${request}" RESULT_VARIABLE status OUTPUT_VARIABLE result)
+if(NOT status STREQUAL "0")
+  message(FATAL_ERROR "Redo did not restore the edited scene: ${result}")
+endif()
+play(ok 3 0)
+string(JSON id GET "${result}" entities 0 id)
+if(NOT id STREQUAL "marker")
+  message(FATAL_ERROR "Redo did not bring back the entity: ${result}")
+endif()

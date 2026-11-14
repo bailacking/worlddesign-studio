@@ -119,6 +119,10 @@
             <source>unsupported_version</source>
             <translation>当前工作台不支持此项目版本</translation>
         </message>
+        <message>
+            <source>scene_content_conflict</source>
+            <translation>场景内容已变更，请重新打开项目</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -442,6 +446,26 @@
         <message>
             <source>Delete entity %1 from this scene?</source>
             <translation>从此场景删除实体 %1？</translation>
+        </message>
+        <message>
+            <source>&amp;Edit</source>
+            <translation>编辑(&amp;E)</translation>
+        </message>
+        <message>
+            <source>&amp;Undo Scene Change</source>
+            <translation>撤销场景改动(&amp;U)</translation>
+        </message>
+        <message>
+            <source>&amp;Redo Scene Change</source>
+            <translation>重做场景改动(&amp;R)</translation>
+        </message>
+        <message>
+            <source>Scene change redone.</source>
+            <translation>已重做场景改动。</translation>
+        </message>
+        <message>
+            <source>Scene change undone.</source>
+            <translation>已撤销场景改动。</translation>
         </message>
     </context>
 </TS>

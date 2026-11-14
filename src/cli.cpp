@@ -135,26 +135,48 @@ int run(int argc, char** argv) {
       std::cout << wds::platform::scene_result_json(result, inspect_scene) << '\n';
       return result.session ? 0 : 1;
     }
-    if (argc == 8 && (action == "preview-scene-field" || action == "set-scene-field")) {
+    if (action == "restore-scene") {
+      wds::platform::FieldResult result{"invalid_argument", "/input"};
+      std::uint64_t revision = 0;
+      if (argc == 5 && parse_integer(argv[4], revision)) {
+        std::string request;
+        std::array<char, 8192> bytes;
+        while (request.size() <= wds::platform::max_scene_restore_request && std::cin) {
+          std::cin.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+          request.append(bytes.data(), static_cast<std::size_t>(std::cin.gcount()));
+        }
+        if (!std::cin.bad()) result = wds::platform::restore_scene(directory, revision, request);
+      }
+      std::cout << wds::platform::field_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
+    const bool capture_field =
+        argc == 9 && action == "set-scene-field" && std::string_view(argv[8]) == "--capture-change";
+    if (capture_field ||
+        (argc == 8 && (action == "preview-scene-field" || action == "set-scene-field"))) {
       wds::platform::SceneEdit edit{argv[4], argv[5], 0, 0};
       const auto result =
           parse_integer(argv[6], edit.revision) && parse_integer(argv[7], edit.value)
-              ? wds::platform::edit_scene(directory, edit, action == "set-scene-field")
+              ? wds::platform::edit_scene(directory, edit, action == "set-scene-field",
+                                          capture_field)
               : wds::platform::FieldResult{"invalid_argument", "/input"};
       std::cout << wds::platform::field_result_json(result) << '\n';
       return result.code == "ok" ? 0 : 1;
     }
     if (action == "preview-entity" || action == "edit-entity") {
+      const bool capture = action == "edit-entity" && argc >= 8 &&
+                           std::string_view(argv[argc - 1]) == "--capture-change";
+      const int count = argc - (capture ? 1 : 0);
       wds::platform::FieldResult result{"invalid_argument", "/input"};
-      if (argc == 7 || argc == 8) {
+      if (count == 7 || count == 8) {
         wds::platform::EntityEdit edit{argv[4], argv[5]};
         const bool valid_argument =
-            argc == 7 ? (edit.operation == "add" || edit.operation == "remove")
-                      : (edit.operation == "copy" ||
-                         (edit.operation == "move" && parse_integer(argv[7], edit.index)));
-        if (argc == 8 && edit.operation == "copy") edit.target = argv[7];
+            count == 7 ? (edit.operation == "add" || edit.operation == "remove")
+                       : (edit.operation == "copy" ||
+                          (edit.operation == "move" && parse_integer(argv[7], edit.index)));
+        if (count == 8 && edit.operation == "copy") edit.target = argv[7];
         if (valid_argument && parse_integer(argv[6], edit.revision))
-          result = wds::platform::edit_entity(directory, edit, action == "edit-entity");
+          result = wds::platform::edit_entity(directory, edit, action == "edit-entity", capture);
       }
       std::cout << wds::platform::field_result_json(result) << '\n';
       return result.code == "ok" ? 0 : 1;
@@ -180,7 +202,8 @@ int run(int argc, char** argv) {
                    "       wds_cli project preview-scene-field|set-scene-field DIRECTORY ENTITY "
                    "FIELD REVISION VALUE\n"
                    "       wds_cli project preview-entity|edit-entity DIRECTORY OPERATION "
-                   "ENTITY REVISION [ARG]\n";
+                   "ENTITY REVISION [ARG]\n"
+                   "       wds_cli project restore-scene DIRECTORY REVISION < CHANGE.json\n";
       return 2;
     }
     const auto result = create    ? wds::platform::create_project(directory, argv[4])

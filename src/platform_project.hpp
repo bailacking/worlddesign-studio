@@ -39,6 +39,14 @@ struct FieldEdit {
   bool operator==(const FieldEdit&) const = default;
 };
 
+struct SceneChange {
+  std::string project_id;
+  std::string scene_id;
+  std::string resource_path;
+  std::string before;
+  std::string after;
+};
+
 struct FieldResult {
   std::string code;
   std::string location{};
@@ -46,6 +54,7 @@ struct FieldResult {
   std::optional<std::int64_t> old_value{};
   std::optional<std::int64_t> new_value{};
   bool changed = false;
+  std::optional<SceneChange> scene_change{};
 };
 
 struct SceneEntity {
@@ -117,8 +126,13 @@ ProjectResult create_project(const std::filesystem::path& directory, std::string
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
-FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply);
-FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply);
+FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply,
+                       bool capture_change = false);
+FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply,
+                        bool capture_change = false);
+FieldResult restore_scene(const std::filesystem::path& directory, std::uint64_t revision,
+                          std::string_view request);
+inline constexpr std::size_t max_scene_restore_request = 16 * 1024 * 1024;
 std::string scene_result_json(const SceneResult& result, bool include_fields = false);
 std::string field_result_json(const FieldResult& result);
 std::string project_result_json(const ProjectResult& result);
