@@ -15,15 +15,15 @@
 
 从含本计划的提交开工。首批三个模块各自占用独立工作树，接口见 [桌面工作台](../architecture/workbench.md#首批可并行交付的组件)。WKB-01 集中接入 CMake 和程序入口。共享 Qt SDK 未就绪时，可先完成独立文件并在交接中注明编译待集成。主题、场景树和资源面板可并行提交。
 
-| 任务 | 实际工作树 | 只改 | 可交付的结果 |
+| 任务 | 任务分支 | 只改 | 可交付的结果 |
 | --- | --- | --- | --- |
-| WKB-02 | `D:\project\WDS-worktrees\wkb-02` | `src/studio/theme/workbench.qss` | 一套可加载的工作台深色样式，四种交互状态清楚可辨 |
-| WKB-04 | `D:\project\WDS-worktrees\wkb-04` | `src/studio/scene_tree.hpp/.cpp` | 读真实快照的实体 ID，列表可搜索、键盘选择、回调稳定 ID |
-| WKB-05 | `D:\project\WDS-worktrees\wkb-05` | `src/studio/resource_panel.hpp/.cpp` | 读真实资源清单，按 ID、路径及类型筛选并回调资源 ID |
+| WKB-02 | `task/wkb-02` | `src/studio/theme/workbench.qss` | 一套可加载的工作台深色样式，四种交互状态清楚可辨 |
+| WKB-04 | `task/wkb-04` | `src/studio/scene_tree.hpp/.cpp` | 读真实快照的实体 ID，列表可搜索、键盘选择、回调稳定 ID |
+| WKB-05 | `task/wkb-05` | `src/studio/resource_panel.hpp/.cpp` | 读真实资源清单，按 ID、路径及类型筛选并回调资源 ID |
 
 Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架和只读数据接入，再把场景树、资源、视口和属性接入同一项目会话。图形运行后端、能力包契约和 1.6 资料结构可同时推进。
 
-现代工作台已在本地接入主题、场景树与资源面板。资源面板可以按 ID 或路径搜索、按类型筛选。入口场景支持逐项保存位置或速度字段，并从保存后的修订试玩。当前界面与已有诊断支持简体中文和英文即时切换。 [运行步骤](../engineering/development.md#运行现代工作台)
+现代工作台已接入主题、场景树与资源面板。资源面板可以按 ID 或路径搜索、按类型筛选。入口场景支持逐项保存位置或速度字段，并从保存后的修订试玩。当前界面与已有诊断支持简体中文和英文即时切换。 [运行步骤](../engineering/development.md#运行现代工作台)
 
 ## 合并顺序与交付点
 

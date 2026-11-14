@@ -13,7 +13,7 @@ python -m ruff format --check scripts
 python scripts/check_docs.py
 ```
 
-C++ 在同一工作流配置了 Linux 的编译、CTest、clang-format 和 clang-tidy 检查。Windows x64 的 Debug 和 Release 构建各通过五项测试，覆盖工具链、插件宿主、资源改名、方块世界与规则操作。命令见 [开发指南](development.md#构建与测试)，Linux CI 尚待运行。
+C++ 在同一工作流配置了 Linux 的默认构建、CTest、clang-format 和 clang-tidy 检查。Qt 工作台使用独立的构建配置，已在 Windows x64 实测打开项目、资源筛选、属性保存、试玩与语言切换。运行方法见 [开发指南](development.md#运行现代工作台)。
 
 ## 证据要求
 
