@@ -35,7 +35,7 @@ GUI、CLI 和 AI 适配入口共享查询与修改语义。界面负责收集输
 
 OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成同一请求，项目服务负责验证与执行。首轮覆盖 `project.create`、`project.open`、`project.validate`、`project.resources`，下一步由 OPS-02 接入资源字段修改。操作发现应返回 ID、版本、输入定义、错误码及是否写入项目。
 
-当前可用 `wds_cli --project-operations` 查询十一项能力的 JSON 说明，包括项目恢复、数据编辑、场景属性读取和修改、场景试玩。发现命令无需项目目录。
+当前可用 `wds_cli --project-operations` 查询十七项能力的 JSON 说明，包括项目恢复、资源导入预览与提交、导入来源查询、数据编辑、场景属性读取和修改、场景试玩。发现命令无需项目目录。
 
 请求包含 `operation`、`version` 和 `input`。打开已有项目的调用另带由宿主解析的项目上下文。对已有项目的写入还须带整数 `expected_revision` 和 `mode`（`preview` 或 `apply`）。权限来自宿主上下文，用户输入里的同名字段不能授予权限。创建新项目使用目录不存在作为前置条件。
 
@@ -72,6 +72,8 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 | 移动到指定次序，索引从 0 开始 | `project edit-entity DIRECTORY move ID REVISION INDEX` |
 
 新建与复制追加到场景末尾。实际编辑提交后修订加一，相同位置的移动不产生新修订。结构编辑使用事务记录版本 3，恢复时重放该操作并核对新旧场景内容，兼容旧事务。当前以本机单写入者为使用边界。
+
+`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data` 或 `scene` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。导入使用事务记录版本 5。[资源导入](project-format.md#资源导入)
 
 提出请求 → 校验参数和权限 → 检查项目修订 → 解析能力实现 → 准备变更 → 应用与持久化 → 更新或失效相关索引 → 返回变更及诊断 → 运行验证。
 

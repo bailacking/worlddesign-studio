@@ -190,6 +190,20 @@ int run(int argc, char** argv) {
       std::cout << wds::platform::field_result_json(result) << '\n';
       return result.code == "ok" ? 0 : 1;
     }
+    if (argc == 4 && action == "imports") {
+      const auto result = wds::platform::list_imports(directory);
+      std::cout << wds::platform::import_list_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
+    if (argc == 9 && (action == "preview-import" || action == "import")) {
+      wds::platform::ImportRequest request{argv[4], argv[5], argv[6], argv[7], 0};
+      const auto result =
+          parse_integer(argv[8], request.revision)
+              ? wds::platform::import_resource(directory, request, action == "import")
+              : wds::platform::ImportResult{"invalid_argument", "/revision"};
+      std::cout << wds::platform::import_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
     const bool create = action == "create" && argc == 5;
     const bool recover = action == "recover" && argc == 4;
     const bool read =
@@ -203,6 +217,9 @@ int run(int argc, char** argv) {
                    "FIELD REVISION VALUE\n"
                    "       wds_cli project preview-entity|edit-entity DIRECTORY OPERATION "
                    "ENTITY REVISION [ARG]\n"
+                   "       wds_cli project preview-import|import DIRECTORY SOURCE ID KIND PATH "
+                   "REVISION\n"
+                   "       wds_cli project imports DIRECTORY\n"
                    "       wds_cli project restore-scene DIRECTORY REVISION < CHANGE.json\n";
       return 2;
     }

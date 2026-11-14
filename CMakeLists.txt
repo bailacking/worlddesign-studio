@@ -124,6 +124,13 @@ add_test(
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
 )
 add_test(
+  NAME resource_import
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/import-fixture
+          -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-editing
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/resource_import.cmake
+)
+add_test(
   NAME sandbox_rules
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
           -DROOT=${CMAKE_CURRENT_BINARY_DIR}/rules-fixture

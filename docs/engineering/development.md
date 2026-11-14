@@ -98,6 +98,20 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 
 工作台打开项目后，输入资源 ID `rules`、字段 `jump_speed` 和新整数，先点击 **Preview**，核对差异，再点击 **Apply**。修改输入或目录会取消旧预览。若项目修订已变化，重新打开再预览。中断后若项目提示 `recovery_required`，使用 **Recover** 或 `wds_cli project recover DIRECTORY`。无法确认的磁盘状态会保留供检查。该样例演示项目数据编辑，运行时接入另行实现。
 
+### 导入外部资源
+
+外部文件可导入为 `data` 或 `scene` 资源，源文件按原字节保存。先预览，再提交。
+
+```powershell
+Copy-Item -Recurse examples/scene-editing build/import-demo
+'{"title":"import demo","limit":30}' | Set-Content -Encoding ascii -NoNewline build/import-notes.json
+./build/dev/wds_cli.exe project preview-import build/import-demo build/import-notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project import build/import-demo build/import-notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project imports build/import-demo
+```
+
+预览不落盘，项目文件字节保持不变。提交后修订加一，`project resources` 与重开都能读回新资源。再执行一次同样的导入返回 `changed=false`，修订保持不变。换内容占同一 ID 返回 `duplicate_id`，目标路径已属于其他资源返回 `duplicate_path`，两者都保留已有资源。源文件上限 1 MiB。中断后若提示 `recovery_required`，用 `project recover DIRECTORY` 回到原修订或保留已提交结果。[资源导入](../architecture/project-format.md#资源导入)
+
 ### 试玩通用场景
 
 在仓库根执行以下命令，按入口场景的修订 0 运行 30 步。输出中的 `marker` 位于 `(-230, -25)`。传入 0 步可查看初始状态。

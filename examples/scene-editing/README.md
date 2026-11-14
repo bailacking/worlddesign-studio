@@ -25,6 +25,15 @@
 3. 看初始位置：`./build/dev/wds_cli.exe project play examples/scene-editing 0 0`，四个实体停在上表起点。
 4. 走 30 步：`./build/dev/wds_cli.exe project play examples/scene-editing 0 30`，三个动点汇到中轴。
 5. 在现代工作台打开示例副本，选中 `drifter` 后修改 **X 速度**，点击 **保存属性** 和 **试玩**。点击 **停止** 回到编辑态。资源面板选中 `field` 可看到引用 `tuning`，选中 `tuning` 可看到被 `field` 引用。[工作台构建与运行](../../docs/engineering/development.md#运行现代工作台)
+6. 在示例副本上导入一个外部数据文件，确认资源与来源都能读回：
+
+```powershell
+./build/dev/wds_cli.exe project preview-import examples/scene-editing build/notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project import examples/scene-editing build/notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project imports examples/scene-editing
+```
+
+`build/notes.json` 替换成本机一个 UTF-8 JSON 对象文件，并对示例副本执行，不要改动仓库内样例。导入成功后修订加一，`project resources` 列出 `notes`。再执行一次返回 `changed=false`。导入会写项目文件，因此在副本上验证。
 
 ## 三项可改参数
 

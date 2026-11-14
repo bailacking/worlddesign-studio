@@ -121,8 +121,48 @@ struct SceneResult {
   std::optional<std::uint64_t> revision{};
 };
 
+struct ImportRequest {
+  std::string source;
+  std::string id;
+  std::string kind;
+  std::string path;
+  std::uint64_t revision = 0;
+};
+
+struct ImportResult {
+  std::string code;
+  std::string location{};
+  std::optional<std::uint64_t> revision{};
+  std::string resource_id{};
+  std::string kind{};
+  std::string path{};
+  std::optional<std::uintmax_t> bytes{};
+  bool changed = false;
+  std::string source_name{};
+  std::string digest{};
+};
+
+struct ImportRecord {
+  std::string resource;
+  std::string kind;
+  std::string path;
+  std::string source_name;
+  std::uintmax_t bytes = 0;
+  std::string digest;
+  std::uint64_t revision = 0;
+};
+
+struct ImportListResult {
+  std::string code;
+  std::string location{};
+  std::vector<ImportRecord> records;
+};
+
 ProjectResult open_project(const std::filesystem::path& directory);
 ProjectResult create_project(const std::filesystem::path& directory, std::string_view id);
+ImportResult import_resource(const std::filesystem::path& directory, const ImportRequest& request,
+                             bool apply);
+ImportListResult list_imports(const std::filesystem::path& directory);
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
@@ -135,6 +175,8 @@ FieldResult restore_scene(const std::filesystem::path& directory, std::uint64_t 
 inline constexpr std::size_t max_scene_restore_request = 16 * 1024 * 1024;
 std::string scene_result_json(const SceneResult& result, bool include_fields = false);
 std::string field_result_json(const FieldResult& result);
+std::string import_result_json(const ImportResult& result);
+std::string import_list_json(const ImportListResult& result);
 std::string project_result_json(const ProjectResult& result);
 std::string project_resources_json(const ProjectResult& result);
 std::string project_operations_json();

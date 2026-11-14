@@ -20,9 +20,11 @@ using Json = nlohmann::json;
 constexpr auto manifest_name = "wds.project.json";
 constexpr auto journal_name = ".wds-field-edit.json";
 constexpr auto staging_name = ".wds-field-edit.tmp";
+constexpr auto imports_name = ".wds-imports.json";
 constexpr std::uint64_t max_revision = 9007199254740991ULL;
 constexpr std::uintmax_t max_manifest_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_edit_bytes = 1024 * 1024;
+constexpr std::uintmax_t max_imports_bytes = 1024 * 1024;
 constexpr std::size_t max_scene_entities = 1024;
 
 ProjectResult failure(std::string code, std::string location) {
@@ -452,6 +454,111 @@ FieldResult edit_scene_file(const fs::path& root, std::uint64_t expected, const 
   }
 }
 
+fs::path from_utf8(std::string_view text) {
+  return fs::path(std::u8string(text.begin(), text.end()));
+}
+
+// 非加密摘要，用于让来源记录能对照同一批字节；一致性判断仍逐字节比较。
+std::string digest64(std::string_view bytes) {
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const auto ch : bytes) {
+    hash ^= static_cast<unsigned char>(ch);
+    hash *= 1099511628211ULL;
+  }
+  static constexpr char hex[] = "0123456789abcdef";
+  std::string text(16, '0');
+  for (int index = 15; index >= 0; --index) {
+    text[static_cast<std::size_t>(index)] = hex[hash & 0xF];
+    hash >>= 4;
+  }
+  return "fnv1a64:" + text;
+}
+
+// 导入内容校验：场景要能被试玩读取，数据要能进入首版字段编辑。
+std::string imported_content_code(std::string_view kind, std::string_view bytes) {
+  try {
+    const auto json = parse_json(bytes);
+    if (json.is_discarded()) return "invalid_content";
+    std::vector<SceneEntity> entities;
+    if (kind == "scene") return parse_scene(json, entities).code == "ok" ? "ok" : "invalid_content";
+    if (!json.is_object() || !editable_data(json)) return "invalid_content";
+    return "ok";
+  } catch (const std::length_error&) {
+    return "invalid_content";
+  } catch (const Json::exception&) {
+    return "invalid_content";
+  }
+}
+
+bool valid_provenance(const Json& json) {
+  if (!json.is_object() || !has_fields(json, {"version", "imports"}) ||
+      !json["version"].is_number_integer() || json["version"] != 1 || !json["imports"].is_array())
+    return false;
+  for (const auto& row : json["imports"]) {
+    if (!has_fields(row,
+                    {"resource", "kind", "path", "source_name", "bytes", "digest", "revision"}) ||
+        !row["resource"].is_string() || !row["kind"].is_string() || !row["path"].is_string() ||
+        !row["source_name"].is_string() || !row["digest"].is_string() ||
+        !row["bytes"].is_number_unsigned() || !row["revision"].is_number_unsigned())
+      return false;
+    if (!valid_id(row["resource"].get_ref<const std::string&>()) ||
+        (row["kind"] != "scene" && row["kind"] != "data") ||
+        !valid_path(row["path"].get_ref<const std::string&>()))
+      return false;
+  }
+  return true;
+}
+
+struct Provenance {
+  std::string code = "missing";
+  std::string bytes;
+  Json json = Json{{"version", 1}, {"imports", Json::array()}};
+};
+
+Provenance read_provenance(const fs::path& root) {
+  Provenance result;
+  const auto state = project_path(root, imports_name);
+  if (state == PathState::missing) return result;
+  if (state != PathState::ok) {
+    result.code = "unsafe_path";
+    return result;
+  }
+  const auto bytes = read_bytes(root / imports_name, max_imports_bytes);
+  if (!bytes) {
+    result.code = "io_error";
+    return result;
+  }
+  result.bytes = *bytes;
+  auto json = parse_json(*bytes);
+  if (!valid_provenance(json)) {
+    result.code = "invalid_provenance";
+    return result;
+  }
+  result.code = "ok";
+  result.json = std::move(json);
+  return result;
+}
+
+std::string provenance_with(const Provenance& current, const ImportRecord& record) {
+  Json json = current.json;
+  auto& rows = json["imports"];
+  const auto match = std::ranges::find(
+      rows, record.resource, [](const Json& row) { return row["resource"].get<std::string>(); });
+  Json row{{"resource", record.resource},       {"kind", record.kind},   {"path", record.path},
+           {"source_name", record.source_name}, {"bytes", record.bytes}, {"digest", record.digest},
+           {"revision", record.revision}};
+  if (match == rows.end())
+    rows.push_back(std::move(row));
+  else
+    *match = std::move(row);
+  return json.dump(2) + "\n";
+}
+
+bool write_or_remove(const fs::path& root, const char* name, std::string_view bytes) {
+  if (bytes.empty()) return remove_reserved(root, name);
+  return replace_file(root, root / name, bytes);
+}
+
 }  // namespace
 
 ProjectResult open_project(const fs::path& directory) {
@@ -648,6 +755,229 @@ FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::str
       &change);
 }
 
+ImportResult import_resource(const fs::path& root, const ImportRequest& request, bool apply) {
+  if (request.revision > max_revision) return {"invalid_argument", "/revision"};
+  const auto opened = open_project(root);
+  if (!opened.project) return {opened.code, opened.location};
+  const auto& project = *opened.project;
+  const auto revision = project.revision;
+  if (request.revision != revision) return {"revision_conflict", "/revision", revision};
+  if (!valid_id(request.id)) return {"invalid_argument", "/id", revision};
+  if (request.kind != "scene" && request.kind != "data")
+    return {"invalid_argument", "/kind", revision};
+  if (!valid_path(request.path)) return {"invalid_path", "/path", revision};
+
+  try {
+    const auto source = from_utf8(request.source);
+    if (node(source, false) != PathState::ok) return {"invalid_source", "/source", revision};
+    const auto imported = read_bytes(source, max_edit_bytes);
+    if (!imported) return {"source_too_large", "/source", revision};
+    const auto content = imported_content_code(request.kind, *imported);
+    if (content != "ok") return {content, "/source", revision};
+
+    const auto target = project_path(root, fs::path(request.path));
+    if (target == PathState::unsafe) return {"unsafe_path", request.path, revision};
+    const auto existing = std::ranges::find(project.resources, request.id, &Resource::id);
+    if (existing != project.resources.end()) {
+      // 同 ID 只有在路径、类型与字节都一致时才算同一份资源，否则保留已有资源。
+      const auto current = existing->path == request.path
+                               ? read_bytes(root / existing->path, max_edit_bytes)
+                               : std::nullopt;
+      if (!current || *current != *imported || existing->kind != request.kind)
+        return {"duplicate_id", request.id, revision};
+      return {"ok",
+              request.path,
+              revision,
+              request.id,
+              request.kind,
+              request.path,
+              imported->size(),
+              false,
+              portable(source.filename()),
+              digest64(*imported)};
+    }
+    if (std::ranges::any_of(project.resources, [&](const Resource& resource) {
+          return resource.path == request.path;
+        }))
+      return {"duplicate_path", request.path, revision};
+    if (target == PathState::ok) return {"target_exists", request.path, revision};
+    if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
+
+    const auto manifest_bytes = read_bytes(root / manifest_name, max_edit_bytes);
+    if (!manifest_bytes) return {"io_error", manifest_name, revision};
+    const auto provenance = read_provenance(root);
+    if (provenance.code != "ok" && provenance.code != "missing")
+      return {provenance.code, imports_name, revision};
+
+    const ImportRecord record{
+        request.id,       request.kind,        request.path, portable(source.filename()),
+        imported->size(), digest64(*imported), revision + 1};
+    auto manifest = parse_json(*manifest_bytes);
+    manifest["resources"].push_back({{"id", request.id},
+                                     {"kind", request.kind},
+                                     {"path", request.path},
+                                     {"refs", Json::array()}});
+    manifest["revision"] = revision + 1;
+    const auto next_manifest = manifest.dump(2) + "\n";
+    const auto next_provenance = provenance_with(provenance, record);
+    if (next_manifest.size() > max_edit_bytes || next_provenance.size() > max_imports_bytes)
+      return {"import_too_large", "/path", revision};
+
+    ImportResult result{
+        "ok",         request.path,     revision, request.id,         request.kind,
+        request.path, imported->size(), true,     record.source_name, record.digest};
+    if (!apply) return result;
+    const Json journal{{"version", 5},
+                       {"resource", request.id},
+                       {"kind", request.kind},
+                       {"path", request.path},
+                       {"before_manifest", *manifest_bytes},
+                       {"after_manifest", next_manifest},
+                       {"before_provenance", provenance.bytes},
+                       {"after_provenance", next_provenance},
+                       {"after_data", *imported}};
+    const auto encoded = journal.dump() + "\n";
+    if (encoded.size() > max_manifest_bytes) return {"import_too_large", "/path", revision};
+    if (!replace_file(root, root / journal_name, encoded) ||
+        !replace_file(root, root / request.path, *imported) ||
+        !replace_file(root, root / imports_name, next_provenance) ||
+        !replace_file(root, root / manifest_name, next_manifest) ||
+        !remove_reserved(root, journal_name))
+      return {"recovery_required", journal_name};
+    result.revision = revision + 1;
+    return result;
+  } catch (const fs::filesystem_error&) {
+    return {"io_error", "/source"};
+  } catch (const std::length_error&) {
+    return {"invalid_content", "/source", revision};
+  } catch (const Json::exception&) {
+    return {"invalid_content", "/source", revision};
+  }
+}
+
+ImportListResult list_imports(const fs::path& root) {
+  const auto opened = open_project(root);
+  if (!opened.project) return {opened.code, opened.location, {}};
+  try {
+    const auto provenance = read_provenance(root);
+    if (provenance.code == "missing") return {"ok", "", {}};
+    if (provenance.code != "ok") return {provenance.code, imports_name, {}};
+    ImportListResult result{"ok", "", {}};
+    for (const auto& row : provenance.json["imports"]) {
+      result.records.push_back(
+          {row["resource"].get<std::string>(), row["kind"].get<std::string>(),
+           row["path"].get<std::string>(), row["source_name"].get<std::string>(),
+           row["bytes"].get<std::uintmax_t>(), row["digest"].get<std::string>(),
+           row["revision"].get<std::uint64_t>()});
+    }
+    return result;
+  } catch (const fs::filesystem_error&) {
+    return {"io_error", imports_name, {}};
+  } catch (const std::length_error&) {
+    return {"invalid_provenance", imports_name, {}};
+  } catch (const Json::exception&) {
+    return {"invalid_provenance", imports_name, {}};
+  }
+}
+
+namespace {
+
+// 导入中断恢复：清单是提交点，目标是本次新建的文件与来源记录。
+ProjectResult recover_import(const fs::path& root, const Json& journal) {
+  const auto blocked = [] { return failure("recovery_required", journal_name); };
+  if (!has_fields(journal,
+                  {"version", "resource", "kind", "path", "before_manifest", "after_manifest",
+                   "before_provenance", "after_provenance", "after_data"}))
+    return blocked();
+  for (const auto* key : {"resource", "kind", "path", "before_manifest", "after_manifest",
+                          "before_provenance", "after_provenance", "after_data"}) {
+    if (!journal[key].is_string()) return blocked();
+  }
+  const auto text = [&journal](const char* key) -> const std::string& {
+    return journal[key].get_ref<const std::string&>();
+  };
+  const auto& id = text("resource");
+  const auto& kind = text("kind");
+  const auto& path = text("path");
+  const auto& before_manifest = text("before_manifest");
+  const auto& after_manifest = text("after_manifest");
+  const auto& before_provenance = text("before_provenance");
+  const auto& after_provenance = text("after_provenance");
+  const auto& after_data = text("after_data");
+  if (!valid_id(id) || (kind != "scene" && kind != "data") || !valid_path(path) ||
+      before_manifest.size() > max_edit_bytes || after_manifest.size() > max_edit_bytes ||
+      before_provenance.size() > max_imports_bytes || after_provenance.size() > max_imports_bytes ||
+      after_data.size() > max_edit_bytes || after_provenance.empty())
+    return blocked();
+  if (imported_content_code(kind, after_data) != "ok") return blocked();
+
+  try {
+    auto previous = parse_json(before_manifest);
+    const auto before_project = validate_manifest(root, previous);
+    if (!before_project.project || before_project.project->revision == max_revision)
+      return blocked();
+    const auto& resources = before_project.project->resources;
+    if (std::ranges::any_of(resources, [&](const Resource& resource) {
+          return resource.id == id || resource.path == path;
+        }))
+      return blocked();
+    auto expected = previous;
+    expected["revision"] = before_project.project->revision + 1;
+    expected["resources"].push_back(
+        {{"id", id}, {"kind", kind}, {"path", path}, {"refs", Json::array()}});
+    if (expected != parse_json(after_manifest)) return blocked();
+
+    if (!valid_provenance(parse_json(after_provenance))) return blocked();
+    if (!before_provenance.empty()) {
+      const auto before = parse_json(before_provenance);
+      if (!valid_provenance(before) || std::ranges::any_of(before["imports"], [&](const Json& row) {
+            return row["resource"] == id;
+          }))
+        return blocked();
+    }
+
+    const auto data_state = project_path(root, path);
+    if (data_state == PathState::unsafe) return blocked();
+    const bool data_exists = data_state == PathState::ok;
+    std::string actual_data;
+    if (data_exists) {
+      const auto bytes = read_bytes(root / path, max_edit_bytes);
+      if (!bytes) return blocked();
+      actual_data = *bytes;
+    }
+    const auto actual_manifest = read_bytes(root / manifest_name, max_edit_bytes);
+    if (!actual_manifest) return blocked();
+    const auto provenance = read_provenance(root);
+    if (provenance.code != "ok" && provenance.code != "missing") return blocked();
+
+    const bool committed = *actual_manifest == after_manifest;
+    const bool uncommitted = *actual_manifest == before_manifest;
+    if (!committed && !uncommitted) return blocked();
+    // 提交后清单已发布，目标文件必须是本次导入的字节；提交前只允许本次写入的字节存在。
+    if (committed && (!data_exists || actual_data != after_data)) return blocked();
+    if (uncommitted && data_exists && actual_data != after_data) return blocked();
+    if (!remove_reserved(root, staging_name)) return blocked();
+    if (uncommitted && data_exists) {
+      std::error_code error;
+      if (!fs::remove(root / path, error) || error) return blocked();
+    }
+    if (!write_or_remove(
+            root, imports_name,
+            committed ? std::string_view(after_provenance) : std::string_view(before_provenance)))
+      return blocked();
+    if (!remove_reserved(root, journal_name)) return blocked();
+    return open_project(root);
+  } catch (const fs::filesystem_error&) {
+    return blocked();
+  } catch (const std::length_error&) {
+    return blocked();
+  } catch (const Json::exception&) {
+    return blocked();
+  }
+}
+
+}  // namespace
+
 ProjectResult recover_project(const fs::path& root) {
   const auto blocked = [] { return failure("recovery_required", journal_name); };
   try {
@@ -665,6 +995,7 @@ ProjectResult recover_project(const fs::path& root) {
     if (!journal.is_object() || !journal.contains("version") ||
         !journal["version"].is_number_integer())
       return blocked();
+    if (journal["version"] == 5) return recover_import(root, journal);
     const bool scene_edit = journal["version"] == 2;
     const bool entity_edit = journal["version"] == 3;
     const bool scene_restore = journal["version"] == 4;
@@ -797,6 +1128,37 @@ std::string field_result_json(const FieldResult& result) {
   return json.dump();
 }
 
+std::string import_result_json(const ImportResult& result) {
+  Json json{{"code", result.code}, {"location", result.location}};
+  if (result.revision) json["revision"] = *result.revision;
+  if (!result.resource_id.empty()) {
+    json["resource_id"] = result.resource_id;
+    json["kind"] = result.kind;
+    json["path"] = result.path;
+    json["source_name"] = result.source_name;
+    json["digest"] = result.digest;
+    if (result.bytes) json["bytes"] = *result.bytes;
+  }
+  if (result.code == "ok") json["changed"] = result.changed;
+  return json.dump();
+}
+
+std::string import_list_json(const ImportListResult& result) {
+  if (result.code != "ok") return Json{{"code", result.code}, {"location", result.location}}.dump();
+  auto items = Json::array();
+  for (const auto& record : result.records) {
+    items.push_back({{"resource", record.resource},
+                     {"kind", record.kind},
+                     {"path", record.path},
+                     {"source_name", record.source_name},
+                     {"bytes", record.bytes},
+                     {"digest", record.digest},
+                     {"revision", record.revision}});
+  }
+  return Json{{"code", "ok"}, {"count", result.records.size()}, {"imports", std::move(items)}}
+      .dump();
+}
+
 std::string project_result_json(const ProjectResult& result) {
   if (!result.project) {
     return Json{{"code", result.code},
@@ -888,6 +1250,25 @@ std::string project_operations_json() {
   add("project.validate", "project validate DIRECTORY", false, path_input, read_errors);
   add("project.resources", "project resources DIRECTORY", false, path_input, read_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  auto import_errors = read_errors;
+  for (const auto* code :
+       {"invalid_argument", "invalid_path", "invalid_source", "source_too_large", "invalid_content",
+        "duplicate_id", "duplicate_path", "target_exists", "revision_conflict",
+        "revision_exhausted", "import_too_large", "invalid_provenance"})
+    import_errors.push_back(code);
+  const Json import_input{{"directory", "path"},
+                          {"source", "external file read once, bytes preserved"},
+                          {"resource_id", "new resource identifier"},
+                          {"kind", "scene | data"},
+                          {"path", "assets/ relative target path"},
+                          {"expected_revision", "integer"}};
+  add("resource.import.preview", "project preview-import DIRECTORY SOURCE ID KIND PATH REVISION",
+      false, import_input, import_errors);
+  add("resource.import.apply", "project import DIRECTORY SOURCE ID KIND PATH REVISION", true,
+      import_input, import_errors);
+  auto provenance_errors = read_errors;
+  provenance_errors.push_back("invalid_provenance");
+  add("project.imports", "project imports DIRECTORY", false, path_input, provenance_errors);
   auto scene_errors = read_errors;
   for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_scene",
                            "unsupported_scene_version", "scene_too_large", "duplicate_entity_id"})
