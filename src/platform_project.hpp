@@ -58,7 +58,7 @@ struct SceneEntity {
 
 struct SceneField {
   std::string_view name;
-  std::int64_t SceneEntity::* member;
+  std::int64_t SceneEntity::*member;
 };
 
 inline constexpr std::int64_t scene_field_limit = 1'000'000;
