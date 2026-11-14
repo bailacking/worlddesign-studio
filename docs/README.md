@@ -19,6 +19,7 @@
 | [项目与资源](architecture/assets.md) | 文件夹、资源身份、多种编辑形式与冲突 |
 | [项目目录与清单](architecture/project-format.md) | 首版项目格式、创建与读取契约、旧格式迁移边界 |
 | [逻辑与编辑器](architecture/authoring.md) | 代码、可视化逻辑、共同语义及调试 |
+| [桌面工作台](architecture/workbench.md) | 编辑布局、项目桥接和首批组件接口 |
 | [AI 协作](architecture/ai.md) | 项目理解、自主程度、权限、执行与验证 |
 | [游戏运行时](architecture/runtime.md) | 2D/3D、场景、渲染、物理与导出 |
 | [版本管理](architecture/version-control.md) | Git 候选方案、资源差异、大文件与恢复 |
@@ -33,6 +34,7 @@
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
 - [实施路线](project/roadmap.md)：工程底座、创作闭环、可复用生产和全量验证。
 - [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
+- [并行开发计划](project/parallel-delivery.md)：工作树、首批派发、各模块的交付边界和合并顺序。
 - [方块项目验收基准](project/voxel-benchmark.md)：1.6 全量内容与行为对照、耗时、Token 和人工接手。
 - [前期原型与验证](project/prototype-baseline.md)：已完成的 M0、M1 技术样例与限制。
 

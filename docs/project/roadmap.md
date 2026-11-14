@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-WDS 以通用游戏开发平台为交付主体。已验证的 C++ 工程、插件、资源操作和方块样例见 [前期原型与验证](prototype-baseline.md)。各阶段依可运行产物和验收证据推进，详细工作与前置依赖见 [开发任务](development-tasks.md)。
+WDS 以通用游戏开发平台为交付主体。已验证的 C++ 工程、插件、资源操作和方块样例见 [前期原型与验证](prototype-baseline.md)。当前优先交付能编辑、保存和试玩真实项目的 [桌面工作台](../architecture/workbench.md)。阶段任务见 [开发任务](development-tasks.md)，多人认领与合并顺序见 [并行开发计划](parallel-delivery.md)。
 
 | 阶段 | 主要交付 | 进入下一阶段的证据 |
 | --- | --- | --- |

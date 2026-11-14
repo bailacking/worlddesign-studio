@@ -23,7 +23,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 | 理解产品目标与范围 | [愿景与设计原则](docs/product/vision.md) · [产品范围](docs/product/scope.md) |
 | 理解各系统如何协作 | [系统架构](docs/architecture/overview.md) · [离线架构图解](docs/architecture.html) |
 | 开展工程设计与原型开发 | [开发指南](docs/engineering/development.md) · [技术评估](docs/engineering/technical-evaluation.md) |
-| 认领任务与查看验收门槛 | [平台建设总纲](docs/project/platform-plan.md) · [开发任务](docs/project/development-tasks.md) · [实施路线](docs/project/roadmap.md) |
+| 认领任务与查看验收门槛 | [并行开发计划](docs/project/parallel-delivery.md) · [开发任务](docs/project/development-tasks.md) · [实施路线](docs/project/roadmap.md) |
 | 研究相关技术 | [DeepSeek Harness 专题](docs/research/deepseek-harness.md) · [相关项目](docs/research/landscape.md) |
 | 参与项目 | [贡献指南](CONTRIBUTING.md) · [社区治理](docs/community/governance.md) · [社区规范](CODE_OF_CONDUCT.md) |
 
