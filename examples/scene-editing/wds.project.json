@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "project_id": "scene-editing",
+  "revision": 0,
+  "entry_scene": "field",
+  "resources": [
+    {"id": "field", "kind": "scene", "path": "assets/field.json", "refs": ["tuning"]},
+    {"id": "tuning", "kind": "data", "path": "assets/tuning.json", "refs": []}
+  ]
+}
