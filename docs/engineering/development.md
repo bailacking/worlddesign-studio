@@ -85,6 +85,19 @@ Copy-Item -Recurse examples/m0-project build/gui-demo
 
 Windows 可运行 `./build/dev/wds_studio.exe`，填入项目路径，选择 **Open** 或指定项目 ID 后选择 **Create**。窗口显示当前修订、入口场景、资源列表或诊断。窗口和 CLI 使用同一项目服务。[格式与诊断](../architecture/project-format.md)
 
+### 预览与保存资源字段
+
+从仓库根复制一份包含数据资源的测试样例到新目录，然后写入用于演示的规则数据：
+
+```powershell
+Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
+'{"jump_speed":6}' | Set-Content -Encoding ascii build/field-demo/assets/rules.json
+./build/dev/wds_cli.exe project preview-field build/field-demo rules jump_speed 0 8
+./build/dev/wds_cli.exe project set-field build/field-demo rules jump_speed 0 8
+```
+
+工作台打开项目后，输入资源 ID `rules`、字段 `jump_speed` 和新整数，先点击 **Preview**，核对差异，再点击 **Apply**。修改输入或目录会取消旧预览。若项目修订已变化，重新打开再预览。中断后若项目提示 `recovery_required`，使用 **Recover** 或 `wds_cli project recover DIRECTORY`。无法确认的磁盘状态会保留供检查。该样例演示项目数据编辑，运行时接入另行实现。
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。

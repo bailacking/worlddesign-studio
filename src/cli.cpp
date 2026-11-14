@@ -111,17 +111,32 @@ int run(int argc, char** argv) {
   if (argc >= 4 && std::string_view(argv[1]) == "project" &&
       std::string_view(argv[2]) != "asset.rename") {
     const std::string_view action(argv[2]);
+    const auto directory = path_from_utf8(argv[3]);
+    if (argc == 8 && (action == "preview-field" || action == "set-field")) {
+      wds::platform::FieldEdit edit{argv[4], argv[5], 0, 0};
+      const auto parse = [](std::string_view input, auto& value) {
+        const auto end = input.data() + input.size();
+        const auto parsed = std::from_chars(input.data(), end, value);
+        return parsed.ec == std::errc{} && parsed.ptr == end;
+      };
+      const auto result = parse(argv[6], edit.revision) && parse(argv[7], edit.value)
+                              ? wds::platform::edit_field(directory, edit, action == "set-field")
+                              : wds::platform::FieldResult{"invalid_argument", "/input"};
+      std::cout << wds::platform::field_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
     const bool create = action == "create" && argc == 5;
+    const bool recover = action == "recover" && argc == 4;
     const bool read =
         argc == 4 && (action == "validate" || action == "open" || action == "resources");
-    if (!create && !read) {
+    if (!create && !read && !recover) {
       std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
                    "DIRECTORY\n";
       return 2;
     }
-    const auto directory = path_from_utf8(argv[3]);
-    const auto result = create ? wds::platform::create_project(directory, argv[4])
-                               : wds::platform::open_project(directory);
+    const auto result = create    ? wds::platform::create_project(directory, argv[4])
+                        : recover ? wds::platform::recover_project(directory)
+                                  : wds::platform::open_project(directory);
     std::cout << (action == "resources" ? wds::platform::project_resources_json(result)
                                         : wds::platform::project_result_json(result))
               << '\n';

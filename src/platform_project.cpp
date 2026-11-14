@@ -18,8 +18,11 @@ namespace {
 namespace fs = std::filesystem;
 using Json = nlohmann::json;
 constexpr auto manifest_name = "wds.project.json";
+constexpr auto journal_name = ".wds-field-edit.json";
+constexpr auto staging_name = ".wds-field-edit.tmp";
 constexpr std::uint64_t max_revision = 9007199254740991ULL;
 constexpr std::uintmax_t max_manifest_bytes = 16 * 1024 * 1024;
+constexpr std::size_t max_edit_bytes = 1024 * 1024;
 
 ProjectResult failure(std::string code, std::string location) {
   return {std::nullopt, std::move(code), std::move(location)};
@@ -111,21 +114,28 @@ PathState project_path(const fs::path& root, const fs::path& relative) {
   return PathState::ok;
 }
 
-Json read_json(const fs::path& file) {
+std::optional<std::string> read_bytes(const fs::path& file, std::uintmax_t limit) {
   std::ifstream input(file, std::ios::binary | std::ios::ate);
   if (!input) throw fs::filesystem_error("open", file, std::make_error_code(std::errc::io_error));
   const auto length = static_cast<std::streamoff>(input.tellg());
   if (length < 0)
     throw fs::filesystem_error("size", file, std::make_error_code(std::errc::io_error));
-  if (static_cast<std::uintmax_t>(length) > max_manifest_bytes) {
-    return Json(Json::value_t::discarded);
-  }
+  if (static_cast<std::uintmax_t>(length) > limit) return std::nullopt;
   input.seekg(0);
   if (!input) throw fs::filesystem_error("seek", file, std::make_error_code(std::errc::io_error));
+  std::string bytes(static_cast<std::size_t>(length), '\0');
+  if (!input.read(bytes.data(), length)) {
+    throw fs::filesystem_error("read", file, std::make_error_code(std::errc::io_error));
+  }
+  return bytes;
+}
+
+Json parse_json(std::string_view bytes) {
+  if (bytes.find('\0') != std::string_view::npos) return Json(Json::value_t::discarded);
   std::vector<std::set<std::string>> keys;
   bool duplicate = false;
   const auto json = Json::parse(
-      input,
+      bytes,
       [&](int depth, Json::parse_event_t event, Json& value) {
         using Event = Json::parse_event_t;
         if (depth > 16) throw std::length_error("project JSON is too deeply nested");
@@ -137,9 +147,12 @@ Json read_json(const fs::path& file) {
         return true;
       },
       false);
-  if (input.bad())
-    throw fs::filesystem_error("read", file, std::make_error_code(std::errc::io_error));
   return duplicate ? Json(Json::value_t::discarded) : json;
+}
+
+Json read_json(const fs::path& file) {
+  const auto bytes = read_bytes(file, max_manifest_bytes);
+  return bytes ? parse_json(*bytes) : Json(Json::value_t::discarded);
 }
 
 bool has_fields(const Json& json, std::initializer_list<std::string_view> fields) {
@@ -221,11 +234,66 @@ bool write_file(const fs::path& file, std::string_view content) {
   return output.good();
 }
 
+bool replace_file(const fs::path& root, const fs::path& target, std::string_view bytes) {
+  const auto staging = root / staging_name;
+  if (project_path(root, staging_name) != PathState::missing || !write_file(staging, bytes)) {
+    return false;
+  }
+#ifdef _WIN32
+  return MoveFileExW(staging.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+  std::error_code error;
+  fs::rename(staging, target, error);
+  return !error;
+#endif
+}
+
+bool remove_reserved(const fs::path& root, const char* name) {
+  const auto state = project_path(root, name);
+  if (state == PathState::missing) return true;
+  std::error_code error;
+  return state == PathState::ok && fs::remove(root / name, error) && !error;
+}
+
+bool pending_edit(const fs::path& root) {
+  return project_path(root, journal_name) != PathState::missing ||
+         project_path(root, staging_name) != PathState::missing;
+}
+
+bool valid_field(std::string_view field) {
+  return !field.empty() && field.size() <= 64 && lower(field.front()) &&
+         std::ranges::all_of(
+             field, [](char ch) { return lower(ch) || digit(ch) || ch == '-' || ch == '_'; });
+}
+
+std::optional<std::int64_t> integer(const Json& value) {
+  const auto limit = static_cast<std::int64_t>(max_revision);
+  if (value.is_number_unsigned()) {
+    const auto v = value.get<std::uint64_t>();
+    return v <= max_revision ? std::optional(static_cast<std::int64_t>(v)) : std::nullopt;
+  }
+  if (!value.is_number_integer()) return std::nullopt;
+  const auto v = value.get<std::int64_t>();
+  return v >= -limit && v <= limit ? std::optional(v) : std::nullopt;
+}
+
+bool editable_data(const Json& value) {
+  if (value.is_number()) return integer(value).has_value();
+  if (value.is_structured()) return std::ranges::all_of(value, editable_data);
+  return !value.is_discarded();
+}
+
+const Resource* find_data(const Project& project, std::string_view id) {
+  const auto it = std::ranges::find(project.resources, id, &Resource::id);
+  return it == project.resources.end() || it->kind != "data" ? nullptr : &*it;
+}
+
 }  // namespace
 
 ProjectResult open_project(const fs::path& directory) {
   try {
     if (node(directory, true) != PathState::ok) return failure("unsafe_path", ".");
+    if (pending_edit(directory)) return failure("recovery_required", journal_name);
     const auto state = project_path(directory, manifest_name);
     if (state != PathState::ok) {
       return failure(state == PathState::missing ? "missing_manifest" : "unsafe_path",
@@ -279,6 +347,148 @@ ProjectResult create_project(const fs::path& directory, std::string_view id) {
   return result;
 }
 
+FieldResult edit_field(const fs::path& root, const FieldEdit& edit, bool apply) {
+  const auto project = open_project(root);
+  if (!project.project) return {project.code, project.location};
+  const auto revision = project.project->revision;
+  const auto bound = static_cast<std::int64_t>(max_revision);
+  if (!valid_id(edit.resource) || !valid_field(edit.field) || edit.revision > max_revision ||
+      edit.value < -bound || edit.value > bound)
+    return {"invalid_argument", edit.field, revision};
+  if (edit.revision != revision) return {"revision_conflict", "/revision", revision};
+  const auto* resource = find_data(*project.project, edit.resource);
+  if (!resource) return {"invalid_resource", edit.resource, revision};
+  try {
+    const auto manifest_bytes = read_bytes(root / manifest_name, max_edit_bytes);
+    const auto data_bytes = read_bytes(root / resource->path, max_edit_bytes);
+    if (!manifest_bytes || !data_bytes) return {"edit_too_large", resource->path, revision};
+    auto manifest = parse_json(*manifest_bytes);
+    auto data = parse_json(*data_bytes);
+    if (!data.is_object() || !editable_data(data)) {
+      return {"invalid_resource", resource->path, revision};
+    }
+    const auto field = data.find(edit.field);
+    const auto old = field == data.end() ? std::nullopt : integer(*field);
+    if (!old) return {"invalid_field", edit.field, revision};
+    FieldResult result{"ok", edit.field, revision, old, edit.value, *old != edit.value};
+    if (!result.changed) return result;
+    if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
+    manifest["revision"] = revision + 1;
+    *field = edit.value;
+    const auto next_manifest = manifest.dump(2) + "\n";
+    const auto next_data = data.dump(2) + "\n";
+    if (next_manifest.size() > max_edit_bytes || next_data.size() > max_edit_bytes) {
+      return {"edit_too_large", resource->path, revision};
+    }
+    const Json journal{{"version", 1},
+                       {"resource", edit.resource},
+                       {"field", edit.field},
+                       {"before_manifest", *manifest_bytes},
+                       {"after_manifest", next_manifest},
+                       {"before_data", *data_bytes},
+                       {"after_data", next_data}};
+    const auto encoded = journal.dump() + "\n";
+    if (encoded.size() > max_manifest_bytes) return {"edit_too_large", resource->path, revision};
+    if (!apply) return result;
+    if (!replace_file(root, root / journal_name, encoded) ||
+        !replace_file(root, root / resource->path, next_data) ||
+        !replace_file(root, root / manifest_name, next_manifest) ||
+        !remove_reserved(root, journal_name)) {
+      return {"recovery_required", journal_name};
+    }
+    result.revision = revision + 1;
+    return result;
+  } catch (const fs::filesystem_error&) {
+    return {apply ? "recovery_required" : "io_error", resource->path};
+  } catch (const std::length_error&) {
+    return {"invalid_resource", resource->path, revision};
+  } catch (const Json::exception&) {
+    return {"invalid_resource", resource->path, revision};
+  }
+}
+
+ProjectResult recover_project(const fs::path& root) {
+  const auto blocked = [] { return failure("recovery_required", journal_name); };
+  try {
+    if (node(root, true) != PathState::ok || project_path(root, manifest_name) != PathState::ok)
+      return blocked();
+    const auto journal_state = project_path(root, journal_name);
+    if (journal_state == PathState::missing) {
+      // Before journal publication, no resource or manifest can have been replaced.
+      const auto checked = validate_manifest(root, read_json(root / manifest_name));
+      if (!checked.project || !remove_reserved(root, staging_name)) return blocked();
+      return checked;
+    }
+    if (journal_state != PathState::ok) return blocked();
+    const auto journal = read_json(root / journal_name);
+    if (!has_fields(journal, {"version", "resource", "field", "before_manifest", "after_manifest",
+                              "before_data", "after_data"}) ||
+        !journal["version"].is_number_integer() || journal["version"] != 1)
+      return blocked();
+    for (const auto* key :
+         {"resource", "field", "before_manifest", "after_manifest", "before_data", "after_data"}) {
+      if (!journal[key].is_string() ||
+          journal[key].get_ref<const std::string&>().size() > max_edit_bytes)
+        return blocked();
+    }
+    const auto& id = journal["resource"].get_ref<const std::string&>();
+    const auto& field = journal["field"].get_ref<const std::string&>();
+    const auto& before_manifest = journal["before_manifest"].get_ref<const std::string&>();
+    const auto& after_manifest = journal["after_manifest"].get_ref<const std::string&>();
+    const auto& before_data = journal["before_data"].get_ref<const std::string&>();
+    const auto& after_data = journal["after_data"].get_ref<const std::string&>();
+    if (!valid_id(id) || !valid_field(field)) return blocked();
+    auto previous = parse_json(before_manifest);
+    const auto next = parse_json(after_manifest);
+    const auto old_project = validate_manifest(root, previous);
+    const auto new_project = validate_manifest(root, next);
+    if (!old_project.project || !new_project.project ||
+        old_project.project->revision == max_revision)
+      return blocked();
+    previous["revision"] = old_project.project->revision + 1;
+    if (previous != next) return blocked();
+    const auto* resource = find_data(*old_project.project, id);
+    if (!resource) return blocked();
+    auto old_data = parse_json(before_data);
+    const auto new_data = parse_json(after_data);
+    if (!old_data.is_object() || !new_data.is_object() || !editable_data(old_data) ||
+        !editable_data(new_data) || !old_data.contains(field) || !new_data.contains(field) ||
+        !integer(old_data[field]) || !integer(new_data[field]) ||
+        old_data[field] == new_data[field])
+      return blocked();
+    old_data[field] = new_data[field];
+    if (old_data != new_data) return blocked();
+
+    const auto actual_manifest = read_bytes(root / manifest_name, max_edit_bytes);
+    const auto actual_data = read_bytes(root / resource->path, max_edit_bytes);
+    const bool committed = actual_manifest == after_manifest && actual_data == after_data;
+    const bool uncommitted = actual_manifest == before_manifest &&
+                             (actual_data == before_data || actual_data == after_data);
+    if (!committed && !uncommitted) return blocked();
+    if (!remove_reserved(root, staging_name)) return blocked();
+    if (uncommitted && actual_data == after_data &&
+        !replace_file(root, root / resource->path, before_data))
+      return blocked();
+    if (!remove_reserved(root, journal_name)) return blocked();
+    return open_project(root);
+  } catch (const std::length_error&) {
+    return blocked();
+  } catch (const Json::exception&) {
+    return blocked();
+  } catch (const fs::filesystem_error&) {
+    return blocked();
+  }
+}
+
+std::string field_result_json(const FieldResult& result) {
+  Json json{{"code", result.code}, {"location", result.location}};
+  if (result.revision) json["revision"] = *result.revision;
+  if (result.old_value) json["old_value"] = *result.old_value;
+  if (result.new_value) json["new_value"] = *result.new_value;
+  if (result.code == "ok") json["changed"] = result.changed;
+  return json.dump();
+}
+
 std::string project_result_json(const ProjectResult& result) {
   if (!result.project) {
     return Json{{"code", result.code},
@@ -327,13 +537,27 @@ std::string project_operations_json() {
   const Json read_errors = {
       "unsafe_path",       "missing_manifest", "invalid_manifest", "unsupported_version",
       "duplicate_id",      "duplicate_path",   "invalid_path",     "invalid_entry_scene",
-      "missing_reference", "missing_file",     "io_error"};
+      "missing_reference", "missing_file",     "io_error",         "recovery_required"};
   add("project.create", "project create DIRECTORY ID", true,
       {{"directory", "new path"}, {"project_id", "project identifier"}},
       {"already_exists", "invalid_manifest", "unsafe_path", "io_error"});
   add("project.open", "project open DIRECTORY", false, path_input, read_errors);
   add("project.validate", "project validate DIRECTORY", false, path_input, read_errors);
   add("project.resources", "project resources DIRECTORY", false, path_input, read_errors);
+  add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  const Json edit_input{{"directory", "path"},
+                        {"resource_id", "data resource identifier"},
+                        {"field", "top-level field"},
+                        {"expected_revision", "integer"},
+                        {"value", "integer"}};
+  auto edit_errors = read_errors;
+  for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_resource",
+                           "invalid_field", "edit_too_large", "revision_exhausted"})
+    edit_errors.push_back(code);
+  add("resource.field.preview", "project preview-field DIRECTORY RESOURCE FIELD REVISION VALUE",
+      false, edit_input, edit_errors);
+  add("resource.field.set", "project set-field DIRECTORY RESOURCE FIELD REVISION VALUE", true,
+      edit_input, edit_errors);
   return Json{{"code", "ok"}, {"operations", std::move(operations)}}.dump();
 }
 
