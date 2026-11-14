@@ -31,6 +31,14 @@ ctest --test-dir build --output-on-failure
 
 配置、编译和 1 项测试通过。此结果验证单个环境可用。跨平台、依赖管理、插件装配、共享操作和保存仍需实测，标准与工具链仍待评审。[MSVC 标准选项](https://learn.microsoft.com/en-us/cpp/build/reference/std-specify-language-standard-version?view=msvc-170) · [CMake 标准属性](https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html) · [CTest 手册](https://cmake.org/cmake/help/latest/manual/ctest.1.html)
 
+### 首轮试行基线
+
+建议用 **C++20、CMake 3.25 起、Ninja、CTest** 搭建首个构建骨架。C++20 模式已通过 Windows MSVC 实测，`std::span` 可用于传递非拥有的参数序列。CMake 3.25 是本轮预设配置的目标下限，实际测试用的是随附的 3.31.6。CMake 预设让本地与 CI 共享命令，Ninja 可生成供分析工具使用的编译数据库。CTest 足以运行骨架测试，首批测试只使用标准库。[CMake 预设](https://cmake.org/cmake/help/v3.25/manual/cmake-presets.7.html) · [编译数据库](https://cmake.org/cmake/help/v3.25/variable/CMAKE_EXPORT_COMPILE_COMMANDS.html)
+
+在 Windows x64 使用 MSVC 19.44 和同一组临时样例，对照 Ninja 1.12.1 与 Visual Studio 2022 生成器。两组均通过构建和 1 项 CTest。样例静态链接试验模块，通过模拟 GUI 和 CLI 的两个入口传入同一组参数，比较结果并写入文件后重读。它验证编译、链接、等价调用与简单读写。随附的 clang-tidy 19.1.5 能读取 Ninja 编译数据库，对样例源文件无报告，系统头诊断被过滤。
+
+Visual Studio 生成器可作为 Windows 的备选。两组使用同一个编译器，Linux 由构建骨架 CI 补验证，macOS 仍待验证。最低 CMake 版本需另测。动态插件、故障恢复、依赖管理和第三方库随相关任务评估。
+
 ## 其他开放问题
 
 | 领域 | 需要回答的问题 | 比较重点 | 最小证据 |
@@ -61,4 +69,4 @@ ctest --test-dir build --output-on-failure
 
 1. 评审首轮工具链报告，明确适用的 C++ 标准、构建与测试入口、首个验证平台和未验证范围。
 2. 评审插件、共享操作和保存的最小契约，明确失败行为和集成验收。对原型直接依赖的第三方库确认其版本、许可与替换边界。
-3. 按评审结论分配 [首批实现任务](../project/development-tasks.md)。最小构建、格式、静态检查和自动测试随首批 C++ 源码落地，再并行实现插件宿主、项目存取与共享操作。
+3. 构建骨架可按试行基线先搭建。按评审结论分配 [首批引擎实现任务](../project/development-tasks.md)，把格式、静态分析和行为测试接入已有构建检查，再并行实现插件宿主、项目存取与共享操作。

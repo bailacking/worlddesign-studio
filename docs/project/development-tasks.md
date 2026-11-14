@@ -6,17 +6,29 @@
 
 在 [GitHub Issues](https://github.com/bailacking/worlddesign-studio/issues) 用任务编号创建或认领工作，先搜索已有 Issue，记录负责人、当前状态（待认领、进行中、待评审、完成）和阻塞项。下表维护范围与依赖，Issue 维护具体进度。每个实现任务使用独立分支，并在 PR 中关联 Issue 或任务编号、列出验收结果。多位贡献者同时修改同一台电脑上的仓库时，使用独立工作树。
 
-## 首批手动派发
+## 当前手动派发
 
-本机协作从 AI 超级终端库检索「WDS 手动派发」，按用户给出的任务编号和工作目录执行。下表是同一轮规划的三份证据收集任务，可同时进行。每项只提交对应的报告，候选方案、疑问和失败情况写入报告，由 Codex 汇总评审，确认后再修改正式规格并发放编码任务。
+Codex 负责技术调研、选型、契约和关键实现评审。用户按任务编号派发已有明确输入、产出和检查命令的工作。其他 Agent 可承担骨架配置、批量补充已有规格的测试数据、跨环境复跑或文档同步。遇到设计取舍时把具体问题交回 Codex。交付只需一行「任务编号｜提交或变更路径｜检查结果｜阻塞」，在共享库留一条简短记录即可。
 
-| 编号 | 可直接执行的工作 | 报告位置 | 验收 |
-| --- | --- | --- | --- |
-| M0-01A 工具链实测 | 按 [本机基线](../engineering/technical-evaluation.md#本机工具链基线) 复跑。尝试用本机已有的另一套编译器或构建组合跑同一临时样例。收集官方资料中 C++ 标准和编译器支持的差异 | `docs/research/m0-toolchain-evidence.md` | 写清环境、版本、命令、结果和官方链接。只有一套可运行时，列出另一套的具体阻塞。样例放在临时目录 |
-| M0-02A 插件验收草案 | 从 [插件](../architecture/plugins.md) 和 [质量标准](../engineering/quality.md#插件故障矩阵) 摘出首轮用例：正常加载、缺依赖、必需插件失败、可选插件失败、停用清理 | `docs/research/m0-plugin-cases.md` | 每例写前置状态、动作、预期结果和观察点。原文未规定的细节列为待评审问题 |
-| M0-03A 资源改名与保存验收草案 | 对照 [共享操作](../architecture/commands.md) 和 [资源](../architecture/assets.md)，写一个两个资源互相引用的示例，覆盖改名、GUI 与 CLI 等价、过时修订、保存中断和重复编号 | `docs/research/m0-resource-cases.md` | 每例列出操作前后编号、路径、修订或数据状态。对缺少确定规则的用例写明待确认项 |
+### M0-05A 搭建 C++ 构建骨架
 
-交付时回报「任务编号｜报告路径｜实际完成的检查｜阻塞」，并用知识库 `record` 留一条交接记录。报告存仓库，知识库只存路径和结论。提交前按 [质量检查](../engineering/quality.md#当前自动检查) 复查；缺工具时记录阻塞。分支、报告与交接由用户手动派发和收回。
+使用 [首轮试行基线](../engineering/technical-evaluation.md#首轮试行基线)，交付下面这批文件。此任务只验证构建与检查链路，插件、项目格式、共享操作和界面契约由 M0-02 至 M0-04 约定。
+
+| 文件 | 要做的事 |
+| --- | --- |
+| `CMakeLists.txt`、`CMakePresets.json` | CMake 3.25 起，使用 Ninja，添加名为 `dev` 的 configure、build、test presets，产物放 `build/dev`。目标要求 C++20、关闭编译器扩展。MSVC 启用 `/W4 /WX`，GCC/Clang 启用 `-Wall -Wextra -Wpedantic -Werror` |
+| `tests/smoke.cpp` | 一个可执行的基础程序，确认实际 C++ 标准模式并返回成功，注册一个 CTest。只使用标准库 |
+| `.gitignore` | 忽略仓库根目录的 `build/` 和 `CMakeUserPresets.json` |
+| `.github/workflows/quality.yml` | 保留现有文档 job，新增 C++ job，在 Linux 环境跑下方构建和测试命令。Windows 先用本机 MSVC 实测 |
+| `docs/engineering/development.md` | 补齐试行构建命令及 Windows 的 x64 开发者命令环境说明 |
+
+在干净构建目录完成下面三步，测试必须实际执行且通过。Windows 的测试日志保留工具版本。若当前分支没有远端运行，交付时将 Linux CI 标为待验证。按 [现有质量检查](../engineering/quality.md#当前自动检查) 复查文档。只提交到任务分支。
+
+```sh
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev --output-on-failure --no-tests=error
+```
 
 ## 最小基础程序
 
@@ -26,13 +38,13 @@
 | [M0-02 约定插件契约](https://github.com/bailacking/worlddesign-studio/issues/3) | [插件](../architecture/plugins.md)章节补齐注册、依赖、停用与释放的流程和用例 | 可开始 | 用例定义成功装配、缺依赖、必需与可选插件失败、停用清理的可观察结果 |
 | [M0-03 约定共享操作](https://github.com/bailacking/worlddesign-studio/issues/4) | [操作](../architecture/commands.md)章节定义首个资源改名操作的输入、结果、错误和修订冲突 | 可开始 | 明确 GUI、CLI 的等价输入、预期状态及过时修订的行为 |
 | [M0-04 约定资源与保存边界](https://github.com/bailacking/worlddesign-studio/issues/5) | [资源](../architecture/assets.md)章节给出最小项目样例，说明编号、路径及写入失败后的恢复 | 可开始 | 改名后引用仍有效，保存中断后可重开最近完整版本，重复编号有诊断 |
-| M0-05 建立引擎源码和 CI | 可干净构建的最小 C++ 源码结构及自动检查 | M0-01 通过评审 | 新检出可按文档运行格式、静态检查、构建及自动测试。PR 能看到结果 |
+| M0-05 建立引擎源码和 CI | 先交付 M0-05A 的构建骨架，再补首批引擎源码的格式与静态分析 | M0-05A 可开始；引擎实现依赖工具链与相关契约评审 | 新检出可按文档运行检查、构建及自动测试。PR 能看到结果 |
 | M0-06 实现插件宿主 | 宿主及两个最小试验插件 | M0-02、M0-05 | 两个插件可装配。缺依赖或初始化失败有诊断，停用后释放已注册资源 |
 | M0-07 实现项目存取 | 最小项目样例、资源索引、保存与打开接口 | M0-04、M0-05 | 改名保留编号，保存并重开后读取一致。失败时可恢复且错误可定位 |
 | M0-08 实现共享操作 | 资源改名入口、统一结果和契约测试 | M0-03、M0-05；与 M0-07 联调 | 同一请求得到相同结果。过时修订会被拒绝，原数据保持完整 |
 | M0-09 接入 GUI 和 CLI | 两个最小入口与集成验收脚本 | M0-06 至 M0-08 | 从同一初始项目分别执行改名，重开后对比资源身份和持久化结果，并验证一次失败恢复 |
 
-M0-01 至 M0-04 可并行开展调研和契约设计。契约工作在所属章节写示例和预期结果，选型试验可用临时样例。完成 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 后，再分配 M0-05 至 M0-09 的实现任务。插件宿主、项目存取和共享操作按各自契约推进，由 M0-09 验收组合行为。
+M0-01 至 M0-04 由 Codex 推进，M0-05A 可与这些工作并行。完成 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 后，再分配引擎实现任务。插件宿主、项目存取和共享操作按各自契约推进，由 M0-09 验收组合行为。
 
 ## 首个可玩沙盒
 

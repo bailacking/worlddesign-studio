@@ -2,7 +2,7 @@
 
 ## 工作区与当前状态
 
-从 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 获取项目文档。引擎核心采用 C++。当前处于技术规划阶段，尚无引擎源码或可运行原型。首轮工具链评审通过后，建立与其匹配的源码、构建和测试目录。
+从 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 获取项目文档。引擎核心采用 C++。当前处于技术规划阶段，构建骨架按 [试行基线](technical-evaluation.md#首轮试行基线) 推进，引擎源码与可运行原型待相关契约通过评审后实现。
 
 ## 目录职责
 
