@@ -2,7 +2,7 @@
 
 ## 创作入口
 
-WDS 同时提供代码与可视化逻辑编辑，允许根据任务和经验选择或混合使用。图形编辑器面向场景、资源和行为组织，命令行与 AI 可通过共享操作完成相应任务。界面布局、脚本语言和图形表达形式尚未选型。
+WDS 同时提供代码与可视化逻辑编辑，允许根据任务和经验选择或混合使用。图形编辑器面向场景、资源和行为组织，命令行与 AI 可通过共享操作完成相应任务。首版界面布局见 [桌面工作台](workbench.md)，脚本语言和图形表达形式仍待选型。
 
 ### Windows 工作台与框架评估
 
@@ -14,7 +14,7 @@ WDS 同时提供代码与可视化逻辑编辑，允许根据任务和经验选�
 | wxWidgets + AUI | 官方资料提供停靠工作区与分发许可说明 | 在同一场景验证停靠状态、输入、可访问性与 Windows/Linux 构建 |
 | Qt Widgets | 官方资料提供停靠控件及许可选项 | 复跑同一工作流，核对实际使用模块及分发条件 |
 
-EDT-01 以同一测试场景比较候选：打开包含两个资源的项目，键盘选中资源，切换或停靠面板，关闭后恢复布局，并打开一个错误项目查看诊断。记录构建复现、许可证、是否需要依赖安装、无障碍表现和维护成本。目前仅 Win32 的首个流程已实测，长期框架选型待比较结果。[Win32 控件](https://learn.microsoft.com/en-us/windows/win32/controls/about-tree-view-controls) · [wxWidgets AUI](https://docs.wxwidgets.org/3.2/overview_aui.html) · [wxWidgets 许可](https://www.wxwidgets.org/about/licence/) · [Qt 停靠控件](https://doc.qt.io/qt-6/qdockwidget.html) · [Qt 许可](https://doc.qt.io/qt-6/licensing.html)
+目前仅 Win32 的首个流程已实测。新工作台采用 Qt Widgets 作为首版前端，布局和依赖由工作台自身管理。WKB-01 在实际构建时确认版本、许可和部署边界。 [桌面工作台技术路线](workbench.md#首版技术路线) · [Win32 控件](https://learn.microsoft.com/en-us/windows/win32/controls/about-tree-view-controls) · [wxWidgets AUI](https://docs.wxwidgets.org/3.2/overview_aui.html) · [wxWidgets 许可](https://www.wxwidgets.org/about/licence/)
 
 ## 共同语义基础
 

@@ -118,20 +118,31 @@ int run(int argc, char** argv) {
       std::string_view(argv[2]) != "asset.rename") {
     const std::string_view action(argv[2]);
     const auto directory = path_from_utf8(argv[3]);
-    if (argc == 6 && action == "play") {
+    const bool inspect_scene = argc == 5 && action == "scene";
+    if (inspect_scene || (argc == 6 && action == "play")) {
       std::uint64_t revision = 0;
       std::uint64_t ticks = 0;
       wds::platform::SceneResult result{std::nullopt, "invalid_argument", "/revision"};
       if (parse_integer(argv[4], revision)) {
-        if (parse_integer(argv[5], ticks) && ticks <= wds::platform::SceneSession::max_ticks) {
+        if (inspect_scene ||
+            (parse_integer(argv[5], ticks) && ticks <= wds::platform::SceneSession::max_ticks)) {
           result = wds::platform::start_scene(directory, revision);
           if (result.session) result.session->advance(ticks);
         } else {
           result.location = "/ticks";
         }
       }
-      std::cout << wds::platform::scene_result_json(result) << '\n';
+      std::cout << wds::platform::scene_result_json(result, inspect_scene) << '\n';
       return result.session ? 0 : 1;
+    }
+    if (argc == 8 && (action == "preview-scene-field" || action == "set-scene-field")) {
+      wds::platform::SceneEdit edit{argv[4], argv[5], 0, 0};
+      const auto result =
+          parse_integer(argv[6], edit.revision) && parse_integer(argv[7], edit.value)
+              ? wds::platform::edit_scene(directory, edit, action == "set-scene-field")
+              : wds::platform::FieldResult{"invalid_argument", "/input"};
+      std::cout << wds::platform::field_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
     }
     if (argc == 8 && (action == "preview-field" || action == "set-field")) {
       wds::platform::FieldEdit edit{argv[4], argv[5], 0, 0};
@@ -149,7 +160,10 @@ int run(int argc, char** argv) {
     if (!create && !read && !recover) {
       std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
                    "DIRECTORY\n"
-                   "       wds_cli project play DIRECTORY REVISION TICKS\n";
+                   "       wds_cli project play DIRECTORY REVISION TICKS\n"
+                   "       wds_cli project scene DIRECTORY REVISION\n"
+                   "       wds_cli project preview-scene-field|set-scene-field DIRECTORY ENTITY "
+                   "FIELD REVISION VALUE\n";
       return 2;
     }
     const auto result = create    ? wds::platform::create_project(directory, argv[4])

@@ -1,0 +1,645 @@
+#include <QApplication>
+#include <QCloseEvent>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QDockWidget>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QInputDialog>
+#include <QLabel>
+#include <QListWidget>
+#include <QMainWindow>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QPalette>
+#include <QPushButton>
+#include <QSettings>
+#include <QSignalBlocker>
+#include <QSpinBox>
+#include <QStatusBar>
+#include <QStyleFactory>
+#include <QTimer>
+#include <QToolBar>
+#include <algorithm>
+#include <deque>
+#include <optional>
+#include <utility>
+
+#include "bridge.hpp"
+#include "i18n/language.hpp"
+#include "platform_project.hpp"
+#include "resource_panel.hpp"
+#include "scene_tree.hpp"
+#include "viewport.hpp"
+
+namespace wds::studio {
+namespace {
+
+QString argument(qint64 number) { return QString::number(number); }
+
+void applyTheme(QApplication& app) {
+  app.setStyle(QStyleFactory::create("Fusion"));
+  QPalette palette = app.palette();
+  // Keep the native controls aligned with the roles in workbench.qss.
+  palette.setColor(QPalette::Window, QColor("#1e1f22"));
+  palette.setColor(QPalette::Base, QColor("#1a1b1e"));
+  palette.setColor(QPalette::AlternateBase, QColor("#202226"));
+  palette.setColor(QPalette::Button, QColor("#2a2c31"));
+  palette.setColor(QPalette::Mid, QColor("#3a3d44"));
+  palette.setColor(QPalette::Highlight, QColor("#2f5fa8"));
+  palette.setColor(QPalette::Inactive, QPalette::Highlight, QColor("#3a4250"));
+  palette.setColor(QPalette::HighlightedText, Qt::white);
+  palette.setColor(QPalette::PlaceholderText, QColor("#a9adb5"));
+  palette.setColor(QPalette::ToolTipBase, QColor("#26282c"));
+  palette.setColor(QPalette::ToolTipText, QColor("#e6e7ea"));
+  for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
+    palette.setColor(role, QColor("#e6e7ea"));
+    palette.setColor(QPalette::Disabled, role, QColor("#71767f"));
+  }
+  app.setPalette(palette);
+  QFile theme(":/studio/theme/workbench.qss");
+  if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
+}
+
+QString diagnostic(const QJsonObject& result) {
+  static constexpr std::array codes{
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "already_exists"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_invalid_result"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_timeout"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cli_unavailable"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "cleanup_incomplete"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_entity_id"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_id"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "edit_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_argument"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entity"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entry_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "recovery_required"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsafe_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_version"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_version")};
+  const auto code = result.value("code").toString();
+  const auto found = std::ranges::find_if(codes, [&](const char* key) { return code == key; });
+  auto message =
+      found == codes.end() ? code : QCoreApplication::translate("ProjectDiagnostic", *found);
+  if (message != code) message += " (" + code + ")";
+  const auto location = result.value("location").toString();
+  const auto path = result.value("resource_path").toString();
+  if (!location.isEmpty()) message += " · " + location;
+  if (!path.isEmpty()) message += " · " + path;
+  if (code == "revision_conflict")
+    message += QCoreApplication::translate("ProjectDiagnostic",
+                                           " · Reopen the project to load its current revision.");
+  return message;
+}
+
+class Workbench final : public QMainWindow {
+  Q_OBJECT
+
+ private:
+  struct Message {
+    const char* pattern = nullptr;
+    QStringList arguments;
+    QJsonObject error;
+
+    QString text() const {
+      if (!error.isEmpty()) return diagnostic(error);
+      if (!pattern) return arguments.value(0);
+      const auto translated = tr(pattern);
+      if (arguments.size() == 3) return translated.arg(arguments[0], arguments[1], arguments[2]);
+      return arguments.isEmpty() ? translated : translated.arg(arguments[0]);
+    }
+  };
+
+ public:
+  explicit Workbench(LanguageSettings& language) : language_(language) {
+    setObjectName("workbench");
+    resize(1360, 840);
+    setDockOptions(AllowTabbedDocks | AllowNestedDocks | AnimatedDocks);
+
+    project_menu_ = menuBar()->addMenu(QString{});
+    open_ = project_menu_->addAction(QString{}, this, &Workbench::chooseProject);
+    open_->setShortcut(QKeySequence::Open);
+    create_ = project_menu_->addAction(QString{}, this, &Workbench::createProject);
+    create_->setShortcut(QKeySequence::New);
+    save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
+    save_->setShortcut(QKeySequence::Save);
+    revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
+    close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
+    scene_menu_ = menuBar()->addMenu(QString{});
+    play_ = scene_menu_->addAction(QString{}, this, &Workbench::play);
+    play_->setShortcut(QKeySequence(Qt::Key_F5));
+    stop_ = scene_menu_->addAction(QString{}, this, &Workbench::stop);
+    stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
+    view_menu_ = menuBar()->addMenu(QString{});
+    settings_menu_ = menuBar()->addMenu(QString{});
+    settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
+
+    toolbar_ = addToolBar(QString{});
+    toolbar_->setObjectName("workspaceToolbar");
+    toolbar_->setMovable(false);
+    toolbar_->addActions({open_, create_, save_});
+    toolbar_->addSeparator();
+    toolbar_->addActions({play_, stop_});
+    toolbar_->addSeparator();
+    project_label_ = new QLabel(toolbar_);
+    toolbar_->addWidget(project_label_);
+
+    viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
+    setCentralWidget(viewport_);
+    scene_tree_ = new SceneTreePanel([this](const QString& id) { selectEntity(id); }, this);
+    hierarchy_ = dock("sceneTree", Qt::LeftDockWidgetArea, scene_tree_);
+
+    auto* property_panel = new QWidget(this);
+    auto* form = new QFormLayout(property_panel);
+    form->setContentsMargins(12, 14, 12, 14);
+    entity_label_ = new QLabel(property_panel);
+    form->addRow(entity_label_);
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      auto* value = new QSpinBox(property_panel);
+      fields_[index] = value;
+      field_labels_[index] = new QLabel(property_panel);
+      field_labels_[index]->setBuddy(value);
+      form->addRow(field_labels_[index], value);
+      connect(value, &QSpinBox::valueChanged, this, [this, index](int) {
+        if (!dirty_) editing_ = index;
+        dirty_ = fields_[editing_]->value() != committed_[editing_];
+        updateActions();
+      });
+    }
+    draft_label_ = new QLabel(property_panel);
+    draft_label_->setProperty("state", "modified");
+    form->addRow(draft_label_);
+    inspector_ = dock("inspector", Qt::RightDockWidgetArea, property_panel);
+
+    resources_ = new ResourcePanel([this](const QString& id) { showResource(id); }, this);
+    assets_ = dock("resources", Qt::BottomDockWidgetArea, resources_);
+    output_ = new QListWidget(this);
+    output_dock_ = dock("output", Qt::BottomDockWidgetArea, output_);
+    tabifyDockWidget(assets_, output_dock_);
+    assets_->raise();
+    resizeDocks({hierarchy_, inspector_}, {225, 285}, Qt::Horizontal);
+    resizeDocks({assets_}, {190}, Qt::Vertical);
+
+    revision_label_ = new QLabel(statusBar());
+    statusBar()->addPermanentWidget(revision_label_);
+    setStatus(QT_TR_NOOP("Open a WDS project to begin."));
+    const QSettings settings;
+    restoreGeometry(settings.value("workbench/geometry").toByteArray());
+    restoreState(settings.value("workbench/layout").toByteArray(), 1);
+    timer_.setInterval(33);
+    connect(&timer_, &QTimer::timeout, this, [this] {
+      if (!session_->advance(1)) {
+        timer_.stop();
+        setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
+        return;
+      }
+      drawSession();
+    });
+    retranslate();
+  }
+
+  void openProject(const QString& path) {
+    if (busy_ || !canDiscard()) return;
+    stop();
+    root_ = QDir(path).absolutePath();
+    clearProject();
+    refresh();
+  }
+
+ protected:
+  void changeEvent(QEvent* event) override {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) retranslate();
+  }
+
+  void closeEvent(QCloseEvent* event) override {
+    if (busy_ || !canDiscard()) {
+      event->ignore();
+      return;
+    }
+    QSettings settings;
+    settings.setValue("workbench/geometry", saveGeometry());
+    settings.setValue("workbench/layout", saveState(1));
+    QMainWindow::closeEvent(event);
+  }
+
+ private:
+  QDockWidget* dock(const QString& id, Qt::DockWidgetArea area, QWidget* panel) {
+    auto* widget = new QDockWidget(this);
+    widget->setObjectName(id);
+    widget->setWidget(panel);
+    addDockWidget(area, widget);
+    view_menu_->addAction(widget->toggleViewAction());
+    return widget;
+  }
+
+  void retranslate() {
+    project_menu_->setTitle(tr("&Project"));
+    scene_menu_->setTitle(tr("&Scene"));
+    view_menu_->setTitle(tr("&View"));
+    settings_menu_->setTitle(tr("Se&ttings"));
+    settings_action_->setText(tr("Interface Language…"));
+    open_->setText(tr("&Open Project…"));
+    create_->setText(tr("&New Project…"));
+    save_->setText(tr("&Save Property"));
+    revert_->setText(tr("Discard Property Draft"));
+    close_->setText(tr("Close Project"));
+    play_->setText(tr("&Play"));
+    stop_->setText(tr("S&top"));
+    toolbar_->setWindowTitle(tr("Workspace"));
+    hierarchy_->setWindowTitle(tr("Scene"));
+    inspector_->setWindowTitle(tr("Inspector"));
+    assets_->setWindowTitle(tr("Resources"));
+    output_dock_->setWindowTitle(tr("Output"));
+    output_->setAccessibleName(tr("Output"));
+    const std::array labels{tr("Position X"), tr("Position Y"), tr("Velocity X"), tr("Velocity Y")};
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      field_labels_[index]->setText(labels[index]);
+      fields_[index]->setAccessibleName(labels[index]);
+    }
+    entity_label_->setText(selected_.isEmpty() ? tr("Select an entity") : selected_);
+    for (int row = 0; row < output_->count(); ++row)
+      output_->item(row)->setText(messages_[static_cast<std::size_t>(row)].text());
+    statusBar()->showMessage(status_.text());
+    updateActions();
+  }
+
+  void showSettings() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Settings"));
+    auto* form = new QFormLayout(&dialog);
+    auto* languages = new QComboBox(&dialog);
+    languages->addItem(QStringLiteral("简体中文"), QStringLiteral("zh_CN"));
+    languages->addItem(QStringLiteral("English"), QStringLiteral("en"));
+    languages->setCurrentIndex(languages->findData(language_.language()));
+    languages->setAccessibleName(tr("Interface language"));
+    form->addRow(tr("Interface language"), languages);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form->addRow(buttons);
+    if (dialog.exec() == QDialog::Accepted &&
+        !language_.setLanguage(languages->currentData().toString()))
+      QMessageBox::warning(this, tr("Settings"), tr("Could not apply the interface language."));
+  }
+
+  void chooseProject() {
+    const auto path = QFileDialog::getExistingDirectory(
+        this, tr("Open WDS Project"), root_,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
+    if (!path.isEmpty()) openProject(path);
+  }
+
+  void createProject() {
+    const auto parent = QFileDialog::getExistingDirectory(
+        this, tr("Choose Project Parent"), root_,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
+    if (parent.isEmpty()) return;
+    bool accepted = false;
+    const auto id = QInputDialog::getText(this, tr("New WDS Project"), tr("Project ID"),
+                                          QLineEdit::Normal, "my-game", &accepted);
+    if (!accepted || id.isEmpty() || !canDiscard()) return;
+    if (id.contains('/') || id.contains('\\') || id == "." || id == "..") {
+      report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}});
+      return;
+    }
+    const auto path = QDir(parent).filePath(id);
+    setBusy(true);
+    bridge_.run({"project", "create", path, id}, [this, path](const QJsonObject& result) {
+      if (result.value("code") != "ok") {
+        report({nullptr, {}, result});
+        setBusy(false);
+        return;
+      }
+      stop();
+      root_ = path;
+      clearProject();
+      refresh();
+    });
+  }
+
+  bool canDiscard() {
+    return !dirty_ || QMessageBox::question(this, tr("Unsaved Property"),
+                                            tr("Discard the unsaved property change?"),
+                                            QMessageBox::Discard | QMessageBox::Cancel,
+                                            QMessageBox::Cancel) == QMessageBox::Discard;
+  }
+
+  void closeProject() {
+    if (!canDiscard()) return;
+    stop();
+    root_.clear();
+    clearProject();
+    setStatus(QT_TR_NOOP("Project closed."));
+  }
+
+  void clearProject() {
+    project_id_.clear();
+    revision_.reset();
+    scene_ready_ = false;
+    field_schema_ = {};
+    entities_ = {};
+    resources_model_ = {};
+    selected_.clear();
+    dirty_ = false;
+    resources_->setResources(resources_model_);
+    setEntities();
+    populateInspector();
+    updateActions();
+  }
+
+  void refresh() {
+    setBusy(true);
+    bridge_.run({"project", "resources", root_}, [this](const QJsonObject& result) {
+      if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
+          !result.value("resources").isArray() || !result.value("project_id").isString()) {
+        report({nullptr, {}, result});
+        setBusy(false);
+        return;
+      }
+      project_id_ = result.value("project_id").toString();
+      revision_ = result.value("revision").toInteger();
+      resources_model_ = result.value("resources").toArray();
+      resources_->setResources(resources_model_);
+      readScene();
+    });
+  }
+
+  void readScene() {
+    scene_ready_ = false;
+    bridge_.run(
+        {"project", "scene", root_, argument(*revision_)}, [this](const QJsonObject& result) {
+          scene_ready_ =
+              result.value("code") == "ok" && result.value("entities").isArray() &&
+              result.value("fields").toArray().size() == static_cast<qsizetype>(fields_.size());
+          entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
+          field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
+          setEntities();
+          populateInspector();
+          if (scene_ready_)
+            report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
+          else
+            report({nullptr, {}, result});
+          setBusy(false);
+        });
+  }
+
+  void setEntities() {
+    scene_tree_->setEntities(entities_);
+    scene_tree_->setSelectedId(selected_);
+    viewport_->setScene(entities_, false);
+    viewport_->setSelectedId(selected_);
+  }
+
+  void selectEntity(const QString& id) {
+    if (id == selected_) return;
+    if (busy_ || session_ || !canDiscard()) {
+      scene_tree_->setSelectedId(selected_);
+      return;
+    }
+    selected_ = id;
+    dirty_ = false;
+    scene_tree_->setSelectedId(selected_);
+    viewport_->setSelectedId(id);
+    populateInspector();
+    updateActions();
+  }
+
+  void populateInspector() {
+    QJsonObject entity;
+    for (const auto item : entities_) {
+      const auto candidate = item.toObject();
+      if (candidate.value("id") == selected_) {
+        entity = candidate;
+        break;
+      }
+    }
+    if (entity.isEmpty()) selected_.clear();
+    entity_label_->setText(selected_.isEmpty() ? tr("Select an entity") : selected_);
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      const QSignalBlocker block(fields_[index]);
+      const auto spec = field_schema_.size() > static_cast<qsizetype>(index)
+                            ? field_schema_.at(static_cast<qsizetype>(index)).toObject()
+                            : QJsonObject{};
+      fields_[index]->setRange(spec.value("minimum").toInt(), spec.value("maximum").toInt());
+      committed_[index] = entity.value(spec.value("id").toString()).toInt();
+      fields_[index]->setValue(committed_[index]);
+    }
+  }
+
+  void showResource(const QString& id) {
+    if (id.isEmpty()) return;
+    for (const auto item : resources_model_) {
+      const auto resource = item.toObject();
+      if (resource.value("id") == id) setStatus(nullptr, {resource.value("path").toString()});
+    }
+  }
+
+  void discardProperty() {
+    dirty_ = false;
+    populateInspector();
+    updateActions();
+  }
+
+  void saveProperty() {
+    if (!dirty_ || busy_ || !revision_) return;
+    const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
+    const auto value = fields_[editing_]->value();
+    QStringList args{"project",        "preview-scene-field", root_,          selected_,
+                     field.toString(), argument(*revision_),  argument(value)};
+    setBusy(true);
+    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
+      if (preview.value("code") != "ok") {
+        report({nullptr, {}, preview});
+        setBusy(false);
+        return;
+      }
+      args[1] = "set-scene-field";
+      bridge_.run(args, [this](const QJsonObject& result) {
+        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+          report({nullptr, {}, result});
+          setBusy(false);
+          return;
+        }
+        revision_ = result.value("revision").toInteger();
+        dirty_ = false;
+        report(
+            {QT_TR_NOOP("Saved %1 · %2 → %3"),
+             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
+              argument(result.value("new_value").toInteger())},
+             {}});
+        readScene();
+      });
+    });
+  }
+
+  void play() {
+    if (busy_ || dirty_ || !revision_ || !scene_ready_) return;
+#ifdef Q_OS_WIN
+    const std::filesystem::path path(root_.toStdWString());
+#else
+    const std::filesystem::path path(root_.toStdString());
+#endif
+    auto result = platform::start_scene(path, static_cast<std::uint64_t>(*revision_));
+    if (!result.session) {
+      report({nullptr,
+              {},
+              {{"code", QString::fromStdString(result.code)},
+               {"location", QString::fromStdString(result.location)}}});
+      return;
+    }
+    session_ = std::move(result.session);
+    drawSession();
+    timer_.start();
+    updateActions();
+  }
+
+  void drawSession() {
+    QJsonArray entities;
+    for (const auto& entity : session_->snapshot().entities) {
+      entities.append(QJsonObject{{"id", QString::fromStdString(entity.id)},
+                                  {"x", static_cast<qint64>(entity.x)},
+                                  {"y", static_cast<qint64>(entity.y)}});
+    }
+    viewport_->setScene(std::move(entities), true);
+    setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(session_->snapshot().ticks)});
+  }
+
+  void stop() {
+    if (!session_) return;
+    timer_.stop();
+    session_.reset();
+    viewport_->setScene(entities_, false);
+    setStatus(QT_TR_NOOP("Playback stopped."));
+    updateActions();
+  }
+
+  void setStatus(const char* pattern, QStringList arguments = {}) {
+    status_ = {pattern, std::move(arguments), {}};
+    statusBar()->showMessage(status_.text());
+  }
+
+  void report(Message message) {
+    if (output_->count() == 200) {
+      delete output_->takeItem(0);
+      messages_.pop_front();
+    }
+    status_ = message;
+    output_->addItem(message.text());
+    messages_.push_back(std::move(message));
+    output_->scrollToBottom();
+    statusBar()->showMessage(status_.text());
+  }
+
+  void setBusy(bool busy) {
+    busy_ = busy;
+    updateActions();
+  }
+
+  void updateActions() {
+    const bool editable = scene_ready_ && !selected_.isEmpty() && !busy_ && !session_;
+    for (std::size_t index = 0; index < fields_.size(); ++index)
+      fields_[index]->setEnabled(editable && (!dirty_ || index == editing_));
+    scene_tree_->setEnabled(!busy_ && !session_);
+    open_->setEnabled(!busy_);
+    create_->setEnabled(!busy_);
+    close_->setEnabled(!busy_ && !root_.isEmpty());
+    save_->setEnabled(editable && dirty_);
+    revert_->setEnabled(editable && dirty_);
+    play_->setEnabled(scene_ready_ && !busy_ && !session_ && !dirty_ && revision_.has_value());
+    stop_->setEnabled(session_.has_value());
+    project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
+    const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
+    revision_label_->setText(revision + (dirty_ ? tr(" · Unsaved") : QString{}));
+    draft_label_->setText(
+        dirty_ ? tr("Unsaved · %1 → %2").arg(committed_[editing_]).arg(fields_[editing_]->value())
+               : QString{});
+    draft_label_->setVisible(dirty_);
+    setWindowTitle(project_id_.isEmpty()
+                       ? tr("WDS Studio")
+                       : tr("%1%2 — WDS Studio").arg(project_id_, dirty_ ? "*" : ""));
+  }
+
+  LanguageSettings& language_;
+  ProjectBridge bridge_{this};
+  Message status_;
+  std::deque<Message> messages_;
+  QTimer timer_;
+  Viewport* viewport_;
+  SceneTreePanel* scene_tree_;
+  ResourcePanel* resources_;
+  QListWidget* output_;
+  QLabel* project_label_;
+  QLabel* revision_label_;
+  QLabel* entity_label_;
+  QLabel* draft_label_;
+  QMenu* project_menu_;
+  QMenu* scene_menu_;
+  QMenu* view_menu_;
+  QMenu* settings_menu_;
+  QToolBar* toolbar_;
+  QDockWidget* hierarchy_;
+  QDockWidget* inspector_;
+  QDockWidget* assets_;
+  QDockWidget* output_dock_;
+  QAction* settings_action_;
+  QAction* open_;
+  QAction* create_;
+  QAction* close_;
+  QAction* save_;
+  QAction* revert_;
+  QAction* play_;
+  QAction* stop_;
+  std::array<QSpinBox*, platform::scene_fields.size()> fields_{};
+  std::array<QLabel*, platform::scene_fields.size()> field_labels_{};
+  std::array<int, platform::scene_fields.size()> committed_{};
+  QString root_;
+  QString project_id_;
+  QString selected_;
+  std::optional<qint64> revision_;
+  std::optional<platform::SceneSession> session_;
+  QJsonArray entities_;
+  QJsonArray resources_model_;
+  QJsonArray field_schema_;
+  bool busy_ = false;
+  bool dirty_ = false;
+  bool scene_ready_ = false;
+  std::size_t editing_ = 0;
+};
+
+}  // namespace
+}  // namespace wds::studio
+
+#include "main.moc"
+
+int main(int argc, char** argv) {
+  QApplication app(argc, argv);
+  QCoreApplication::setOrganizationName("WDS");
+  QCoreApplication::setApplicationName("WDS Studio");
+  wds::studio::applyTheme(app);
+  wds::studio::LanguageSettings language;
+  wds::studio::Workbench window(language);
+  window.show();
+  if (app.arguments().size() == 2) window.openProject(app.arguments().at(1));
+  return app.exec();
+}

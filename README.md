@@ -4,7 +4,17 @@
 
 WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。项目以可组合的插件体系为基础，将图形界面、命令行、代码与可视化编辑连接到统一的项目模型和操作能力。
 
-> **当前进度：通用项目、首批数据编辑与最小场景试玩。** CLI 和 Windows 工作台可创建项目、读取资源、预览并提交整数属性，从指定修订运行入口场景。CLI 提供机器可读的操作清单。[复跑步骤](docs/engineering/development.md#试玩通用场景)
+> **当前进度：Windows 现代工作台已跑通场景编辑、保存和试玩。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文并记住选择。
+
+## 体验现代工作台
+
+在 Windows x64 使用 MSVC 和 Qt 6.8 以上版本从源码构建。打开随仓库提供的二维示例，在场景树选中 `marker`，修改 **X 速度**，点击 **保存属性** 后即可用新修订试玩。[构建与运行步骤](docs/engineering/development.md#运行现代工作台)
+
+- **项目与资源**：新建或打开项目，按 ID、路径和类型查找资源。
+- **场景编辑**：从场景树或二维视口选中实体，逐项修改并保存位置或速度。
+- **AI 与命令行**：CLI 提供机器可读的操作清单，可读取、预览和按修订提交场景属性。工作台使用同一套项目操作。
+
+当前是开发版本。实体增删、资源导入、独立导出和完整 3D 编辑仍在规划内，暂无正式发行包。
 
 ## 产品方向
 
@@ -23,7 +33,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 | 理解产品目标与范围 | [愿景与设计原则](docs/product/vision.md) · [产品范围](docs/product/scope.md) |
 | 理解各系统如何协作 | [系统架构](docs/architecture/overview.md) · [离线架构图解](docs/architecture.html) |
 | 开展工程设计与原型开发 | [开发指南](docs/engineering/development.md) · [技术评估](docs/engineering/technical-evaluation.md) |
-| 认领任务与查看验收门槛 | [平台建设总纲](docs/project/platform-plan.md) · [开发任务](docs/project/development-tasks.md) · [实施路线](docs/project/roadmap.md) |
+| 认领任务与查看验收门槛 | [并行开发计划](docs/project/parallel-delivery.md) · [开发任务](docs/project/development-tasks.md) · [实施路线](docs/project/roadmap.md) |
 | 研究相关技术 | [DeepSeek Harness 专题](docs/research/deepseek-harness.md) · [相关项目](docs/research/landscape.md) |
 | 参与项目 | [贡献指南](CONTRIBUTING.md) · [社区治理](docs/community/governance.md) · [社区规范](CODE_OF_CONDUCT.md) |
 
@@ -33,7 +43,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 项目在 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 维护。构建、测试及运行样例见 [开发指南](docs/engineering/development.md#运行-m0-样例)。
 
-公开基线的 Windows x64 与 Linux CI 已通过。现有样例及其验证范围见 [前期原型与验证](docs/project/prototype-baseline.md)。尚无正式发行版。
+现代工作台已在 Windows x64 实测。默认构建的 Linux CI 覆盖核心和 CLI。现有样例及其验证范围见 [前期原型与验证](docs/project/prototype-baseline.md)。
 
 ## 开源与协作
 

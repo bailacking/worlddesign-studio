@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -55,6 +56,23 @@ struct SceneEntity {
   std::int64_t vy = 0;
 };
 
+struct SceneField {
+  std::string_view name;
+  std::int64_t SceneEntity::*member;
+};
+
+inline constexpr std::int64_t scene_field_limit = 1'000'000;
+inline constexpr std::array scene_fields{
+    SceneField{"x", &SceneEntity::x}, SceneField{"y", &SceneEntity::y},
+    SceneField{"vx", &SceneEntity::vx}, SceneField{"vy", &SceneEntity::vy}};
+
+struct SceneEdit {
+  std::string entity;
+  std::string field;
+  std::uint64_t revision;
+  std::int64_t value;
+};
+
 struct SceneSnapshot {
   std::uint64_t revision = 0;
   std::string scene_id;
@@ -91,7 +109,8 @@ ProjectResult create_project(const std::filesystem::path& directory, std::string
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
-std::string scene_result_json(const SceneResult& result);
+FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply);
+std::string scene_result_json(const SceneResult& result, bool include_fields = false);
 std::string field_result_json(const FieldResult& result);
 std::string project_result_json(const ProjectResult& result);
 std::string project_resources_json(const ProjectResult& result);
