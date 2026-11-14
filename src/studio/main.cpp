@@ -1,12 +1,3 @@
-#include "bridge.hpp"
-#include "platform_project.hpp"
-#include "scene_tree.hpp"
-#include "viewport.hpp"
-
-#ifdef WDS_STUDIO_RESOURCE_PANEL
-#include "resource_panel.hpp"
-#endif
-
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
@@ -21,19 +12,51 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPalette>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QStyleFactory>
 #include <QTimer>
 #include <QToolBar>
 #include <optional>
 #include <utility>
 
+#include "bridge.hpp"
+#include "platform_project.hpp"
+#include "resource_panel.hpp"
+#include "scene_tree.hpp"
+#include "viewport.hpp"
+
 namespace wds::studio {
 namespace {
 
 QString argument(qint64 number) { return QString::number(number); }
+
+void applyTheme(QApplication& app) {
+  app.setStyle(QStyleFactory::create("Fusion"));
+  QPalette palette = app.palette();
+  // Keep the native controls aligned with the roles in workbench.qss.
+  palette.setColor(QPalette::Window, QColor("#1e1f22"));
+  palette.setColor(QPalette::Base, QColor("#1a1b1e"));
+  palette.setColor(QPalette::AlternateBase, QColor("#202226"));
+  palette.setColor(QPalette::Button, QColor("#2a2c31"));
+  palette.setColor(QPalette::Mid, QColor("#3a3d44"));
+  palette.setColor(QPalette::Highlight, QColor("#2f5fa8"));
+  palette.setColor(QPalette::Inactive, QPalette::Highlight, QColor("#3a4250"));
+  palette.setColor(QPalette::HighlightedText, Qt::white);
+  palette.setColor(QPalette::PlaceholderText, QColor("#a9adb5"));
+  palette.setColor(QPalette::ToolTipBase, QColor("#26282c"));
+  palette.setColor(QPalette::ToolTipText, QColor("#e6e7ea"));
+  for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
+    palette.setColor(role, QColor("#e6e7ea"));
+    palette.setColor(QPalette::Disabled, role, QColor("#71767f"));
+  }
+  app.setPalette(palette);
+  QFile theme(":/studio/theme/workbench.qss");
+  if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
+}
 
 QString diagnostic(const QJsonObject& result) {
   auto message = result.value("code").toString();
@@ -108,15 +131,7 @@ class Workbench final : public QMainWindow {
     auto* inspector =
         dock("inspector", tr("Inspector"), Qt::RightDockWidgetArea, property_panel, view);
 
-#ifdef WDS_STUDIO_RESOURCE_PANEL
     resources_ = new ResourcePanel([this](const QString& id) { showResource(id); }, this);
-#else
-    resources_ = new QListWidget(this);
-    connect(resources_, &QListWidget::currentItemChanged, this,
-            [this](const QListWidgetItem* item) {
-              showResource(item ? item->data(Qt::UserRole).toString() : QString{});
-            });
-#endif
     auto* assets = dock("resources", tr("Resources"), Qt::BottomDockWidgetArea, resources_, view);
     output_ = new QListWidget(this);
     auto* output = dock("output", tr("Output"), Qt::BottomDockWidgetArea, output_, view);
@@ -229,7 +244,7 @@ class Workbench final : public QMainWindow {
     resources_model_ = {};
     selected_.clear();
     dirty_ = false;
-    setResources();
+    resources_->setResources(resources_model_);
     setEntities();
     populateInspector();
     updateActions();
@@ -247,7 +262,7 @@ class Workbench final : public QMainWindow {
       project_id_ = result.value("project_id").toString();
       revision_ = result.value("revision").toInteger();
       resources_model_ = result.value("resources").toArray();
-      setResources();
+      resources_->setResources(resources_model_);
       readScene();
     });
   }
@@ -309,22 +324,6 @@ class Workbench final : public QMainWindow {
       committed_[index] = entity.value(spec.value("id").toString()).toInt();
       fields_[index]->setValue(committed_[index]);
     }
-  }
-
-  void setResources() {
-#ifdef WDS_STUDIO_RESOURCE_PANEL
-    resources_->setResources(resources_model_);
-#else
-    resources_->clear();
-    for (const auto entry : resources_model_) {
-      const auto resource = entry.toObject();
-      const auto id = resource.value("id").toString();
-      const auto description = id + "  ·  " + resource.value("kind").toString();
-      auto* row = new QListWidgetItem(description, resources_);
-      row->setData(Qt::UserRole, id);
-      row->setToolTip(resource.value("path").toString());
-    }
-#endif
   }
 
   void showResource(const QString& id) {
@@ -440,6 +439,7 @@ class Workbench final : public QMainWindow {
     draft_label_->setText(
         dirty_ ? tr("Unsaved · %1 → %2").arg(committed_[editing_]).arg(fields_[editing_]->value())
                : QString{});
+    draft_label_->setVisible(dirty_);
     setWindowTitle(project_id_.isEmpty()
                        ? tr("WDS Studio")
                        : tr("%1%2 — WDS Studio").arg(project_id_, dirty_ ? "*" : ""));
@@ -449,11 +449,7 @@ class Workbench final : public QMainWindow {
   QTimer timer_;
   Viewport* viewport_;
   SceneTreePanel* scene_tree_;
-#ifdef WDS_STUDIO_RESOURCE_PANEL
   ResourcePanel* resources_;
-#else
-  QListWidget* resources_;
-#endif
   QListWidget* output_;
   QLabel* project_label_;
   QLabel* revision_label_;
@@ -489,8 +485,7 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   QCoreApplication::setOrganizationName("WDS");
   QCoreApplication::setApplicationName("WDS Studio");
-  QFile theme(":/studio/theme/workbench.qss");
-  if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
+  wds::studio::applyTheme(app);
   wds::studio::Workbench window;
   window.show();
   if (app.arguments().size() == 2) window.openProject(app.arguments().at(1));

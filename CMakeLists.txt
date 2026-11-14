@@ -51,6 +51,7 @@ if(WDS_BUILD_MODERN_STUDIO)
   qt_add_executable(wds_studio_modern WIN32
     src/studio/main.cpp
     src/studio/bridge.cpp
+    src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
     src/studio/viewport.cpp
   )
@@ -58,10 +59,6 @@ if(WDS_BUILD_MODERN_STUDIO)
   add_dependencies(wds_studio_modern wds_cli)
   qt_add_resources(wds_studio_modern studio_theme PREFIX "/studio" BASE "src/studio"
     FILES src/studio/theme/workbench.qss)
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/studio/resource_panel.cpp")
-    target_sources(wds_studio_modern PRIVATE src/studio/resource_panel.cpp)
-    target_compile_definitions(wds_studio_modern PRIVATE WDS_STUDIO_RESOURCE_PANEL)
-  endif()
 endif()
 
 add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
