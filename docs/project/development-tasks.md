@@ -44,7 +44,7 @@ ctest --preset dev --output-on-failure --no-tests=error
 | M0-08 实现共享操作 | 资源改名入口、统一结果和契约测试 | M0-03、M0-05；与 M0-07 联调 | 同一请求得到相同结果。过时修订会被拒绝，原数据保持完整 |
 | M0-09 接入 GUI 和 CLI | 两个最小入口与集成验收脚本 | M0-06 至 M0-08 | 从同一初始项目分别执行改名，重开后对比资源身份和持久化结果，并验证一次失败恢复 |
 
-M0-01 至 M0-04 由 Codex 推进，M0-05A 可与这些工作并行。完成 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 后，再分配引擎实现任务。插件宿主、项目存取和共享操作按各自契约推进，由 M0-09 验收组合行为。
+M0-02 至 M0-04 的首轮规格已形成，分别见 [插件宿主](../architecture/plugins.md#m0-插件宿主契约)、[资源改名](../architecture/commands.md#m0-资源改名契约) 和 [项目保存](../architecture/assets.md#m0-项目保存契约)。M0-05A 构建骨架已派发。按 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 核对工具链和契约后，再分配引擎实现。M0-07 与 M0-08 使用同一资源样例，M0-09 验收 GUI 与 CLI 的组合行为。
 
 ## 首个可玩沙盒
 
