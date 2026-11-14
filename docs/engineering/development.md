@@ -2,7 +2,7 @@
 
 ## 工作区与当前状态
 
-从 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 获取项目文档。引擎核心采用 C++。当前处于技术规划阶段，构建骨架已按 [试行基线](technical-evaluation.md#首轮试行基线) 交付，引擎源码与可运行原型待相关契约通过评审后实现。
+从 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 获取项目。M0 源码在 `src/`，测试在 `tests/`。构建沿用 [试行基线](technical-evaluation.md#首轮试行基线)。
 
 ## 目录职责
 
@@ -51,9 +51,23 @@ Windows 需先进入带 MSVC 环境的终端，否则配置阶段找不到 `cl.e
 
 Visual Studio 2022 生成器可作备选，本轮统一使用 Ninja。实测版本为 MSVC 19.44.35228、CMake 3.31.6、Ninja 1.12.1，C++ 模式报 `202002`。
 
-源码内容保持 ASCII：MSVC 在 CP936 代码页下遇到 UTF-8 中文注释会报 C4819，与 `/WX` 冲突。需要中文注释时须同时为 MSVC 加 `/utf-8`，该调整随首批引擎源码任务处理。
+源码使用 UTF-8。MSVC 构建选项包含 `/utf-8`，避免依赖系统代码页。
 
-Linux 由 [质量检查](quality.md#当前自动检查) 中的 CI 跑同一组命令。当前分支未推送远端，Linux 结果待远端实际运行验证；macOS 未验证。
+Linux 由 [质量检查](quality.md#当前自动检查) 中的 CI 配置构建和测试，远端结果待验证。macOS 未验证。
+
+## 运行 M0 样例
+
+构建后，在 PowerShell 中复制 [样例项目](../../examples/m0-project) 到构建目录下的两个新位置，分别用命令行和窗口改名：
+
+```powershell
+Copy-Item -Recurse examples/m0-project build/cli-demo
+Copy-Item -Recurse examples/m0-project build/gui-demo
+./build/dev/wds_cli.exe build/cli-demo open
+./build/dev/wds_cli.exe build/cli-demo asset.rename B stone.txt 0
+./build/dev/wds_editor.exe build/gui-demo
+```
+
+窗口中点击 **Open / Recover**，确认修订号为 0，再点击 **Rename**。两个项目的修订号都应变为 1，`assets/stone.txt` 保留源文件内容。用 `wds_cli PROJECT open` 可重开并检查修订。改名请求需指定当前修订号。
 
 ## 文档检查
 

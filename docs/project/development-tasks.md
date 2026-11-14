@@ -46,6 +46,8 @@ ctest --preset dev --output-on-failure --no-tests=error
 
 M0-02 至 M0-04 的首轮规格已形成，分别见 [插件宿主](../architecture/plugins.md#m0-插件宿主契约)、[资源改名](../architecture/commands.md#m0-资源改名契约) 和 [项目保存](../architecture/assets.md#m0-项目保存契约)。M0-05A 构建骨架已合入本地开发分支，Windows x64 复验通过，Linux CI 待运行。按 [编码前的验收条件](../engineering/technical-evaluation.md#编码前的验收条件) 核对工具链和契约后，再分配引擎实现。M0-07 与 M0-08 使用同一资源样例，M0-09 验收 GUI 与 CLI 的组合行为。
 
+M0-06 至 M0-09 已在本地集成。Windows 自动测试通过，使用原生窗口的按钮处理路径验证 GUI 改名，再与 CLI 的磁盘结果比较。参见 [运行样例](../engineering/development.md#运行-m0-样例)。人工窗口体验和 Linux CI 仍需验证。
+
 ## 首个可玩沙盒
 
 M0 验收后再认领这一组任务。每项先明确独立验收，再以完整玩家流程集成。

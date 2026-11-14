@@ -23,14 +23,14 @@ int main() {
   // The comparison result drives the output directly.
   const long mode = standard_mode();
   bool ok = mode >= 202002L;
-  std::printf("C++ standard mode: %ld (__cplusplus=%ld) %s\n", mode,
-              static_cast<long>(__cplusplus), ok ? "C++20+" : "older than C++20");
+  std::printf("C++ standard mode: %ld (__cplusplus=%ld) %s\n", mode, static_cast<long>(__cplusplus),
+              ok ? "C++20+" : "older than C++20");
 
 #if defined(__cpp_lib_span)
   const int sample[]{1, 2, 3};
   const std::span<const int> view{sample};
-  std::printf("std::span: __cpp_lib_span=%ld, size=%zu\n",
-              static_cast<long>(__cpp_lib_span), view.size());
+  std::printf("std::span: __cpp_lib_span=%ld, size=%zu\n", static_cast<long>(__cpp_lib_span),
+              view.size());
   ok = ok && view.size() == 3;
 #else
   std::printf("std::span: unavailable\n");

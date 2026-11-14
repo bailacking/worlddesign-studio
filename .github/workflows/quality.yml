@@ -56,3 +56,11 @@ jobs:
         run: cmake --build --preset dev
       - name: Test
         run: ctest --preset dev --output-on-failure --no-tests=error
+      - name: Install C++ check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format-18 clang-tidy-18
+      - name: Check C++ formatting
+        run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
+      - name: Analyze C++ sources
+        run: clang-tidy-18 -p build/dev src/plugin_host.cpp src/project_store.cpp src/workspace.cpp src/cli.cpp

@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(wds_compile_options INTERFACE)
 if(MSVC)
   # /Zc:__cplusplus 让 __cplusplus 反映真实的 /std:c++20 模式，否则恒为 199711L。
-  target_compile_options(wds_compile_options INTERFACE /W4 /WX /Zc:__cplusplus)
+  target_compile_options(wds_compile_options INTERFACE /W4 /WX /Zc:__cplusplus /utf-8)
 else()
   target_compile_options(
     wds_compile_options
@@ -28,3 +28,30 @@ target_link_libraries(wds_smoke PRIVATE wds_compile_options)
 
 enable_testing()
 add_test(NAME smoke COMMAND wds_smoke)
+
+add_library(wds_m0 STATIC src/plugin_host.cpp src/project_store.cpp src/workspace.cpp)
+target_include_directories(wds_m0 PUBLIC src)
+target_link_libraries(wds_m0 PRIVATE wds_compile_options)
+
+add_executable(wds_cli src/cli.cpp)
+target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
+
+if(WIN32)
+  add_executable(wds_editor WIN32 src/windows_editor.cpp)
+  target_link_libraries(wds_editor PRIVATE wds_m0 wds_compile_options shell32 user32 gdi32)
+  if(MINGW)
+    target_link_options(wds_editor PRIVATE -municode)
+  endif()
+  set(wds_gui_option -DGUI=$<TARGET_FILE:wds_editor>)
+endif()
+
+add_executable(wds_plugin_test tests/plugin_host.cpp)
+target_link_libraries(wds_plugin_test PRIVATE wds_m0 wds_compile_options)
+add_test(NAME plugin_host COMMAND wds_plugin_test)
+add_test(
+  NAME rename_flow
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          ${wds_gui_option}
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/rename-fixture
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/rename_flow.cmake
+)
