@@ -17,6 +17,20 @@
 
 使用至少两套可行的 C++ 工具链组合，跑同一个小样例：装配试验模块、从两个入口执行等价操作、保存并重开数据。记录工具版本、复跑步骤、实测平台、失败和未覆盖平台，给出最低适用标准、推荐方案与替代方案。样例用于评估，正式项目的公共接口仍以契约评审为准。
 
+### 本机工具链基线
+
+在 Windows x64 上通过 Visual Studio 2022 Build Tools 的 x64 开发者命令环境完成一次最小构建。实测 MSVC 19.44.35228.0、随附的 CMake 3.31.6-msvc6 和 Ninja 1.12.1，Windows SDK 目录中有 10.0.26100.0。普通 PowerShell 的 PATH 中没有这些构建工具，复跑时使用已安装的开发者环境，并把随附的 CMake 和 Ninja 加入该终端的 PATH。
+
+在临时目录建一个只含 `int main() { return 0; }` 的 C++ 程序，用构建文件声明可执行目标并注册一个运行该程序的测试。实测使用 C++20 模式，关闭编译器扩展并要求标准生效。然后执行：
+
+```sh
+cmake -S . -B build -G Ninja
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+配置、编译和 1 项测试通过。此结果验证单个环境可用。跨平台、依赖管理、插件装配、共享操作和保存仍需实测，标准与工具链仍待评审。[MSVC 标准选项](https://learn.microsoft.com/en-us/cpp/build/reference/std-specify-language-standard-version?view=msvc-170) · [CMake 标准属性](https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html) · [CTest 手册](https://cmake.org/cmake/help/latest/manual/ctest.1.html)
+
 ## 其他开放问题
 
 | 领域 | 需要回答的问题 | 比较重点 | 最小证据 |
