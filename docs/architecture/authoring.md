@@ -4,6 +4,18 @@
 
 WDS 同时提供代码与可视化逻辑编辑，允许根据任务和经验选择或混合使用。图形编辑器面向场景、资源和行为组织，命令行与 AI 可通过共享操作完成相应任务。界面布局、脚本语言和图形表达形式尚未选型。
 
+### Windows 工作台与框架评估
+
+`wds_studio` 是 Windows 的首个通用项目工作台。它验证项目创建、打开、诊断和资源读取，复用 CLI 的项目服务。选用原生窗口先降低接入成本，项目模型与操作语义在平台核心，界面可替换。
+
+| 候选 | 当前证据 | 下一步验证 |
+| --- | --- | --- |
+| Win32 原生控件 | 本机已构建并验证项目入口与资源列表 | 键盘焦点、长路径、DPI 和错误展示；跨平台需另写适配 |
+| wxWidgets + AUI | 官方资料提供停靠工作区与分发许可说明 | 在同一场景验证停靠状态、输入、可访问性与 Windows/Linux 构建 |
+| Qt Widgets | 官方资料提供停靠控件及许可选项 | 复跑同一工作流，核对实际使用模块及分发条件 |
+
+EDT-01 以同一测试场景比较候选：打开包含两个资源的项目，键盘选中资源，切换或停靠面板，关闭后恢复布局，并打开一个错误项目查看诊断。记录构建复现、许可证、是否需要依赖安装、无障碍表现和维护成本。目前仅 Win32 的首个流程已实测，长期框架选型待比较结果。[Win32 控件](https://learn.microsoft.com/en-us/windows/win32/controls/about-tree-view-controls) · [wxWidgets AUI](https://docs.wxwidgets.org/3.2/overview_aui.html) · [wxWidgets 许可](https://www.wxwidgets.org/about/licence/) · [Qt 停靠控件](https://doc.qt.io/qt-6/qdockwidget.html) · [Qt 许可](https://doc.qt.io/qt-6/licensing.html)
+
 ## 共同语义基础
 
 两种逻辑编辑方式应共享行为语义和运行依据，避免维护互不一致的执行规则。可研究共享中间表示、统一行为模型或其他实现路线；具体数据结构与编译路径待实验评审。

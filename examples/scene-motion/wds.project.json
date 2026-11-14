@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "project_id": "scene-motion",
+  "revision": 0,
+  "entry_scene": "motion",
+  "resources": [
+    {"id": "motion", "kind": "scene", "path": "assets/motion.json", "refs": []}
+  ]
+}

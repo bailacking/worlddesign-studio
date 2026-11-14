@@ -4,13 +4,13 @@
 #include <cstdint>
 #include <iosfwd>
 
+#include "voxel_content.hpp"
+
 namespace wds::voxel {
 
 struct Vec3 {
   double x, y, z;
 };
-
-enum class Block { air, grass, dirt, stone };
 
 struct Hit {
   Block block = Block::air;
@@ -27,7 +27,7 @@ class World {
   static constexpr int width = 24;
   static constexpr int height = 12;
   static constexpr int depth = 24;
-  World();
+  explicit World(Content content = {});
 
   [[nodiscard]] Block block(int x, int y, int z) const;
   [[nodiscard]] bool collides(Vec3 feet) const;
@@ -35,9 +35,12 @@ class World {
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
   bool read(std::istream& input);
   void write(std::ostream& output) const;
+  [[nodiscard]] const Content& content() const { return content_; }
+  void set_placement(Block block);
 
  private:
   std::array<Block, width * height * depth> blocks_{};
+  Content content_;
 };
 
 struct Player {

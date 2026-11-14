@@ -39,12 +39,21 @@ target_link_libraries(wds_m0 PRIVATE wds_compile_options)
 add_executable(wds_cli src/cli.cpp)
 target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
 
-add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp)
+add_library(wds_project STATIC src/platform_project.cpp)
+target_include_directories(wds_project PUBLIC src)
+target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
+target_link_libraries(wds_project PRIVATE wds_compile_options)
+target_link_libraries(wds_cli PRIVATE wds_project)
+
+add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
 target_link_libraries(wds_cli PRIVATE wds_voxel)
 
 if(WIN32)
+  if(MINGW)
+    target_link_options(wds_cli PRIVATE -municode)
+  endif()
   add_executable(wds_editor WIN32 src/windows_editor.cpp)
   target_link_libraries(wds_editor PRIVATE wds_m0 wds_compile_options shell32 user32 gdi32)
   if(MINGW)
@@ -52,8 +61,14 @@ if(WIN32)
   endif()
   set(wds_gui_option -DGUI=$<TARGET_FILE:wds_editor>)
 
+  add_executable(wds_studio WIN32 src/windows_studio.cpp)
+  target_link_libraries(wds_studio PRIVATE wds_project wds_compile_options user32 gdi32)
+  if(MINGW)
+    target_link_options(wds_studio PRIVATE -municode)
+  endif()
+
   add_executable(wds_sandbox WIN32 src/windows_sandbox.cpp)
-  target_link_libraries(wds_sandbox PRIVATE wds_voxel wds_compile_options user32 gdi32)
+  target_link_libraries(wds_sandbox PRIVATE wds_voxel wds_compile_options user32 gdi32 shell32)
   if(MINGW)
     target_link_options(wds_sandbox PRIVATE -municode)
   endif()
@@ -62,6 +77,7 @@ endif()
 
 install(TARGETS wds_cli RUNTIME DESTINATION .)
 install(FILES LICENSE DESTINATION .)
+install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION licenses RENAME nlohmann-json.txt)
 
 add_executable(wds_plugin_test tests/plugin_host.cpp)
 target_link_libraries(wds_plugin_test PRIVATE wds_m0 wds_compile_options)
@@ -70,6 +86,20 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_test(
+  NAME platform_project
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/project-fixture
+          -DFIXTURES=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/project-v1
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/platform_project.cmake
+)
+add_test(
+  NAME scene_play
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/scene-play
+          -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
+)
 add_test(
   NAME sandbox_rules
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

@@ -1,0 +1,7 @@
+{
+  "format_version": 1,
+  "entities": [
+    {"id": "origin"},
+    {"id": "marker", "x": -260, "y": -25, "vx": 1}
+  ]
+}
