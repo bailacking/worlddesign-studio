@@ -17,7 +17,8 @@
 
 | 任务 | 分工与启动点 | 完成标志 |
 | --- | --- | --- |
-| PRJ-01 | Codex 评审 [项目清单草案](../architecture/project-format.md) 与现有 `project_store.cpp`，收敛迁移、提交与路径边界 | 正式规格、样例和兼容验收足以启动 PRJ-02、PRJ-03 |
+| PRJ-01 | 首版 [项目清单契约](../architecture/project-format.md) 已落盘 | 固定样例不变，读取诊断、创建与旧格式迁移边界明确 |
+| PRJ-02 | Codex 从 [实现交接](../architecture/project-format.md#prj-02-实现交接) 开始，先定 JSON 解析依赖，再实现创建与验证 | 新项目可重开，固定样例可复跑，旧入口回归通过 |
 | PRJ-01A | 用户手动派发，按 [清单样例任务卡](#prj-01a-清单样例任务卡) 执行 | 清单用例可被后续实现测试直接消费 |
 | EDT-01 | Codex 从 [逻辑与编辑器](../architecture/authoring.md) 归纳最小工作台要求，比较框架 | 可复跑验证与选型理由足以启动 EDT-02 |
 | REF-01 | 用户手动派发，按 [资料盘点任务卡](#ref-01-资料盘点任务卡) 执行 | 可追溯的参考目录，独立于平台关键路径 |

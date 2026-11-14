@@ -17,7 +17,7 @@
 | [插件与组合](architecture/plugins.md) | 能力契约、生命周期、分层配置、兼容性和恢复 |
 | [操作与状态](architecture/commands.md) | GUI/CLI/AI 共享操作、错误、取消、并发与变更记录 |
 | [项目与资源](architecture/assets.md) | 文件夹、资源身份、多种编辑形式与冲突 |
-| [项目目录与清单](architecture/project-format.md) | 通用项目格式草案和第一批可执行样例约定 |
+| [项目目录与清单](architecture/project-format.md) | 首版项目格式、创建与读取契约、旧格式迁移边界 |
 | [逻辑与编辑器](architecture/authoring.md) | 代码、可视化逻辑、共同语义及调试 |
 | [AI 协作](architecture/ai.md) | 项目理解、自主程度、权限、执行与验证 |
 | [游戏运行时](architecture/runtime.md) | 2D/3D、场景、渲染、物理与导出 |
