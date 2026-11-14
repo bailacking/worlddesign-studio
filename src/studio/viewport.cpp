@@ -4,9 +4,22 @@
 #include <QJsonObject>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QWheelEvent>
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace wds::studio {
+namespace {
+
+// 缩放范围：0.15 视野约 6.7 倍于默认，8.0 用于贴近查看单个实体。
+constexpr double kMinScale = 0.15;
+constexpr double kMaxScale = 8.0;
+constexpr double kDefaultScale = 0.68;
+constexpr double kWheelStep = 1.2;  // 每 120 单位滚轮一格放大 20%
+constexpr double kPickRadius = 10.0;
+
+}  // namespace
 
 Viewport::Viewport(std::function<void(QString)> select, QWidget* parent)
     : QWidget(parent), select_(std::move(select)) {
@@ -25,6 +38,11 @@ void Viewport::changeEvent(QEvent* event) {
 void Viewport::setScene(QJsonArray entities, bool running) {
   entities_ = std::move(entities);
   running_ = running;
+  // 试玩期间快捷操作让给运行态，退出后仍以退出前的编辑视图呈现。
+  if (running_) {
+    panning_ = false;
+    unsetCursor();
+  }
   update();
 }
 
@@ -33,17 +51,22 @@ void Viewport::setSelectedId(QString id) {
   update();
 }
 
+void Viewport::resetView() {
+  scale_ = kDefaultScale;
+  offset_ = {};
+  update();
+}
+
 QPointF Viewport::screenPosition(const QJsonObject& entity) const {
-  constexpr double zoom = 0.68;
-  return QPointF(width() * 0.5 + zoom * entity.value("x").toDouble(),
-                 height() * 0.5 - zoom * entity.value("y").toDouble());
+  return QPointF(width() * 0.5 + offset_.x() + scale_ * entity.value("x").toDouble(),
+                 height() * 0.5 + offset_.y() - scale_ * entity.value("y").toDouble());
 }
 
 void Viewport::paintEvent(QPaintEvent*) {
   QPainter painter(this);
   painter.fillRect(rect(), QColor("#16191f"));
   const auto origin = screenPosition({});
-  constexpr int grid = 24;
+  const int grid = std::max(4, static_cast<int>(std::lround(24.0 * scale_ / kDefaultScale)));
   painter.setPen(QColor("#242933"));
   for (int x = static_cast<int>(origin.x()) % grid; x < width(); x += grid)
     painter.drawLine(x, 0, x, height());
@@ -77,16 +100,67 @@ void Viewport::paintEvent(QPaintEvent*) {
 }
 
 void Viewport::mousePressEvent(QMouseEvent* event) {
-  if (running_ || event->button() != Qt::LeftButton) return;
+  if (running_) return;  // 运行态独占输入，退出试玩才恢复编辑操作
+  if (event->button() == Qt::MiddleButton) {
+    panning_ = true;
+    pan_origin_ = event->position();
+    pan_offset_ = offset_;
+    setCursor(Qt::ClosedHandCursor);
+    return;
+  }
+  if (event->button() != Qt::LeftButton) return;
+  // 命中测试与绘制共用 screenPosition，缩放平移后点选位置不会漂。
   for (auto it = entities_.constEnd(); it != entities_.constBegin();) {
     const auto entity = (*--it).toObject();
     const auto delta = screenPosition(entity) - event->position();
-    if (delta.x() * delta.x() + delta.y() * delta.y() <= 100.0) {
+    if (delta.x() * delta.x() + delta.y() * delta.y() <= kPickRadius * kPickRadius) {
       select_(entity.value("id").toString());
       return;
     }
   }
   select_({});
+}
+
+void Viewport::mouseMoveEvent(QMouseEvent* event) {
+  if (!panning_) return;
+  offset_ = pan_offset_ + (event->position() - pan_origin_);
+  update();
+}
+
+void Viewport::mouseReleaseEvent(QMouseEvent* event) {
+  if (event->button() != Qt::MiddleButton || !panning_) return;
+  panning_ = false;
+  unsetCursor();
+}
+
+void Viewport::mouseDoubleClickEvent(QMouseEvent* event) {
+  if (running_ || event->button() != Qt::MiddleButton) return;
+  panning_ = false;
+  unsetCursor();
+  resetView();
+}
+
+void Viewport::wheelEvent(QWheelEvent* event) {
+  if (running_) {
+    QWidget::wheelEvent(event);  // 试玩时滚轮交还运行态
+    return;
+  }
+  const int delta = event->angleDelta().y();
+  if (delta == 0) return;
+  const double factor = std::pow(kWheelStep, delta / 120.0);
+  const double next = std::clamp(scale_ * factor, kMinScale, kMaxScale);
+  if (next == scale_) {
+    event->accept();
+    return;
+  }
+  // 以鼠标为锚：光标下的世界坐标在缩放前后保持不动。
+  const QPointF center(width() * 0.5, height() * 0.5);
+  const QPointF anchor = event->position();
+  const QPointF world = (anchor - center - offset_) / scale_;
+  scale_ = next;
+  offset_ = anchor - center - world * scale_;
+  event->accept();
+  update();
 }
 
 }  // namespace wds::studio
