@@ -39,7 +39,7 @@ Block terrain(int x, int y, int z) {
 
 }  // namespace
 
-World::World() {
+World::World(Content content) : content_(content) {
   for (int y = 0; y < height; ++y) {
     for (int z = 0; z < depth; ++z) {
       for (int x = 0; x < width; ++x) blocks_[index(x, y, z)] = terrain(x, y, z);
@@ -49,6 +49,12 @@ World::World() {
 
 Block World::block(int x, int y, int z) const {
   return inside(x, y, z) ? blocks_[index(x, y, z)] : Block::air;
+}
+
+void World::set_placement(Block block) {
+  if (block == Block::grass || block == Block::dirt || block == Block::stone) {
+    content_.placement = block;
+  }
 }
 
 bool World::collides(Vec3 feet) const {
@@ -129,11 +135,12 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
   if (!inside(x, y, z) || y == 0) return false;
   auto& value = blocks_[index(x, y, z)];
   if (!place) {
+    if (!content_.style(value).breakable) return false;
     value = Block::air;
     return true;
   }
   if (value != Block::air) return false;
-  value = Block::stone;
+  value = content_.placement;
   if (collides(feet) || collides(Player{}.feet)) {
     value = Block::air;
     return false;
@@ -144,7 +151,7 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
 bool World::read(std::istream& input) {
   std::string header;
   if (!std::getline(input, header) || header != "wds-voxel-v1 24 12 24") return false;
-  World candidate;
+  World candidate(content_);
   for (auto& block : candidate.blocks_) {
     const int value = input.get();
     if (value < '0' || value > '3') return false;
@@ -217,9 +224,8 @@ Vec3 Player::view() const {
 
 std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction) {
   const auto hit = world.cast(origin, direction, 36);
-  if (hit.block == Block::air) return 0x0087bce8U;
-  constexpr std::array<std::uint32_t, 4> colors{0, 0x659645U, 0x90643eU, 0x87929fU};
-  const auto color = colors[static_cast<std::size_t>(hit.block)];
+  if (hit.block == Block::air) return world.content().sky;
+  const auto color = world.content().style(hit.block).color;
   const double shade = (hit.side == 1   ? 1.0
                         : hit.side == 0 ? 0.76
                                         : 0.86) *

@@ -1,5 +1,6 @@
 #include <charconv>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -10,6 +11,7 @@
 #endif
 
 #include "sandbox_rules.hpp"
+#include "voxel_content.hpp"
 #include "workspace.hpp"
 
 namespace {
@@ -22,19 +24,25 @@ int rules(int argc, char** argv, bool project = false) {
   using namespace wds::voxel;
   const auto input = path_from_utf8(argv[2]);
   const auto file = project ? input / project_rules : input;
-  if (project && argc == 4 && std::string_view(argv[3]) == "create") {
-    if (!create_sandbox_project(input)) {
+  if (project && (argc == 4 || argc == 5) && std::string_view(argv[3]) == "create") {
+    const std::string_view preset = argc == 5 ? argv[4] : "meadow";
+    if (!template_content(preset)) {
+      std::cerr << "invalid_template: choose meadow or mesa\n";
+      return 1;
+    }
+    if (!create_sandbox_project(input, preset)) {
       std::cerr << "create_failed: choose a new directory under an existing folder\n";
       return 1;
     }
-    std::cout << "created: voxel-sandbox-v1 jump_speed=" << default_jump << '\n';
+    std::cout << "created: voxel-sandbox-v1 preset=" << preset << '\n';
     return 0;
   }
   const bool show = argc == 4 && std::string_view(argv[3]) == "show";
   const bool preview = argc == 6 && std::string_view(argv[3]) == "preview";
   const bool apply = argc == 6 && std::string_view(argv[3]) == "apply";
   if (!show && !preview && !apply) {
-    std::cerr << "Usage: wds_cli --sandbox-project DIR create|show|preview|apply\n"
+    std::cerr << "Usage: wds_cli --sandbox-project DIR create [meadow|mesa]\n"
+                 "       wds_cli --sandbox-project DIR show|preview|apply\n"
                  "       preview and apply take EXPECTED NEW.\n";
     return 2;
   }
@@ -44,7 +52,18 @@ int rules(int argc, char** argv, bool project = false) {
     return 1;
   }
   if (show) {
-    if (project) std::cout << "template=voxel-sandbox-v1\n";
+    if (project) {
+      const auto content = read_project_content(input);
+      if (!content) {
+        std::cerr << "invalid_content: " << project_content << '\n';
+        return 1;
+      }
+      std::cout << "template=voxel-sandbox-v1\nplacement=" << block_name(content->placement)
+                << "\nsky=" << std::hex << std::setfill('0') << std::setw(6) << content->sky
+                << std::dec
+                << "\nstone=" << (content->style(Block::stone).breakable ? "breakable" : "locked")
+                << '\n';
+    }
     std::cout << "jump_speed=" << *current << '\n';
     return 0;
   }

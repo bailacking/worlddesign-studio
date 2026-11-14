@@ -89,6 +89,16 @@ Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定
 
 窗口中按 F6 编辑跳跃规则，用加减键预览数值，Enter 应用，Esc 取消。变更保存到项目的 `sandbox-rules-v1.txt`，命令行可再次读取。F5 将地形保存到同一项目的 `sandbox-v1.dat`。项目内的规则和地形可随目录复制和交接。
 
+创建项目时可选择 `meadow`（默认）或 `mesa`。台地版使用暖色天空、不可破坏的石块、默认放置泥土和跳跃速度 8。两个预设使用同一个可执行文件。
+
+```powershell
+./build/dev/wds_cli.exe --sandbox-project build/mesa-demo create mesa
+./build/dev/wds_cli.exe --sandbox-project build/mesa-demo show
+./build/dev/wds_sandbox.exe --project build/mesa-demo
+```
+
+窗口中按 F7 编辑右键放置的方块。按 1 选草地、2 选泥土、3 选石块，Enter 应用，Esc 取消。天空和方块的颜色及破坏规则可在 [项目内容文件](../architecture/runtime.md#方块项目内容) 中修改，重开项目生效。命令行 `show` 会报告内容格式错误。
+
 ### 预览、应用与恢复规则
 
 外部 Agent 可先查询当前跳跃速度并展示差异。用户确认后，用当前值作为前置条件应用修改。以下示例假定原值为 6：

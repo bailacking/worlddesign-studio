@@ -39,7 +39,7 @@ target_link_libraries(wds_m0 PRIVATE wds_compile_options)
 add_executable(wds_cli src/cli.cpp)
 target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
 
-add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp)
+add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
 target_link_libraries(wds_cli PRIVATE wds_voxel)

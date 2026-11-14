@@ -57,6 +57,32 @@ int main() {
   check(!reloaded.read(corrupt) && reloaded.block(12, 3, 11) == Block::air,
         "invalid save must preserve the current world");
 
+  const auto mesa = template_content("mesa");
+  check(mesa.has_value(), "mesa preset exists");
+  std::stringstream content_file;
+  write_content(content_file, *mesa);
+  const auto decoded = read_content(content_file);
+  check(decoded && decoded->sky == 0xe9af8b && decoded->placement == Block::dirt &&
+            !decoded->style(Block::stone).breakable,
+        "content settings survive a project file round trip");
+  World themed(*decoded);
+  check(pixel(themed, start.eye(), {0, 1, 0}) != pixel(world, start.eye(), {0, 1, 0}),
+        "project sky color drives rendering");
+  check(!themed.edit(start.feet, start.eye(), start.view(), false),
+        "locked stone cannot be broken");
+  check(themed.edit(start.feet, start.eye(), start.view(), true) &&
+            themed.block(12, 3, 12) == Block::dirt,
+        "placed block type comes from project data");
+  std::stringstream themed_save;
+  themed.write(themed_save);
+  World themed_reload(*decoded);
+  check(themed_reload.read(themed_save) && themed_reload.block(12, 3, 12) == Block::dirt &&
+            !themed_reload.content().style(Block::stone).breakable,
+        "loading world data preserves the project's content rules");
+  std::istringstream invalid_content(
+      "wds-sandbox-content-v1\nsky ffaa00\nplace air\ngrass 123456 breakable\n");
+  check(!read_content(invalid_content), "invalid and incomplete content must be rejected");
+
   Player standard_jump, higher_jump;
   standard_jump.step(world, 0, 0, false, 0.01);
   higher_jump.step(world, 0, 0, false, 0.01);

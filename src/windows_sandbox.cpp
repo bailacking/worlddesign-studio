@@ -43,7 +43,18 @@ struct Sandbox {
   fs::path rules_path;
   Clock::time_point edit_feedback{};
   bool project_mode = false;
+  bool invalid_content = false;
+  wds::voxel::Block pending_placement = wds::voxel::Block::air;
 };
+
+bool editing(const Sandbox& app) {
+  return app.pending_jump != 0 || app.pending_placement != wds::voxel::Block::air;
+}
+
+std::wstring placement_name(wds::voxel::Block block) {
+  const auto name = wds::voxel::block_name(block);
+  return {name.begin(), name.end()};
+}
 
 void load(Sandbox& app, const fs::path& project) {
   if (!project.empty()) {
@@ -54,6 +65,12 @@ void load(Sandbox& app, const fs::path& project) {
       return;
     }
     app.jump_speed = *jump;
+    const auto content = wds::voxel::read_project_content(project);
+    if (!content) {
+      app.invalid_content = true;
+      return;
+    }
+    app.world = World(*content);
     app.rules_path = project / wds::voxel::project_rules;
     app.save_path = project / wds::voxel::project_save;
   } else {
@@ -142,7 +159,7 @@ void tick(HWND window, Sandbox& app) {
   const auto seconds =
       std::clamp(std::chrono::duration<double>(now - app.previous).count(), 0.0, 0.025);
   app.previous = now;
-  if (GetForegroundWindow() != window || app.pending_jump != 0) {
+  if (GetForegroundWindow() != window || editing(app)) {
     app.jump_was_down = down(VK_SPACE);
     return;
   }
@@ -193,10 +210,12 @@ void paint(HWND window, Sandbox& app) {
   const int cy = height / 2;
   const auto target = app.world.cast(eye, forward, 7);
   const auto feedback = Clock::now() < app.edit_feedback;
-  const auto pen = CreatePen(PS_SOLID, 2,
-                             feedback                                 ? RGB(115, 255, 153)
-                             : target.block == wds::voxel::Block::air ? RGB(235, 239, 245)
-                                                                      : RGB(255, 216, 80));
+  const auto pen =
+      CreatePen(PS_SOLID, 2,
+                feedback                                            ? RGB(115, 255, 153)
+                : target.block == wds::voxel::Block::air            ? RGB(235, 239, 245)
+                : app.world.content().style(target.block).breakable ? RGB(255, 216, 80)
+                                                                    : RGB(255, 145, 119));
   const auto previous_pen = pen ? SelectObject(dc, pen) : nullptr;
   MoveToEx(dc, cx - 5, cy, nullptr);
   LineTo(dc, cx + 6, cy);
@@ -221,6 +240,14 @@ void paint(HWND window, Sandbox& app) {
           : std::wstring(app.mouse_look ? L"Esc Release mouse" : L"Click to capture mouse") +
                 L"   F6 Edit jump rule";
   TextOutW(dc, 16, 76, edit.c_str(), static_cast<int>(edit.size()));
+  auto placement = L"Placement: " + placement_name(app.world.content().placement);
+  if (app.pending_placement != wds::voxel::Block::air) {
+    placement += L" -> " + placement_name(app.pending_placement) +
+                 L"   1 Grass   2 Dirt   3 Stone   Enter Apply   Esc Cancel";
+  } else if (app.project_mode) {
+    placement += L"   F7 Edit placement";
+  }
+  TextOutW(dc, 16, 96, placement.c_str(), static_cast<int>(placement.size()));
   EndPaint(window, &paint_data);
 }
 
@@ -259,15 +286,46 @@ LRESULT CALLBACK handle(HWND window, UINT message, WPARAM param, LPARAM data) {
     }
     case WM_KEYDOWN:
       if (param == VK_ESCAPE) {
-        if (app->pending_jump != 0)
+        if (editing(*app)) {
           app->pending_jump = 0;
-        else if (app->mouse_look)
+          app->pending_placement = wds::voxel::Block::air;
+        } else if (app->mouse_look) {
           mouse_mode(window, *app, false);
-        else
+        } else {
           DestroyWindow(window);
+          return 0;
+        }
       }
-      if (param == VK_F6 && app->pending_jump == 0 && !app->rules_path.empty() &&
-          !app->invalid_rules) {
+      if (param == VK_F7 && !editing(*app) && app->project_mode) {
+        mouse_mode(window, *app, false);
+        app->pending_placement = app->world.content().placement;
+      }
+      if (app->pending_placement != wds::voxel::Block::air) {
+        using enum wds::voxel::Block;
+        if (param == '1') app->pending_placement = grass;
+        if (param == '2') app->pending_placement = dirt;
+        if (param == '3') app->pending_placement = stone;
+        if (param == VK_RETURN) {
+          const auto project = app->rules_path.parent_path();
+          const auto current = wds::voxel::read_project_content(project);
+          if (!current || *current != app->world.content()) {
+            app->status = L"Content changed on disk. Reopen the project.";
+          } else {
+            auto next = *current;
+            next.placement = app->pending_placement;
+            if (next == *current || wds::voxel::write_project_content(project, next)) {
+              app->world.set_placement(next.placement);
+              app->status = L"Placement saved";
+            } else {
+              app->status = L"Could not save placement";
+            }
+          }
+          app->pending_placement = air;
+        }
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+      }
+      if (param == VK_F6 && !editing(*app) && !app->rules_path.empty() && !app->invalid_rules) {
         mouse_mode(window, *app, false);
         app->pending_jump = app->jump_speed;
       }
@@ -300,7 +358,7 @@ LRESULT CALLBACK handle(HWND window, UINT message, WPARAM param, LPARAM data) {
       return 0;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
-      if (app->pending_jump != 0) return 0;
+      if (editing(*app)) return 0;
       if (!app->mouse_look) {
         mouse_mode(window, *app, true);
         return 0;
@@ -346,6 +404,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show_window) {
   }
   Sandbox app;
   load(app, project);
+  if (app.invalid_content) {
+    MessageBoxW(nullptr, L"Invalid sandbox-content-v1.txt. Check it with wds_cli.", L"WDS",
+                MB_OK | MB_ICONERROR);
+    return 1;
+  }
   if (project_mode && app.invalid_rules) {
     MessageBoxW(nullptr, L"Cannot open the project rules file.", L"WDS", MB_OK | MB_ICONERROR);
     return 1;
