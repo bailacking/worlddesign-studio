@@ -1,0 +1,38 @@
+[
+  {
+    "case": "valid-minimal",
+    "expected": "ok"
+  },
+  {
+    "case": "valid-with-refs",
+    "expected": "ok"
+  },
+  {
+    "case": "unsupported_version",
+    "expected": "unsupported_version"
+  },
+  {
+    "case": "duplicate_id",
+    "expected": "duplicate_id"
+  },
+  {
+    "case": "duplicate_path",
+    "expected": "duplicate_path"
+  },
+  {
+    "case": "invalid_path",
+    "expected": "invalid_path"
+  },
+  {
+    "case": "missing_reference",
+    "expected": "missing_reference"
+  },
+  {
+    "case": "missing_file",
+    "expected": "missing_file"
+  },
+  {
+    "case": "invalid_entry_scene",
+    "expected": "invalid_entry_scene"
+  }
+]
