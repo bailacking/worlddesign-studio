@@ -62,6 +62,17 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 `scene.inspect` 对应 `project scene DIRECTORY REVISION`，返回入口实体的初始值及字段类型、默认值与范围。用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。按稳定实体 ID 选中实体，支持 `x`、`y`、`vx`、`vy`；修改曾省略的字段时从默认值计算差异。保存复用字段编辑事务，场景事务使用版本 2，恢复也兼容现有版本 1。
 
+`scene.entity.preview` 与 `scene.entity.apply` 支持以下入口场景操作。将命令中的 `edit-entity` 换成 `preview-entity` 即可检查参数、修订与写入限制，预览会返回 `changed` 和定位路径。
+
+| 用途 | 命令 |
+| --- | --- |
+| 新建实体，位置与速度默认均为 0 | `project edit-entity DIRECTORY add ID REVISION` |
+| 复制实体属性，新 ID 需唯一 | `project edit-entity DIRECTORY copy ID REVISION NEW_ID` |
+| 删除实体 | `project edit-entity DIRECTORY remove ID REVISION` |
+| 移动到指定次序，索引从 0 开始 | `project edit-entity DIRECTORY move ID REVISION INDEX` |
+
+新建与复制追加到场景末尾。实际编辑提交后修订加一，相同位置的移动不产生新修订。结构编辑使用事务记录版本 3，恢复时重放该操作并核对新旧场景内容，兼容旧事务。当前以本机单写入者为使用边界。
+
 提出请求 → 校验参数和权限 → 检查项目修订 → 解析能力实现 → 准备变更 → 应用与持久化 → 更新或失效相关索引 → 返回变更及诊断 → 运行验证。
 
 “修改方块颜色”应定位稳定资源编号及当前修订，而不是仅凭一个易变文件名。发现并发修改时，进入资源类型对应的冲突流程，保留双方内容。

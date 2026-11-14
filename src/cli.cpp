@@ -144,6 +144,21 @@ int run(int argc, char** argv) {
       std::cout << wds::platform::field_result_json(result) << '\n';
       return result.code == "ok" ? 0 : 1;
     }
+    if (action == "preview-entity" || action == "edit-entity") {
+      wds::platform::FieldResult result{"invalid_argument", "/input"};
+      if (argc == 7 || argc == 8) {
+        wds::platform::EntityEdit edit{argv[4], argv[5]};
+        const bool valid_argument =
+            argc == 7 ? (edit.operation == "add" || edit.operation == "remove")
+                      : (edit.operation == "copy" ||
+                         (edit.operation == "move" && parse_integer(argv[7], edit.index)));
+        if (argc == 8 && edit.operation == "copy") edit.target = argv[7];
+        if (valid_argument && parse_integer(argv[6], edit.revision))
+          result = wds::platform::edit_entity(directory, edit, action == "edit-entity");
+      }
+      std::cout << wds::platform::field_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
     if (argc == 8 && (action == "preview-field" || action == "set-field")) {
       wds::platform::FieldEdit edit{argv[4], argv[5], 0, 0};
       const auto result =
@@ -163,7 +178,9 @@ int run(int argc, char** argv) {
                    "       wds_cli project play DIRECTORY REVISION TICKS\n"
                    "       wds_cli project scene DIRECTORY REVISION\n"
                    "       wds_cli project preview-scene-field|set-scene-field DIRECTORY ENTITY "
-                   "FIELD REVISION VALUE\n";
+                   "FIELD REVISION VALUE\n"
+                   "       wds_cli project preview-entity|edit-entity DIRECTORY OPERATION "
+                   "ENTITY REVISION [ARG]\n";
       return 2;
     }
     const auto result = create    ? wds::platform::create_project(directory, argv[4])

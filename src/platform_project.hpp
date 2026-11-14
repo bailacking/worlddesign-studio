@@ -73,6 +73,14 @@ struct SceneEdit {
   std::int64_t value;
 };
 
+struct EntityEdit {
+  std::string operation;
+  std::string entity;
+  std::uint64_t revision = 0;
+  std::string target{};
+  std::size_t index = 0;
+};
+
 struct SceneSnapshot {
   std::uint64_t revision = 0;
   std::string scene_id;
@@ -110,6 +118,7 @@ FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& 
 ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
 FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply);
+FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply);
 std::string scene_result_json(const SceneResult& result, bool include_fields = false);
 std::string field_result_json(const FieldResult& result);
 std::string project_result_json(const ProjectResult& result);

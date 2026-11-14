@@ -23,6 +23,7 @@ constexpr auto staging_name = ".wds-field-edit.tmp";
 constexpr std::uint64_t max_revision = 9007199254740991ULL;
 constexpr std::uintmax_t max_manifest_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_edit_bytes = 1024 * 1024;
+constexpr std::size_t max_scene_entities = 1024;
 
 ProjectResult failure(std::string code, std::string location) {
   return {std::nullopt, std::move(code), std::move(location)};
@@ -302,7 +303,7 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output) {
   if (!has_fields(json, {"format_version", "entities"})) return {"invalid_scene", "/"};
   const auto& entities = json["entities"];
   if (!entities.is_array()) return {"invalid_scene", "/entities"};
-  if (entities.size() > 1024) return {"scene_too_large", "/entities"};
+  if (entities.size() > max_scene_entities) return {"scene_too_large", "/entities"};
 
   std::set<std::string> ids;
   for (const auto& row : entities) {
@@ -341,23 +342,62 @@ FieldResult change_scene(Json& json, const SceneEdit& edit) {
   return {"ok", where, edit.revision, old, edit.value, old != edit.value};
 }
 
-std::string commit_field(const fs::path& root, const Resource& resource, std::string_view field,
-                         std::string_view entity, const std::string& before_manifest,
-                         const std::string& before_data, Json& manifest, const Json& data,
-                         std::uint64_t revision, bool apply) {
+FieldResult change_entities(Json& scene, const EntityEdit& edit) {
+  const bool add = edit.operation == "add";
+  const bool copy = edit.operation == "copy";
+  const bool move = edit.operation == "move";
+  if ((!add && !copy && !move && edit.operation != "remove") || !valid_id(edit.entity) ||
+      (copy ? !valid_id(edit.target) : !edit.target.empty()) || (!move && edit.index != 0))
+    return {"invalid_argument", "/input"};
+
+  std::vector<SceneEntity> entities;
+  auto result = parse_scene(scene, entities);
+  if (result.code != "ok") return result;
+  const auto match = std::ranges::find(entities, edit.entity, &SceneEntity::id);
+  const auto index = static_cast<std::size_t>(match - entities.begin());
+  const auto where = "/entities/" + std::to_string(index);
+  if (!add && match == entities.end()) return {"invalid_entity", "/entities"};
+
+  if (add || copy) {
+    const auto& id = copy ? edit.target : edit.entity;
+    if (std::ranges::find(entities, id, &SceneEntity::id) != entities.end())
+      return {"duplicate_entity_id", "/entities"};
+    if (entities.size() == max_scene_entities) return {"scene_too_large", "/entities"};
+    if (scene.empty()) scene = Json{{"format_version", 1}, {"entities", Json::array()}};
+    auto& rows = scene["entities"];
+    auto row = copy ? rows[index] : Json::object();
+    row["id"] = id;
+    rows.push_back(std::move(row));
+    return {"ok", "/entities/" + std::to_string(entities.size()), edit.revision, {}, {}, true};
+  }
+
+  auto& rows = scene["entities"];
+  if (move && edit.index >= rows.size()) return {"invalid_argument", "/index"};
+  if (move && edit.index == index) return {"ok", where, edit.revision};
+  auto from = rows.begin() + static_cast<Json::difference_type>(index);
+  if (move) {
+    auto row = std::move(*from);
+    rows.erase(from);
+    rows.insert(rows.begin() + static_cast<Json::difference_type>(edit.index), std::move(row));
+  } else {
+    rows.erase(from);
+  }
+  return {"ok", where, edit.revision, {}, {}, true};
+}
+
+std::string commit_edit(const fs::path& root, const Resource& resource, Json journal,
+                        const std::string& before_manifest, const std::string& before_data,
+                        Json& manifest, const Json& data, std::uint64_t revision, bool apply) {
   manifest["revision"] = revision + 1;
   const auto next_manifest = manifest.dump(2) + "\n";
   const auto next_data = data.dump(2) + "\n";
   if (next_manifest.size() > max_edit_bytes || next_data.size() > max_edit_bytes)
     return "edit_too_large";
-  Json journal{{"version", entity.empty() ? 1 : 2},
-               {"resource", resource.id},
-               {"field", field},
-               {"before_manifest", before_manifest},
-               {"after_manifest", next_manifest},
-               {"before_data", before_data},
-               {"after_data", next_data}};
-  if (!entity.empty()) journal["entity"] = entity;
+  journal["resource"] = resource.id;
+  journal["before_manifest"] = before_manifest;
+  journal["after_manifest"] = next_manifest;
+  journal["before_data"] = before_data;
+  journal["after_data"] = next_data;
   const auto encoded = journal.dump() + "\n";
   if (encoded.size() > max_manifest_bytes) return "edit_too_large";
   if (apply && (!replace_file(root, root / journal_name, encoded) ||
@@ -366,6 +406,40 @@ std::string commit_field(const fs::path& root, const Resource& resource, std::st
                 !remove_reserved(root, journal_name)))
     return "recovery_required";
   return "ok";
+}
+
+template <typename Change>
+FieldResult edit_scene_file(const fs::path& root, std::uint64_t expected, const Json& journal,
+                            bool apply, Change change) {
+  if (expected > max_revision) return {"invalid_argument", "/revision"};
+  const auto opened = open_project(root);
+  if (!opened.project) return {opened.code, opened.location};
+  const auto revision = opened.project->revision;
+  if (expected != revision) return {"revision_conflict", "/revision", revision};
+  const auto& resource = entry_resource(*opened.project);
+  try {
+    const auto manifest_bytes = read_bytes(root / manifest_name, max_edit_bytes);
+    const auto scene_bytes = read_bytes(root / resource.path, max_edit_bytes);
+    if (!manifest_bytes || !scene_bytes) return {"edit_too_large", resource.path, revision};
+    auto manifest = parse_json(*manifest_bytes);
+    auto scene = parse_json(*scene_bytes);
+    auto result = change(scene);
+    result.revision = revision;
+    if (result.code != "ok" || !result.changed) return result;
+    if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
+    const auto code = commit_edit(root, resource, journal, *manifest_bytes, *scene_bytes, manifest,
+                                  scene, revision, apply);
+    if (code != "ok")
+      return {code, code == "recovery_required" ? journal_name : resource.path, revision};
+    if (apply) result.revision = revision + 1;
+    return result;
+  } catch (const fs::filesystem_error&) {
+    return {apply ? "recovery_required" : "io_error", resource.path};
+  } catch (const std::length_error&) {
+    return {"invalid_scene", "/", revision};
+  } catch (const Json::exception&) {
+    return {"invalid_scene", "/", revision};
+  }
 }
 
 }  // namespace
@@ -494,8 +568,8 @@ FieldResult edit_field(const fs::path& root, const FieldEdit& edit, bool apply) 
     if (!result.changed) return result;
     if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
     *field = edit.value;
-    const auto code = commit_field(root, *resource, edit.field, {}, *manifest_bytes, *data_bytes,
-                                   manifest, data, revision, apply);
+    const auto code = commit_edit(root, *resource, {{"version", 1}, {"field", edit.field}},
+                                  *manifest_bytes, *data_bytes, manifest, data, revision, apply);
     if (code != "ok")
       return {code, code == "recovery_required" ? journal_name : resource->path, revision};
     if (!apply) return result;
@@ -514,34 +588,18 @@ FieldResult edit_scene(const fs::path& root, const SceneEdit& edit, bool apply) 
   if (!valid_id(edit.entity) || !valid_field(edit.field) || edit.revision > max_revision ||
       edit.value < -scene_field_limit || edit.value > scene_field_limit)
     return {"invalid_argument", "/input"};
-  const auto opened = open_project(root);
-  if (!opened.project) return {opened.code, opened.location};
-  const auto revision = opened.project->revision;
-  if (edit.revision != revision) return {"revision_conflict", "/revision", revision};
-  const auto& resource = entry_resource(*opened.project);
-  try {
-    const auto manifest_bytes = read_bytes(root / manifest_name, max_edit_bytes);
-    const auto scene_bytes = read_bytes(root / resource.path, max_edit_bytes);
-    if (!manifest_bytes || !scene_bytes) return {"edit_too_large", resource.path, revision};
-    auto manifest = parse_json(*manifest_bytes);
-    auto scene = parse_json(*scene_bytes);
-    auto result = change_scene(scene, edit);
-    result.revision = revision;
-    if (result.code != "ok" || !result.changed) return result;
-    if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
-    const auto code = commit_field(root, resource, edit.field, edit.entity, *manifest_bytes,
-                                   *scene_bytes, manifest, scene, revision, apply);
-    if (code != "ok")
-      return {code, code == "recovery_required" ? journal_name : resource.path, revision};
-    if (apply) result.revision = revision + 1;
-    return result;
-  } catch (const fs::filesystem_error&) {
-    return {apply ? "recovery_required" : "io_error", resource.path};
-  } catch (const std::length_error&) {
-    return {"invalid_scene", "/", revision};
-  } catch (const Json::exception&) {
-    return {"invalid_scene", "/", revision};
-  }
+  return edit_scene_file(root, edit.revision,
+                         {{"version", 2}, {"field", edit.field}, {"entity", edit.entity}}, apply,
+                         [&](Json& scene) { return change_scene(scene, edit); });
+}
+
+FieldResult edit_entity(const fs::path& root, const EntityEdit& edit, bool apply) {
+  const Json operation{{"operation", edit.operation},
+                       {"entity", edit.entity},
+                       {"target", edit.target},
+                       {"index", edit.index}};
+  return edit_scene_file(root, edit.revision, {{"version", 3}, {"edit", operation}}, apply,
+                         [&](Json& scene) { return change_entities(scene, edit); });
 }
 
 ProjectResult recover_project(const fs::path& root) {
@@ -562,7 +620,12 @@ ProjectResult recover_project(const fs::path& root) {
         !journal["version"].is_number_integer())
       return blocked();
     const bool scene_edit = journal["version"] == 2;
-    if (scene_edit) {
+    const bool entity_edit = journal["version"] == 3;
+    if (entity_edit) {
+      if (!has_fields(journal, {"version", "resource", "edit", "before_manifest", "after_manifest",
+                                "before_data", "after_data"}))
+        return blocked();
+    } else if (scene_edit) {
       if (!has_fields(journal, {"version", "resource", "field", "entity", "before_manifest",
                                 "after_manifest", "before_data", "after_data"}) ||
           !journal["entity"].is_string() ||
@@ -574,18 +637,23 @@ ProjectResult recover_project(const fs::path& root) {
       return blocked();
     }
     for (const auto* key :
-         {"resource", "field", "before_manifest", "after_manifest", "before_data", "after_data"}) {
+         {"resource", "before_manifest", "after_manifest", "before_data", "after_data"}) {
       if (!journal[key].is_string() ||
           journal[key].get_ref<const std::string&>().size() > max_edit_bytes)
         return blocked();
     }
     const auto& id = journal["resource"].get_ref<const std::string&>();
-    const auto& field = journal["field"].get_ref<const std::string&>();
     const auto& before_manifest = journal["before_manifest"].get_ref<const std::string&>();
     const auto& after_manifest = journal["after_manifest"].get_ref<const std::string&>();
     const auto& before_data = journal["before_data"].get_ref<const std::string&>();
     const auto& after_data = journal["after_data"].get_ref<const std::string&>();
-    if (!valid_id(id) || !valid_field(field)) return blocked();
+    if (!valid_id(id)) return blocked();
+    std::string field;
+    if (!entity_edit) {
+      if (!journal["field"].is_string()) return blocked();
+      field = journal["field"].get<std::string>();
+      if (!valid_field(field)) return blocked();
+    }
     auto previous = parse_json(before_manifest);
     const auto next = parse_json(after_manifest);
     const auto old_project = validate_manifest(root, previous);
@@ -595,12 +663,25 @@ ProjectResult recover_project(const fs::path& root) {
       return blocked();
     previous["revision"] = old_project.project->revision + 1;
     if (previous != next) return blocked();
-    const auto* resource =
-        scene_edit ? &entry_resource(*old_project.project) : find_data(*old_project.project, id);
+    const auto* resource = (scene_edit || entity_edit) ? &entry_resource(*old_project.project)
+                                                       : find_data(*old_project.project, id);
     if (!resource || resource->id != id) return blocked();
     auto old_data = parse_json(before_data);
     const auto new_data = parse_json(after_data);
-    if (scene_edit) {
+    if (entity_edit) {
+      const auto& operation = journal["edit"];
+      if (!has_fields(operation, {"operation", "entity", "target", "index"}) ||
+          !operation["operation"].is_string() || !operation["entity"].is_string() ||
+          !operation["target"].is_string() || !operation["index"].is_number_unsigned() ||
+          operation["index"].get<std::uint64_t>() >= max_scene_entities)
+        return blocked();
+      const auto change = change_entities(
+          old_data,
+          {operation["operation"].get<std::string>(), operation["entity"].get<std::string>(),
+           old_project.project->revision, operation["target"].get<std::string>(),
+           operation["index"].get<std::size_t>()});
+      if (change.code != "ok" || !change.changed) return blocked();
+    } else if (scene_edit) {
       std::vector<SceneEntity> entities;
       if (parse_scene(new_data, entities).code != "ok") return blocked();
       const auto& entity_id = journal["entity"].get_ref<const std::string&>();
@@ -775,6 +856,15 @@ std::string project_operations_json() {
       false, scene_input, scene_errors);
   add("scene.field.set", "project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE", true,
       scene_input, scene_errors);
+  const Json entity_input{{"directory", "path"},
+                          {"operation", "add | copy | remove | move"},
+                          {"entity_id", "entity identifier"},
+                          {"expected_revision", "integer"},
+                          {"argument", "new ID for copy, zero-based final index for move"}};
+  add("scene.entity.preview", "project preview-entity DIRECTORY OPERATION ENTITY REVISION [ARG]",
+      false, entity_input, scene_errors);
+  add("scene.entity.apply", "project edit-entity DIRECTORY OPERATION ENTITY REVISION [ARG]", true,
+      entity_input, scene_errors);
   return Json{{"code", "ok"}, {"operations", std::move(operations)}}.dump();
 }
 

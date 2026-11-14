@@ -144,6 +144,12 @@ class Workbench final : public QMainWindow {
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
     scene_menu_ = menuBar()->addMenu(QString{});
+    add_entity_ = scene_menu_->addAction(QString{}, this, [this] { nameEntity(false); });
+    copy_entity_ = scene_menu_->addAction(QString{}, this, [this] { nameEntity(true); });
+    remove_entity_ = scene_menu_->addAction(QString{}, this, &Workbench::removeEntity);
+    move_up_ = scene_menu_->addAction(QString{}, this, [this] { moveEntity(-1); });
+    move_down_ = scene_menu_->addAction(QString{}, this, [this] { moveEntity(1); });
+    scene_menu_->addSeparator();
     play_ = scene_menu_->addAction(QString{}, this, &Workbench::play);
     play_->setShortcut(QKeySequence(Qt::Key_F5));
     stop_ = scene_menu_->addAction(QString{}, this, &Workbench::stop);
@@ -262,6 +268,11 @@ class Workbench final : public QMainWindow {
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
     close_->setText(tr("Close Project"));
+    add_entity_->setText(tr("Add Entity…"));
+    copy_entity_->setText(tr("Duplicate Entity…"));
+    remove_entity_->setText(tr("Delete Entity…"));
+    move_up_->setText(tr("Move Entity Up"));
+    move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
@@ -394,8 +405,8 @@ class Workbench final : public QMainWindow {
               result.value("fields").toArray().size() == static_cast<qsizetype>(fields_.size());
           entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
           field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
-          setEntities();
           populateInspector();
+          setEntities();
           if (scene_ready_)
             report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
           else
@@ -423,6 +434,54 @@ class Workbench final : public QMainWindow {
     viewport_->setSelectedId(id);
     populateInspector();
     updateActions();
+  }
+
+  qsizetype selectedIndex() const {
+    for (qsizetype index = 0; index < entities_.size(); ++index)
+      if (entities_.at(index).toObject().value("id") == selected_) return index;
+    return -1;
+  }
+
+  void nameEntity(bool copy) {
+    bool accepted = false;
+    const auto id = QInputDialog::getText(this, copy ? tr("Duplicate Entity") : tr("Add Entity"),
+                                          tr("Entity ID"), QLineEdit::Normal, {}, &accepted)
+                        .trimmed();
+    if (!accepted || id.isEmpty()) return;
+    if (copy)
+      changeEntities("copy", selected_, {id}, id);
+    else
+      changeEntities("add", id, {}, id);
+  }
+
+  void removeEntity() {
+    const auto response = QMessageBox::question(
+        this, tr("Delete Entity"), tr("Delete entity %1 from this scene?").arg(selected_),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (response == QMessageBox::Yes) changeEntities("remove", selected_, {}, {});
+  }
+
+  void moveEntity(qsizetype direction) {
+    const auto index = selectedIndex();
+    if (index >= 0) changeEntities("move", selected_, {argument(index + direction)}, selected_);
+  }
+
+  void changeEntities(const QString& operation, const QString& id, const QStringList& extra,
+                      const QString& selection) {
+    if (!scene_ready_ || !revision_ || busy_ || dirty_ || session_) return;
+    QStringList args{"project", "edit-entity", root_, operation, id, argument(*revision_)};
+    args.append(extra);
+    setBusy(true);
+    bridge_.run(args, [this, selection](const QJsonObject& result) {
+      if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+        report({nullptr, {}, result});
+        setBusy(false);
+        return;
+      }
+      revision_ = result.value("revision").toInteger();
+      selected_ = selection;
+      readScene();
+    });
   }
 
   void populateInspector() {
@@ -566,6 +625,13 @@ class Workbench final : public QMainWindow {
     close_->setEnabled(!busy_ && !root_.isEmpty());
     save_->setEnabled(editable && dirty_);
     revert_->setEnabled(editable && dirty_);
+    const bool structure_editable = scene_ready_ && !busy_ && !session_ && !dirty_ && revision_;
+    const auto index = selectedIndex();
+    add_entity_->setEnabled(structure_editable);
+    copy_entity_->setEnabled(structure_editable && index >= 0);
+    remove_entity_->setEnabled(structure_editable && index >= 0);
+    move_up_->setEnabled(structure_editable && index > 0);
+    move_down_->setEnabled(structure_editable && index >= 0 && index + 1 < entities_.size());
     play_->setEnabled(scene_ready_ && !busy_ && !session_ && !dirty_ && revision_.has_value());
     stop_->setEnabled(session_.has_value());
     project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
@@ -610,6 +676,11 @@ class Workbench final : public QMainWindow {
   QAction* revert_;
   QAction* play_;
   QAction* stop_;
+  QAction* add_entity_;
+  QAction* copy_entity_;
+  QAction* remove_entity_;
+  QAction* move_up_;
+  QAction* move_down_;
   std::array<QSpinBox*, platform::scene_fields.size()> fields_{};
   std::array<QLabel*, platform::scene_fields.size()> field_labels_{};
   std::array<int, platform::scene_fields.size()> committed_{};

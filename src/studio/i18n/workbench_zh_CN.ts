@@ -403,5 +403,45 @@
             <source>%1%2 — WDS Studio</source>
             <translation>%1%2 — WDS 工作台</translation>
         </message>
+        <message>
+            <source>Add Entity…</source>
+            <translation>新建实体…</translation>
+        </message>
+        <message>
+            <source>Duplicate Entity…</source>
+            <translation>复制实体…</translation>
+        </message>
+        <message>
+            <source>Delete Entity…</source>
+            <translation>删除实体…</translation>
+        </message>
+        <message>
+            <source>Move Entity Up</source>
+            <translation>上移实体</translation>
+        </message>
+        <message>
+            <source>Move Entity Down</source>
+            <translation>下移实体</translation>
+        </message>
+        <message>
+            <source>Duplicate Entity</source>
+            <translation>复制实体</translation>
+        </message>
+        <message>
+            <source>Add Entity</source>
+            <translation>新建实体</translation>
+        </message>
+        <message>
+            <source>Entity ID</source>
+            <translation>实体 ID（小写字母开头，可含数字和连字符）</translation>
+        </message>
+        <message>
+            <source>Delete Entity</source>
+            <translation>删除实体</translation>
+        </message>
+        <message>
+            <source>Delete entity %1 from this scene?</source>
+            <translation>从此场景删除实体 %1？</translation>
+        </message>
     </context>
 </TS>

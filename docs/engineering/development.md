@@ -125,6 +125,8 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
+用 **场景 → 新建实体** 添加零位置、零速度的实体。选中实体后可复制、删除或调整它在场景树中的顺序。结构修改在操作完成时保存，属性草稿需先保存或放弃。工作台与 CLI 共用场景编辑操作。[CLI 用法](../architecture/commands.md)
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。
