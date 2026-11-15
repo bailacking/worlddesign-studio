@@ -4,17 +4,17 @@
 
 WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。项目以可组合的插件体系为基础，将图形界面、命令行、代码与可视化编辑连接到统一的项目模型和操作能力。
 
-> **当前进度：Windows 现代工作台已跑通场景编辑、保存和试玩。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文并记住选择。
+> **当前进度：Windows 工作台支持场景编辑、撤销重做和试玩，CLI 支持资源导入与恢复。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文。
 
 ## 体验现代工作台
 
-在 Windows x64 使用 MSVC 和 Qt 6.8 以上版本从源码构建。打开随仓库提供的二维示例，在场景树选中 `marker`，修改 **X 速度**，点击 **保存属性** 后即可用新修订试玩。[构建与运行步骤](docs/engineering/development.md#运行现代工作台)
+在 Windows x64 使用 MSVC 和 Qt 6.8 以上版本从源码构建。打开「四方汇流」示例的副本，在场景树选中 `drifter`，修改 **X 速度**，保存后用新修订试玩。[示例](examples/scene-editing/README.md) · [构建与运行](docs/engineering/development.md#运行现代工作台)
 
-- **项目与资源**：新建或打开项目，按 ID、路径和类型查找资源。
-- **场景编辑**：从场景树或二维视口选中实体，逐项修改并保存位置或速度。
-- **AI 与命令行**：CLI 提供机器可读的操作清单，可读取、预览和按修订提交场景属性。工作台使用同一套项目操作。
+- **项目与资源**：新建或打开项目，按 ID、路径及类型筛选资源，查看直接引用与反向引用。
+- **场景编辑**：在可平移缩放的二维视口选中实体，修改位置或速度；支持实体新建、复制、删除、排序和当前会话内撤销重做。
+- **AI 与命令行**：按修订读取、预览和提交项目改动。CLI 支持导入场景和数据文件、查询来源、恢复中断写入，并可生成 Markdown 项目交接摘要。[资源导入](docs/engineering/development.md#导入外部资源)
 
-当前是开发版本。实体增删、资源导入、独立导出和完整 3D 编辑仍在规划内，暂无正式发行包。
+当前提供源码构建。工作台内导入、图片与文本适配、独立导出和完整 3D 编辑仍在开发计划中，暂无正式发行包。
 
 ## 产品方向
 
@@ -32,8 +32,8 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 | --- | --- |
 | 理解产品目标与范围 | [愿景与设计原则](docs/product/vision.md) · [产品范围](docs/product/scope.md) |
 | 理解各系统如何协作 | [系统架构](docs/architecture/overview.md) · [离线架构图解](docs/architecture.html) |
-| 开展工程设计与原型开发 | [开发指南](docs/engineering/development.md) · [技术评估](docs/engineering/technical-evaluation.md) |
-| 认领任务与查看验收门槛 | [并行开发计划](docs/project/parallel-delivery.md) · [开发任务](docs/project/development-tasks.md) · [实施路线](docs/project/roadmap.md) |
+| 开展工程设计与原型开发 | [开发指南](docs/engineering/development.md) · [长期维护](docs/engineering/quality.md#长期维护) · [技术评估](docs/engineering/technical-evaluation.md) |
+| 认领任务与查看里程碑 | [全量计划与工期](docs/project/delivery-estimate.md) · [并行开发计划](docs/project/parallel-delivery.md) · [实施路线](docs/project/roadmap.md) |
 | 研究相关技术 | [DeepSeek Harness 专题](docs/research/deepseek-harness.md) · [相关项目](docs/research/landscape.md) |
 | 参与项目 | [贡献指南](CONTRIBUTING.md) · [社区治理](docs/community/governance.md) · [社区规范](CODE_OF_CONDUCT.md) |
 

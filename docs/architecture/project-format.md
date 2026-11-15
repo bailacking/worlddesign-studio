@@ -45,6 +45,44 @@ PRJ-03 先识别旧 `.wds-project` 及方块规则文件。旧项目继续使用
 - 成功输出机器可读的项目 ID、修订号、入口场景与资源计数。失败输出稳定错误码和位置。用 PRJ-01A 的固定用例、创建后重开，以及验证前后文件不变来验收。
 - 项目服务使用锁定版本的 [nlohmann/json 3.12.0](../../third_party/nlohmann/README.md)。依赖内置单头文件和 MIT 许可，可离线构建。项目服务在解析时检查重复键，并限制清单为 16 MiB、嵌套深度为 16。对外 C++ 类型不暴露解析库。
 
+## 资源导入
+
+PRD-05 让外部文件成为项目资源。当前支持 `data` 与 `scene` 两类，源文件按原字节写入目标路径，导入不转码、不重新序列化内容。
+
+| 项 | 约定 |
+| --- | --- |
+| 输入 | 项目目录、源文件、资源 ID、类型、`assets/` 下的目标路径、预期修订 |
+| 预览 | `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION`，返回资源身份、目标路径、字节数、摘要与 `changed`，不写盘 |
+| 提交 | `project import DIRECTORY SOURCE ID KIND PATH REVISION`，成功一次递增修订并追加清单条目 |
+| 查询 | `project imports DIRECTORY` 列出导入来源记录 |
+
+- 同一个资源 ID、同一目标路径且字节完全一致时返回 `ok` 与 `changed=false`，修订保持不变，重复导入可判定为无变化。
+- 已有 ID 换成不同字节返回 `duplicate_id`；目标路径已被其他资源占用返回 `duplicate_path`；目标位置存在不属于本项目的文件返回 `target_exists`。三者都不改动已有内容。
+- 源文件上限 1 MiB，超过返回 `source_too_large`。目标路径沿用 v1 规则：`assets/` 开头、路径段合法、拒绝大小写不符与歧义项、拒绝符号链接与重解析点。
+- 内容校验：`scene` 须能被试玩读取（场景 v1），`data` 须是 JSON 对象且数值可精确交换。不满足返回 `invalid_content`。
+
+来源记录写在项目根的 `.wds-imports.json`，随同一次提交写入：
+
+```json
+{"version": 1, "imports": [{"resource": "notes", "kind": "data", "path": "assets/notes.json",
+  "source_name": "notes.json", "bytes": 47, "digest": "fnv1a64:2aaaefebc8b114dc", "revision": 1}]}
+```
+
+- `source_name` 只保留源文件名。机器绝对路径只用于当次读取与诊断，不写进项目，项目内记录保持可移植。
+- `digest` 是 FNV-1a 64 位摘要，用于对照同一批字节，不作安全校验。身份判断仍逐字节比较。
+
+导入在事务记录里使用 `version: 5`：先写记录，再写目标资源与来源记录，最后替换清单。清单是提交点，恢复按现场决定：
+
+| 现场 | 结果 |
+| --- | --- |
+| 清单仍是旧版本 | 删除本次写入的目标文件与来源记录，回到原修订；目标字节不符时保留现场并报告 `recovery_required` |
+| 清单已是新版本 | 保留新资源，补齐来源记录，清理事务记录 |
+| 现场与记录都不符 | 报告 `recovery_required`，停止写入并保留文件供检查 |
+
+`version` 1 至 4 的历史记录继续按原规则恢复。当前边界是可信本机单写入者与进程中断，断电与多进程同时写入未验收。
+
+实现在 `src/platform_project.cpp` 的项目服务内，与字段、场景写入共用路径校验和事务助手；图像与文本适配器（PRD-06、PRD-07）落地时再按各自输入输出拆到 `src/resources/import/`。回归在 `tests/resource_import.cmake`，用 `examples/scene-editing` 副本覆盖预览、提交、重开、重复导入、冲突与四个中断点。
+
 ## 首批字段写入
 
 PRJ-04 和 OPS-02 首先支持已有 `data` JSON 资源中的顶层整数。字段名以小写字母开头，可包含小写字母、数字、短横线和下划线，长度最多 64。首版编辑器要求资源内所有数值都是可精确交换的整数，避免重新序列化时改变其他字段的精度。预览与提交共用校验，单次提交修改资源和项目修订。CLI 和 Windows 工作台调用同一项目服务。

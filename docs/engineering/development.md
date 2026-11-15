@@ -18,6 +18,21 @@
 
 ## 设计工作流
 
+### 模块入口
+
+按入口查调用方，再用 `rg` 搜类型名、操作 ID 或错误码。目录是实现入口，行为契约维护在对应规格中。
+
+| 要改什么 | 先查现有实现 | 主要规格 |
+| --- | --- | --- |
+| 项目、路径、资源、修订、写入与恢复 | `src/platform_project.hpp/.cpp`。GUI 和 CLI 共用项目服务，旧工具的存储另见 `src/project_store.*` | [项目格式](../architecture/project-format.md) |
+| 操作发现、CLI 和工作台调用 | `src/cli.cpp`、`project_operations_json()`、`src/studio/bridge.*`。公共入口负责参数与结果，调用方在项目服务中复用业务规则 | [操作与状态](../architecture/commands.md) |
+| 工作台状态、视觉与交互 | `src/studio/main.cpp` 装配窗口；`src/studio/theme/` 管全局主题和通用控件；`scene_tree`、`resource_panel`、`output_panel`、`viewport` 管各自交互；`i18n/` 管语言 | [桌面工作台](../architecture/workbench.md#组件与交互规范) |
+| 运行时与方块样例 | `src/platform_project.*` 的场景会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 插件生命周期与能力边界 | `src/plugin_host.*` 是现有宿主入口，新能力包跟随对应契约 | [插件与组合](../architecture/plugins.md) |
+| 构建、依赖与覆盖范围 | `CMakeLists.txt`、`CMakePresets.json`、`.github/workflows/quality.yml`、`tests/` | [质量与验证](quality.md) |
+
+### 设计与实验
+
 从真实用户任务定义问题，查阅所属章节，提出少量可比较方案，明确输入输出、失败处理、验证方式及影响范围。通过评审后更新主题文档和对应验收标准；未决定的实现保留在技术评估中。
 
 方案说明应覆盖问题、约束、替代方案、推荐理由、实验计划、实际结果、迁移与退出路径。可以在议题或评审中讨论，不要求为每个设计点单独建立文档。
@@ -53,7 +68,7 @@ Visual Studio 2022 生成器可作备选，本轮统一使用 Ninja。实测版�
 
 源码使用 UTF-8。MSVC 构建选项包含 `/utf-8`，避免依赖系统代码页。
 
-Linux 由 [质量检查](quality.md#当前自动检查) 中的 CI 配置构建和测试，远端结果待验证。macOS 未验证。
+Linux CI 已通过已合并基线的默认构建与测试。现代工作台的 Linux 和 macOS 原生运行仍需验证。 [质量检查](quality.md#当前自动检查)
 
 ## 运行 M0 样例
 
@@ -98,6 +113,20 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 
 工作台打开项目后，输入资源 ID `rules`、字段 `jump_speed` 和新整数，先点击 **Preview**，核对差异，再点击 **Apply**。修改输入或目录会取消旧预览。若项目修订已变化，重新打开再预览。中断后若项目提示 `recovery_required`，使用 **Recover** 或 `wds_cli project recover DIRECTORY`。无法确认的磁盘状态会保留供检查。该样例演示项目数据编辑，运行时接入另行实现。
 
+### 导入外部资源
+
+外部文件可导入为 `data` 或 `scene` 资源，源文件按原字节保存。先预览，再提交。
+
+```powershell
+Copy-Item -Recurse examples/scene-editing build/import-demo
+'{"title":"import demo","limit":30}' | Set-Content -Encoding ascii -NoNewline build/import-notes.json
+./build/dev/wds_cli.exe project preview-import build/import-demo build/import-notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project import build/import-demo build/import-notes.json notes data assets/notes.json 0
+./build/dev/wds_cli.exe project imports build/import-demo
+```
+
+预览不落盘，项目文件字节保持不变。提交后修订加一，`project resources` 与重开都能读回新资源。再执行一次同样的导入返回 `changed=false`，修订保持不变。换内容占同一 ID 返回 `duplicate_id`，目标路径已属于其他资源返回 `duplicate_path`，两者都保留已有资源。源文件上限 1 MiB。中断后若提示 `recovery_required`，用 `project recover DIRECTORY` 回到原修订或保留已提交结果。[资源导入](../architecture/project-format.md#资源导入)
+
 ### 试玩通用场景
 
 在仓库根执行以下命令，按入口场景的修订 0 运行 30 步。输出中的 `marker` 位于 `(-230, -25)`。传入 0 步可查看初始状态。
@@ -124,6 +153,18 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 选中 `marker`，修改 **X 速度** 并点击 **保存属性**。界面显示新修订后，点击 **试玩** 和 **停止**。一轮可保存一个字段，未保存改动可在 **项目** 菜单放弃。停靠面板与窗口布局在关闭后保留。运行目录中需同时有 `wds_cli.exe` 和 Qt 运行库。上述命令用于本地开发，编辑器发行包由 SHIP-05 完成。 [工作台规格](../architecture/workbench.md)
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
+
+用 **场景 → 新建实体** 添加零位置、零速度的实体。选中实体后可复制、删除或调整它在场景树中的顺序。结构修改在操作完成时保存，属性草稿需先保存或放弃。工作台与 CLI 共用场景编辑操作。[CLI 用法](../architecture/commands.md)
+
+用 **编辑 → 撤销场景改动** 或 **重做场景改动** 恢复本次打开项目后的编辑，操作会保存为新的修订。重新打开项目会清空界面历史。[CLI 恢复接口](../architecture/commands.md#事务撤销与外部副作用)
+
+[四方汇流示例](../../examples/scene-editing/README.md) 用四个实体演示运动、属性编辑和资源引用。在二维视口按住中键拖动可平移，滚轮以鼠标所在点为中心缩放，双击中键复位。资源区显示选中项引用谁、被谁引用。输出区可按级别筛选并复制消息。
+
+可把同一项目的资源、实体与修订生成 Markdown，交给另一个创作者或 Agent。
+
+```powershell
+python scripts/project_handoff.py --cli ./build/studio/wds_cli.exe --project ./examples/scene-editing
+```
 
 ## 运行方块沙盒
 

@@ -52,8 +52,10 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/main.cpp
     src/studio/bridge.cpp
     src/studio/i18n/language.cpp
+    src/studio/output_panel.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
+    src/studio/theme/theme.cpp
     src/studio/viewport.cpp
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
@@ -121,6 +123,13 @@ add_test(
           -DROOT=${CMAKE_CURRENT_BINARY_DIR}/scene-play
           -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
+)
+add_test(
+  NAME resource_import
+  COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>
+          -DROOT=${CMAKE_CURRENT_BINARY_DIR}/import-fixture
+          -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-editing
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/resource_import.cmake
 )
 add_test(
   NAME sandbox_rules

@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "entities": [
+    {"id": "anchor", "x": 0, "y": 0},
+    {"id": "drifter", "x": -240, "y": 40, "vx": 8},
+    {"id": "riser", "x": 120, "y": -150, "vx": -4, "vy": 6},
+    {"id": "glider", "x": -180, "y": 150, "vx": 6, "vy": -4}
+  ]
+}

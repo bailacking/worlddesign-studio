@@ -1,6 +1,5 @@
 #include "scene_tree.hpp"
 
-#include <QAbstractItemView>
 #include <QCoreApplication>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -15,13 +14,14 @@
 #include <QVBoxLayout>
 #include <utility>
 
+#include "theme/theme.hpp"
+
 namespace wds::studio {
 
 SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* parent)
     : QWidget(parent), on_select_(std::move(onSelect)) {
   auto* layout = new QVBoxLayout(this);
-  layout->setContentsMargins(4, 4, 4, 4);
-  layout->setSpacing(4);
+  theme::configurePanelLayout(*layout);
 
   search_ = new QLineEdit(this);
   search_->setClearButtonEnabled(true);
@@ -31,22 +31,10 @@ SceneTreePanel::SceneTreePanel(std::function<void(QString)> onSelect, QWidget* p
   tree_ = new QTreeWidget(this);
   tree_->setColumnCount(1);
   tree_->setHeaderHidden(true);
-  tree_->setRootIsDecorated(false);  // 层级待场景数据模型提供，首批按输入顺序平铺
-  tree_->setUniformRowHeights(true);
-  tree_->setAllColumnsShowFocus(true);
-  tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-  tree_->setSelectionBehavior(QAbstractItemView::SelectRows);
-  tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-  tree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-  tree_->setTextElideMode(Qt::ElideMiddle);
-  tree_->setFocusPolicy(Qt::StrongFocus);
+  theme::configurePanelTree(*tree_, Qt::ElideMiddle);
   tree_->installEventFilter(this);
 
-  empty_state_ = new QLabel(this);
-  empty_state_->setAlignment(Qt::AlignCenter);
-  empty_state_->setWordWrap(true);
-  empty_state_->setTextInteractionFlags(Qt::NoTextInteraction);
-  empty_state_->setProperty("state", "empty");  // WKB-02 主题的次要文本色
+  empty_state_ = theme::makeEmptyState(this);
 
   stack_ = new QStackedWidget(this);
   stack_->addWidget(tree_);

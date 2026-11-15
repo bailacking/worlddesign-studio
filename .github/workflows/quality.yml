@@ -36,6 +36,8 @@ jobs:
         run: python -m ruff format --check scripts
       - name: Check project documentation
         run: python scripts/check_docs.py
+      - name: Check shared workbench theme
+        run: python scripts/check_workbench_theme.py
 
   cpp-build:
     name: C++ build and tests
@@ -61,6 +63,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes clang-format-18 clang-tidy-18
       - name: Check C++ formatting
-        run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
+        run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 | xargs -0 clang-format-18 --dry-run --Werror
       - name: Analyze C++ sources
         run: clang-tidy-18 -p build/dev src/plugin_host.cpp src/project_store.cpp src/workspace.cpp src/cli.cpp src/platform_project.cpp src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp

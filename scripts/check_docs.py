@@ -25,14 +25,20 @@ def has_external_css(css):
     )
 
 
-def local_link_error(source, target):
+def local_link_path(source, target):
     url = urlsplit(target)
     if url.scheme or url.netloc or not url.path:
         return None
     path = unquote(url.path)
-    destination = (
+    return (
         ROOT / path.lstrip("/") if path.startswith("/") else source.parent / path
     ).resolve()
+
+
+def local_link_error(source, target):
+    destination = local_link_path(source, target)
+    if destination is None:
+        return None
     if not destination.is_relative_to(ROOT):
         return f"链接超出仓库：{target}"
     if not destination.exists():
@@ -91,6 +97,8 @@ def check_markdown():
         [*ROOT.glob("*.md"), *DOCS.rglob("*.md"), *(ROOT / ".github").rglob("*.md")]
     )
     errors = []
+    docs_files = {path for path in files if path.is_relative_to(DOCS)}
+    links = {path: set() for path in docs_files}
     count = 0
     for path in files:
         for token in parser.parse(path.read_text(encoding="utf-8")):
@@ -105,6 +113,22 @@ def check_markdown():
                 if error:
                     line = token.map[0] + 1
                     errors.append(f"{path.relative_to(ROOT)}:{line}: {error}")
+                elif child.type == "link_open" and path in docs_files:
+                    destination = local_link_path(path, target)
+                    if destination in docs_files:
+                        links[path].add(destination)
+
+    reachable = set()
+    pending = [DOCS / "README.md"]
+    while pending:
+        path = pending.pop()
+        if path not in reachable:
+            reachable.add(path)
+            pending.extend(links.get(path, ()))
+    errors.extend(
+        f"{path.relative_to(ROOT)}: 从文档中心无法找到此页，请链接到所属主题或移除"
+        for path in sorted(docs_files - reachable)
+    )
     print(f"已扫描 {len(files)} 份 Markdown 的 {count} 处链接和图片引用。", flush=True)
     return errors
 
@@ -136,7 +160,7 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print("文档本地链接、离线页面资源、页内锚点和脚本语法检查通过。")
+    print("文档入口、本地链接、离线页面资源、页内锚点和脚本语法检查通过。")
     return 0
 
 

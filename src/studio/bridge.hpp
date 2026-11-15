@@ -10,7 +10,7 @@ namespace wds::studio {
 class ProjectBridge final : public QObject {
  public:
   explicit ProjectBridge(QObject* parent);
-  void run(QStringList arguments, std::function<void(QJsonObject)> complete);
+  void run(QStringList arguments, std::function<void(QJsonObject)> complete, QByteArray input = {});
 };
 
 }  // namespace wds::studio

@@ -2,6 +2,57 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en">
     <context>
+        <name>OutputPanel</name>
+        <message>
+            <source>Level</source>
+            <translation>级别</translation>
+        </message>
+        <message>
+            <source>Message</source>
+            <translation>消息</translation>
+        </message>
+        <message>
+            <source>Output entries</source>
+            <translation>输出记录</translation>
+        </message>
+        <message>
+            <source>Output level filter</source>
+            <translation>输出级别筛选</translation>
+        </message>
+        <message>
+            <source>Copy</source>
+            <translation>复制</translation>
+        </message>
+        <message>
+            <source>Copy the selected entry (Ctrl+C)</source>
+            <translation>复制选中的记录（Ctrl+C）</translation>
+        </message>
+        <message>
+            <source>All levels</source>
+            <translation>全部级别</translation>
+        </message>
+        <message>
+            <source>Info</source>
+            <translation>信息</translation>
+        </message>
+        <message>
+            <source>Warning</source>
+            <translation>警告</translation>
+        </message>
+        <message>
+            <source>Error</source>
+            <translation>错误</translation>
+        </message>
+        <message>
+            <source>No output yet.</source>
+            <translation>暂无输出。</translation>
+        </message>
+        <message>
+            <source>No entries for this level.</source>
+            <translation>该级别暂无记录。</translation>
+        </message>
+    </context>
+    <context>
         <name>ProjectDiagnostic</name>
         <message>
             <source> · Reopen the project to load its current revision.</source>
@@ -119,6 +170,10 @@
             <source>unsupported_version</source>
             <translation>当前工作台不支持此项目版本</translation>
         </message>
+        <message>
+            <source>scene_content_conflict</source>
+            <translation>场景内容已变更，请重新打开项目</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -169,6 +224,26 @@
         <message>
             <source>No resource matches the current filter.</source>
             <translation>没有符合筛选条件的资源。</translation>
+        </message>
+        <message>
+            <source>References</source>
+            <translation>引用</translation>
+        </message>
+        <message>
+            <source>Referenced by</source>
+            <translation>被引用</translation>
+        </message>
+        <message>
+            <source>Selected resource references</source>
+            <translation>选中资源的引用</translation>
+        </message>
+        <message>
+            <source>Resources referencing the selection</source>
+            <translation>引用选中资源的资源</translation>
+        </message>
+        <message>
+            <source>None</source>
+            <translation>无</translation>
         </message>
     </context>
     <context>
@@ -402,6 +477,66 @@
         <message>
             <source>%1%2 — WDS Studio</source>
             <translation>%1%2 — WDS 工作台</translation>
+        </message>
+        <message>
+            <source>Add Entity…</source>
+            <translation>新建实体…</translation>
+        </message>
+        <message>
+            <source>Duplicate Entity…</source>
+            <translation>复制实体…</translation>
+        </message>
+        <message>
+            <source>Delete Entity…</source>
+            <translation>删除实体…</translation>
+        </message>
+        <message>
+            <source>Move Entity Up</source>
+            <translation>上移实体</translation>
+        </message>
+        <message>
+            <source>Move Entity Down</source>
+            <translation>下移实体</translation>
+        </message>
+        <message>
+            <source>Duplicate Entity</source>
+            <translation>复制实体</translation>
+        </message>
+        <message>
+            <source>Add Entity</source>
+            <translation>新建实体</translation>
+        </message>
+        <message>
+            <source>Entity ID</source>
+            <translation>实体 ID（小写字母开头，可含数字和连字符）</translation>
+        </message>
+        <message>
+            <source>Delete Entity</source>
+            <translation>删除实体</translation>
+        </message>
+        <message>
+            <source>Delete entity %1 from this scene?</source>
+            <translation>从此场景删除实体 %1？</translation>
+        </message>
+        <message>
+            <source>&amp;Edit</source>
+            <translation>编辑(&amp;E)</translation>
+        </message>
+        <message>
+            <source>&amp;Undo Scene Change</source>
+            <translation>撤销场景改动(&amp;U)</translation>
+        </message>
+        <message>
+            <source>&amp;Redo Scene Change</source>
+            <translation>重做场景改动(&amp;R)</translation>
+        </message>
+        <message>
+            <source>Scene change redone.</source>
+            <translation>已重做场景改动。</translation>
+        </message>
+        <message>
+            <source>Scene change undone.</source>
+            <translation>已撤销场景改动。</translation>
         </message>
     </context>
 </TS>

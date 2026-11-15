@@ -35,7 +35,7 @@ GUI、CLI 和 AI 适配入口共享查询与修改语义。界面负责收集输
 
 OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成同一请求，项目服务负责验证与执行。首轮覆盖 `project.create`、`project.open`、`project.validate`、`project.resources`，下一步由 OPS-02 接入资源字段修改。操作发现应返回 ID、版本、输入定义、错误码及是否写入项目。
 
-当前可用 `wds_cli --project-operations` 查询十一项能力的 JSON 说明，包括项目恢复、数据编辑、场景属性读取和修改、场景试玩。发现命令无需项目目录。
+当前可用 `wds_cli --project-operations` 查询十七项能力的 JSON 说明，包括项目恢复、资源导入预览与提交、导入来源查询、数据编辑、场景属性读取和修改、场景试玩。发现命令无需项目目录。
 
 请求包含 `operation`、`version` 和 `input`。打开已有项目的调用另带由宿主解析的项目上下文。对已有项目的写入还须带整数 `expected_revision` 和 `mode`（`preview` 或 `apply`）。权限来自宿主上下文，用户输入里的同名字段不能授予权限。创建新项目使用目录不存在作为前置条件。
 
@@ -62,11 +62,30 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 `scene.inspect` 对应 `project scene DIRECTORY REVISION`，返回入口实体的初始值及字段类型、默认值与范围。用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。按稳定实体 ID 选中实体，支持 `x`、`y`、`vx`、`vy`；修改曾省略的字段时从默认值计算差异。保存复用字段编辑事务，场景事务使用版本 2，恢复也兼容现有版本 1。
 
+`scene.entity.preview` 与 `scene.entity.apply` 支持以下入口场景操作。将命令中的 `edit-entity` 换成 `preview-entity` 即可检查参数、修订与写入限制，预览会返回 `changed` 和定位路径。
+
+| 用途 | 命令 |
+| --- | --- |
+| 新建实体，位置与速度默认均为 0 | `project edit-entity DIRECTORY add ID REVISION` |
+| 复制实体属性，新 ID 需唯一 | `project edit-entity DIRECTORY copy ID REVISION NEW_ID` |
+| 删除实体 | `project edit-entity DIRECTORY remove ID REVISION` |
+| 移动到指定次序，索引从 0 开始 | `project edit-entity DIRECTORY move ID REVISION INDEX` |
+
+新建与复制追加到场景末尾。实际编辑提交后修订加一，相同位置的移动不产生新修订。结构编辑使用事务记录版本 3，恢复时重放该操作并核对新旧场景内容，兼容旧事务。当前以本机单写入者为使用边界。
+
+`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data` 或 `scene` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。导入使用事务记录版本 5。[资源导入](project-format.md#资源导入)
+
 提出请求 → 校验参数和权限 → 检查项目修订 → 解析能力实现 → 准备变更 → 应用与持久化 → 更新或失效相关索引 → 返回变更及诊断 → 运行验证。
 
 “修改方块颜色”应定位稳定资源编号及当前修订，而不是仅凭一个易变文件名。发现并发修改时，进入资源类型对应的冲突流程，保留双方内容。
 
 ## 事务、撤销与外部副作用
+
+现代工作台可撤销、重做本次打开项目以来的最近 32 次场景结构修改和属性保存。每次撤销或重做也是一次保存，修订递增。保存新改动后清空重做记录，重新打开项目后开始新的操作历史。
+
+CLI 的 `set-scene-field` 与 `edit-entity` 可在参数末尾追加 `--capture-change`。发生修改时额外返回 `scene_change`，包含 `project_id`、`scene_id`、`resource_path` 和场景文件的 `before`、`after` 字节文本。将这一对象作为 UTF-8 JSON 从标准输入传给 `project restore-scene DIRECTORY REVISION`。撤销时交换 `before`、`after`，重做时使用原对象。恢复会核对项目和入口资源身份、修订及当前场景字节。
+
+恢复只写入口场景与清单修订，验证源与目标场景格式。若文件被外部修改，即使修订号相同也返回 `scene_content_conflict`。恢复使用事务记录版本 4，已有版本的恢复规则继续有效。
 
 能保证原子性的范围需明确。对不能原子完成的多步骤任务，记录已完成步骤及补偿方式。撤销恢复的是所声明范围内的项目状态；网络请求、已启动的外部进程或对外发布可能无法简单逆转，必须分别表达结果。
 

@@ -16,7 +16,8 @@ namespace wds::studio {
 
 ProjectBridge::ProjectBridge(QObject* parent) : QObject(parent) {}
 
-void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> complete) {
+void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> complete,
+                        QByteArray input) {
   auto* process = new QProcess(this);
   auto* deadline = new QTimer(process);
   deadline->setSingleShot(true);
@@ -44,13 +45,18 @@ void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> 
             }
           });
   const auto action = arguments.value(1);
-  if (action != "create" && action != "set-scene-field" && action != "recover") {
+  if (action != "create" && action != "set-scene-field" && action != "edit-entity" &&
+      action != "recover" && action != "restore-scene") {
     connect(deadline, &QTimer::timeout, process, [process, timed_out] {
       *timed_out = true;
       process->kill();
     });
     deadline->start(15000);
   }
+  connect(process, &QProcess::started, process, [process, input = std::move(input)] {
+    if (!input.isEmpty()) process->write(input);
+    process->closeWriteChannel();
+  });
   auto executable = QCoreApplication::applicationDirPath() + "/wds_cli";
 #ifdef Q_OS_WIN
   executable += ".exe";

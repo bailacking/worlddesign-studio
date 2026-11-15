@@ -1,0 +1,31 @@
+{
+  "format_version": 1,
+  "title": "四方汇流",
+  "steps_to_converge": 30,
+  "parameters": [
+    {
+      "entity": "drifter",
+      "field": "vx",
+      "value": 8,
+      "effect": "每步右移 8；30 步后 x 增加 240，正好到达中轴。"
+    },
+    {
+      "entity": "riser",
+      "field": "vy",
+      "value": 6,
+      "effect": "每步上移 6；30 步后 y 增加 180，从下方回到中轴附近。"
+    },
+    {
+      "entity": "glider",
+      "field": "vx",
+      "value": 6,
+      "effect": "每步右移 6；与 vy 的 −4 合成向右下的斜线。"
+    }
+  ],
+  "expected_after_30_steps": [
+    {"id": "anchor", "x": 0, "y": 0},
+    {"id": "drifter", "x": 0, "y": 40},
+    {"id": "riser", "x": 0, "y": 30},
+    {"id": "glider", "x": 0, "y": 30}
+  ]
+}
