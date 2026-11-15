@@ -17,7 +17,7 @@ namespace wds::studio {
 
 // 资源面板：列出项目资源的稳定 ID、类型与路径，按 ID 或路径搜索，并按类型筛选。
 //
-// 数据约定（见 docs/architecture/workbench.md「首批可并行交付的组件」）：
+// 数据约定见 docs/architecture/workbench.md 的「组件与交互规范」。
 //   - 输入沿用 `project resources` 的条目，本面板只读取 id、kind、path 与 refs；
 //   - 面板自己保存显示数据，项目切换时传空数组清空；
 //   - 用户主动选择时回调一次当前稳定 ID，清空选择回传空字符串；

@@ -5,7 +5,6 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
-#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -15,13 +14,11 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStatusBar>
-#include <QStyleFactory>
 #include <QTimer>
 #include <QToolBar>
 #include <algorithm>
@@ -35,36 +32,13 @@
 #include "platform_project.hpp"
 #include "resource_panel.hpp"
 #include "scene_tree.hpp"
+#include "theme/theme.hpp"
 #include "viewport.hpp"
 
 namespace wds::studio {
 namespace {
 
 QString argument(qint64 number) { return QString::number(number); }
-
-void applyTheme(QApplication& app) {
-  app.setStyle(QStyleFactory::create("Fusion"));
-  QPalette palette = app.palette();
-  // Keep the native controls aligned with the roles in workbench.qss.
-  palette.setColor(QPalette::Window, QColor("#1e1f22"));
-  palette.setColor(QPalette::Base, QColor("#1a1b1e"));
-  palette.setColor(QPalette::AlternateBase, QColor("#202226"));
-  palette.setColor(QPalette::Button, QColor("#2a2c31"));
-  palette.setColor(QPalette::Mid, QColor("#3a3d44"));
-  palette.setColor(QPalette::Highlight, QColor("#2f5fa8"));
-  palette.setColor(QPalette::Inactive, QPalette::Highlight, QColor("#3a4250"));
-  palette.setColor(QPalette::HighlightedText, Qt::white);
-  palette.setColor(QPalette::PlaceholderText, QColor("#a9adb5"));
-  palette.setColor(QPalette::ToolTipBase, QColor("#26282c"));
-  palette.setColor(QPalette::ToolTipText, QColor("#e6e7ea"));
-  for (const auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText}) {
-    palette.setColor(role, QColor("#e6e7ea"));
-    palette.setColor(QPalette::Disabled, role, QColor("#71767f"));
-  }
-  app.setPalette(palette);
-  QFile theme(":/studio/theme/workbench.qss");
-  if (theme.open(QIODevice::ReadOnly)) app.setStyleSheet(QString::fromUtf8(theme.readAll()));
-}
 
 QString diagnostic(const QJsonObject& result) {
   static constexpr std::array codes{
@@ -797,7 +771,7 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
   QCoreApplication::setOrganizationName("WDS");
   QCoreApplication::setApplicationName("WDS Studio");
-  wds::studio::applyTheme(app);
+  wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
   window.show();

@@ -18,6 +18,21 @@
 
 ## 设计工作流
 
+### 模块入口
+
+按入口查调用方，再用 `rg` 搜类型名、操作 ID 或错误码。目录是实现入口，行为契约维护在对应规格中。
+
+| 要改什么 | 先查现有实现 | 主要规格 |
+| --- | --- | --- |
+| 项目、路径、资源、修订、写入与恢复 | `src/platform_project.hpp/.cpp`。GUI 和 CLI 共用项目服务，旧工具的存储另见 `src/project_store.*` | [项目格式](../architecture/project-format.md) |
+| 操作发现、CLI 和工作台调用 | `src/cli.cpp`、`project_operations_json()`、`src/studio/bridge.*`。公共入口负责参数与结果，调用方在项目服务中复用业务规则 | [操作与状态](../architecture/commands.md) |
+| 工作台状态、视觉与交互 | `src/studio/main.cpp` 装配窗口；`src/studio/theme/` 管全局主题和通用控件；`scene_tree`、`resource_panel`、`output_panel`、`viewport` 管各自交互；`i18n/` 管语言 | [桌面工作台](../architecture/workbench.md#组件与交互规范) |
+| 运行时与方块样例 | `src/platform_project.*` 的场景会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 插件生命周期与能力边界 | `src/plugin_host.*` 是现有宿主入口，新能力包跟随对应契约 | [插件与组合](../architecture/plugins.md) |
+| 构建、依赖与覆盖范围 | `CMakeLists.txt`、`CMakePresets.json`、`.github/workflows/quality.yml`、`tests/` | [质量与验证](quality.md) |
+
+### 设计与实验
+
 从真实用户任务定义问题，查阅所属章节，提出少量可比较方案，明确输入输出、失败处理、验证方式及影响范围。通过评审后更新主题文档和对应验收标准；未决定的实现保留在技术评估中。
 
 方案说明应覆盖问题、约束、替代方案、推荐理由、实验计划、实际结果、迁移与退出路径。可以在议题或评审中讨论，不要求为每个设计点单独建立文档。
@@ -53,7 +68,7 @@ Visual Studio 2022 生成器可作备选，本轮统一使用 Ninja。实测版�
 
 源码使用 UTF-8。MSVC 构建选项包含 `/utf-8`，避免依赖系统代码页。
 
-Linux 由 [质量检查](quality.md#当前自动检查) 中的 CI 配置构建和测试，远端结果待验证。macOS 未验证。
+Linux CI 已通过已合并基线的默认构建与测试。现代工作台的 Linux 和 macOS 原生运行仍需验证。 [质量检查](quality.md#当前自动检查)
 
 ## 运行 M0 样例
 

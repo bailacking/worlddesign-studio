@@ -1,6 +1,5 @@
 #include "resource_panel.hpp"
 
-#include <QAbstractItemView>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QGridLayout>
@@ -18,6 +17,8 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 #include <utility>
+
+#include "theme/theme.hpp"
 
 namespace wds::studio {
 namespace {
@@ -39,8 +40,7 @@ constexpr int kRefsRole = Qt::UserRole + 1;
 ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* parent)
     : QWidget(parent), on_select_(std::move(onSelect)) {
   auto* layout = new QVBoxLayout(this);
-  layout->setContentsMargins(4, 4, 4, 4);
-  layout->setSpacing(4);
+  theme::configurePanelLayout(*layout);
 
   search_ = new QLineEdit(this);
   search_->setClearButtonEnabled(true);
@@ -52,16 +52,7 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
 
   tree_ = new QTreeWidget(this);
   tree_->setColumnCount(3);
-  tree_->setRootIsDecorated(false);
-  tree_->setUniformRowHeights(true);
-  tree_->setAllColumnsShowFocus(true);
-  tree_->setWordWrap(false);
-  tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-  tree_->setSelectionBehavior(QAbstractItemView::SelectRows);
-  tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-  tree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-  tree_->setTextElideMode(Qt::ElideMiddle);
-  tree_->setFocusPolicy(Qt::StrongFocus);
+  theme::configurePanelTree(*tree_, Qt::ElideMiddle);
   tree_->installEventFilter(this);
   // 路径列吃掉剩余宽度；省略号由 ElideMiddle 给出，完整路径在悬停提示里。
   tree_->header()->setSectionResizeMode(kIdColumn, QHeaderView::Interactive);
@@ -69,11 +60,7 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   tree_->header()->setSectionResizeMode(kKindColumn, QHeaderView::ResizeToContents);
   tree_->header()->setSectionResizeMode(kPathColumn, QHeaderView::Stretch);
 
-  empty_state_ = new QLabel(this);
-  empty_state_->setAlignment(Qt::AlignCenter);
-  empty_state_->setWordWrap(true);
-  empty_state_->setTextInteractionFlags(Qt::NoTextInteraction);
-  empty_state_->setProperty("state", "empty");  // WKB-02 主题的次要文本色
+  empty_state_ = theme::makeEmptyState(this);
 
   stack_ = new QStackedWidget(this);
   stack_->addWidget(tree_);
@@ -84,8 +71,8 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   relations_ = new QWidget(this);
   auto* relations_layout = new QGridLayout(relations_);
   relations_layout->setContentsMargins(0, 0, 0, 0);
-  relations_layout->setHorizontalSpacing(8);
-  relations_layout->setVerticalSpacing(2);
+  relations_layout->setHorizontalSpacing(theme::group_spacing);
+  relations_layout->setVerticalSpacing(theme::tight_spacing);
   references_caption_ = new QLabel(relations_);
   backlinks_caption_ = new QLabel(relations_);
   for (QLabel* caption : {references_caption_, backlinks_caption_}) {

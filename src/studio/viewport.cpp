@@ -9,6 +9,8 @@
 #include <cmath>
 #include <utility>
 
+#include "theme/theme.hpp"
+
 namespace wds::studio {
 namespace {
 
@@ -66,15 +68,15 @@ QPointF Viewport::screenPosition(const QJsonObject& entity) const {
 
 void Viewport::paintEvent(QPaintEvent*) {
   QPainter painter(this);
-  painter.fillRect(rect(), QColor("#16191f"));
+  painter.fillRect(rect(), theme::color::viewport_background);
   const auto origin = screenPosition({});
   const int grid = std::max(4, static_cast<int>(std::lround(24.0 * scale_ / kDefaultScale)));
-  painter.setPen(QColor("#242933"));
+  painter.setPen(theme::color::viewport_grid);
   for (int x = static_cast<int>(origin.x()) % grid; x < width(); x += grid)
     painter.drawLine(x, 0, x, height());
   for (int y = static_cast<int>(origin.y()) % grid; y < height(); y += grid)
     painter.drawLine(0, y, width(), y);
-  painter.setPen(QColor("#454c5b"));
+  painter.setPen(theme::color::viewport_axes);
   painter.drawLine(QPointF(origin.x(), 0), QPointF(origin.x(), height()));
   painter.drawLine(QPointF(0, origin.y()), QPointF(width(), origin.y()));
 
@@ -84,18 +86,19 @@ void Viewport::paintEvent(QPaintEvent*) {
     const auto name = entity.value("id").toString();
     const auto position = screenPosition(entity);
     const bool selected = name == selected_;
-    painter.setPen(QPen(selected ? QColor("#93caff") : QColor("#d5dfed"), selected ? 2 : 1));
-    painter.setBrush(selected ? QColor("#438ff2") : QColor("#526a8a"));
+    painter.setPen(QPen(selected ? theme::color::entity_selected_line : theme::color::entity_line,
+                        selected ? 2 : 1));
+    painter.setBrush(selected ? theme::color::entity_selected_fill : theme::color::entity_fill);
     painter.drawEllipse(position, 6, 6);
-    painter.setPen(QColor("#d5dfed"));
+    painter.setPen(theme::color::entity_line);
     painter.drawText(position + QPointF(12, -8), name);
   }
-  painter.setPen(running_ ? QColor("#57c08a") : QColor("#a9adb5"));
+  painter.setPen(running_ ? theme::color::running : theme::color::secondary_text);
   painter.drawText(QPointF(16, 25), running_
                                         ? QCoreApplication::translate("Viewport", "Play mode")
                                         : QCoreApplication::translate("Viewport", "2D · Scene"));
   if (entities_.isEmpty()) {
-    painter.setPen(QColor("#a9adb5"));
+    painter.setPen(theme::color::secondary_text);
     painter.drawText(rect(), Qt::AlignCenter,
                      QCoreApplication::translate("Viewport", "No entities to display"));
   }

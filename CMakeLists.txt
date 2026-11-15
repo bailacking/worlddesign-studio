@@ -55,6 +55,7 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/output_panel.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
+    src/studio/theme/theme.cpp
     src/studio/viewport.cpp
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)

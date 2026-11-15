@@ -27,12 +27,18 @@
 
 **设置 → 界面语言**可即时切换简体中文与英文，工作台会记住选择。切换时保留正在编辑的项目、属性草稿与过滤条件。项目 ID、资源路径、修订和诊断码使用源值。
 
-## 首批可并行交付的组件
+## 组件与交互规范
 
-首批组件以 `src/studio/` 为根。WKB-01 将它们纳入可选的 `wds_studio_modern` 目标。面板使用命名空间 `wds::studio`。调用方传入的 JSON 已由工作台桥接层确认基本结构，组件自己保存所需显示数据，项目切换时传空数组清空。用户主动选择时回调一次当前稳定 ID，清空选择传空字符串。更新模型和从其他面板同步选中时不触发回调。过滤时保留逻辑选中 ID，清除过滤后恢复可见选中。
+窗口与面板沿用 Qt Widgets 和当前主题。新增界面先用 Qt 原生控件和现有面板组合，从下表找接入点。新样式与确有用途的变体集中写入全局主题。
 
-- **WKB-02 主题**。唯一产物为 `src/studio/theme/workbench.qss`。以 Qt palette 和控件状态组织深色样式，覆盖工具栏、菜单、停靠标题、树、列表、页签、输入及状态栏。使用系统字体、控件原生尺寸和焦点边框。选中、悬停、禁用、键盘焦点可区分，资源路径保持可读。WKB-01 负责加载。
-- **WKB-04 场景树**。唯一可改文件为 `src/studio/scene_tree.hpp` 与 `src/studio/scene_tree.cpp`。实现 `SceneTreePanel final : public QWidget`。构造函数参数为 `std::function<void(QString)> onSelect, QWidget* parent = nullptr`。提供 `void setEntities(const QJsonArray& entities)` 与 `void setSelectedId(const QString& id)`。每条实体读取 `id`，按输入顺序列出，支持大小写不敏感的搜索和键盘选择。无实体或无匹配时显示对应状态。
-- **WKB-05 资源面板**。唯一可改文件为 `src/studio/resource_panel.hpp` 与 `src/studio/resource_panel.cpp`。实现 `ResourcePanel final : public QWidget`，构造函数参数同上。提供 `void setResources(const QJsonArray& resources)` 与 `void setSelectedId(const QString& id)`。每条资源读取现有 `project resources` 的 `id`、`kind`、`path`，按 ID 或路径搜索，支持按类型过滤。长路径有完整提示，空结果和空项目分别显示。
+| 要复用的部分 | 入口与行为 |
+| --- | --- |
+| 全局样式与绘制颜色 | `src/studio/theme/colors.inc` 保存语义颜色。QSS 用 `@名称@`，C++ 用 `theme::color::名称`。Qt 调色板、视口、输出颜色读自同一来源 |
+| 面板间距、列表和空态 | `theme::configurePanelLayout`、`theme::configurePanelTree`、`theme::makeEmptyState`。新面板沿用统一的边距、行选择和键盘焦点 |
+| 场景实体选择 | `SceneTreePanel::setEntities` 和 `setSelectedId`。按输入顺序显示，支持搜索、键盘选择与清空 |
+| 资源浏览与引用 | `ResourcePanel::setResources` 和 `setSelectedId`。按稳定 ID、路径及类型筛选，能查看直接引用与反向引用 |
+| 输出与错误 | `OutputPanel::setEntries` 接受已本地化的文本与级别，项目服务提供稳定错误码，工作台负责翻译和定位 |
 
-组件可用 Qt 自带控件与普通 C++ 回调实现，首批无需自定义 Qt 信号或网络依赖。集成时使用实际项目数据，能完成上述路径即交付；涉及行为的改动沿用现有构建检查，出现回归再补针对性用例。 [实施任务与分工](../project/parallel-delivery.md)
+工作台保持系统字体和 DPI 缩放。焦点与选中可以区分，禁用、运行、失败和未保存有文字或动作状态可辨。空项目与无搜索结果分别提示。场景树和资源面板在用户主动选择时回调一次稳定 ID，程序同步时保持静默。筛选隐藏的选择在清除条件后恢复。切换项目时清除原选择与输出，切换语言时更新显示文本和辅助功能标签。
+
+新增保存或提交动作应复用项目服务和桥接层，保持草稿状态、修订约束和失败后的恢复方式可理解。涉及键鼠、焦点、翻译或 DPI 的变更，选一条真实项目路径在工作台验收。 [实施任务与分工](../project/parallel-delivery.md)

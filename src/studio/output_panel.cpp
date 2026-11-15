@@ -1,6 +1,5 @@
 #include "output_panel.hpp"
 
-#include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
@@ -20,6 +19,8 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
+#include "theme/theme.hpp"
+
 namespace wds::studio {
 namespace {
 
@@ -35,20 +36,19 @@ QString normalizedLevel(const QString& level) {
 
 // 与 workbench.qss 的状态色一致：info 次要文本、warning 修改中、error 失败。
 QColor levelColor(const QString& level) {
-  if (level == QLatin1String("warning")) return QColor(QStringLiteral("#d9a13b"));
-  if (level == QLatin1String("error")) return QColor(QStringLiteral("#ef6b62"));
-  return QColor(QStringLiteral("#a9adb5"));
+  if (level == QLatin1String("warning")) return theme::color::warning;
+  if (level == QLatin1String("error")) return theme::color::error;
+  return theme::color::secondary_text;
 }
 
 }  // namespace
 
 OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
   auto* layout = new QVBoxLayout(this);
-  layout->setContentsMargins(4, 4, 4, 4);
-  layout->setSpacing(4);
+  theme::configurePanelLayout(*layout);
 
   auto* controls = new QHBoxLayout();
-  controls->setSpacing(4);
+  controls->setSpacing(theme::compact_spacing);
   level_filter_ = new QComboBox(this);
   controls->addWidget(level_filter_);
   controls->addStretch(1);
@@ -59,25 +59,12 @@ OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
 
   tree_ = new QTreeWidget(this);
   tree_->setColumnCount(2);
-  tree_->setRootIsDecorated(false);
-  tree_->setUniformRowHeights(true);
-  tree_->setAllColumnsShowFocus(true);
-  tree_->setWordWrap(false);
-  tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-  tree_->setSelectionBehavior(QAbstractItemView::SelectRows);
-  tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-  tree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-  tree_->setTextElideMode(Qt::ElideRight);
-  tree_->setFocusPolicy(Qt::StrongFocus);
+  theme::configurePanelTree(*tree_, Qt::ElideRight);
   // 级别列按内容定宽，消息列吃掉剩余宽度；长文本悬停给全文。
   tree_->header()->setSectionResizeMode(kLevelColumn, QHeaderView::ResizeToContents);
   tree_->header()->setSectionResizeMode(kTextColumn, QHeaderView::Stretch);
 
-  empty_state_ = new QLabel(this);
-  empty_state_->setAlignment(Qt::AlignCenter);
-  empty_state_->setWordWrap(true);
-  empty_state_->setTextInteractionFlags(Qt::NoTextInteraction);
-  empty_state_->setProperty("state", "empty");  // WKB-02 主题的次要文本色
+  empty_state_ = theme::makeEmptyState(this);
 
   stack_ = new QStackedWidget(this);
   stack_->addWidget(tree_);
