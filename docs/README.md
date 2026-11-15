@@ -33,6 +33,7 @@
 - [技术评估](engineering/technical-evaluation.md)：C++ 核心的选定理由、工具链与依赖调研、进入编码的条件。
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
 - [实施路线](project/roadmap.md)：工程底座、创作闭环、可复用生产和全量验证。
+- [全量开发计划与工期估算](project/delivery-estimate.md)：当前基线、所有工作包、剩余工作量和里程碑时间。
 - [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
 - [并行开发计划](project/parallel-delivery.md)：工作树、首批派发、各模块的交付边界和合并顺序。
 - [方块项目验收基准](project/voxel-benchmark.md)：1.6 全量内容与行为对照、耗时、Token 和人工接手。
