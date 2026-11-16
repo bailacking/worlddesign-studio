@@ -34,6 +34,7 @@
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
 - [实施路线](project/roadmap.md)：工程底座、创作闭环、可复用生产和全量验证。
 - [最终版 50 周开发计划](project/50-week-plan.md)：逐周目标和验收、零资产计时、共同调研与产能复核。
+- [W1 基线与需求台账](project/w1-baseline.md)：Windows 实测、核心需求与任务映射、验收机器与本周投入。
 - [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
 - [并行开发计划](project/parallel-delivery.md)：工作树、首批派发、各模块的交付边界和合并顺序。
 - [方块项目验收基准](project/voxel-benchmark.md)：Java 1.16.5 版本、行为矩阵及 30 分钟交付。
