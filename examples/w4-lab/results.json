@@ -1,0 +1,299 @@
+{
+  "capture_date_local": "2026-11-16",
+  "environment": {
+    "os": "Windows 11 Pro x64 22631",
+    "cpu": "AMD Ryzen 7 5800H",
+    "ram_gib": 15.9,
+    "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+    "opengl": "3.3.0 NVIDIA 616.92",
+    "msvc": "19.44.35228",
+    "qt": "6.8.3",
+    "raylib": "5.5",
+    "python": "3.14.6",
+    "pillow": "12.3.0"
+  },
+  "content": {
+    "fixture": "four original integer state families, shared W3 reference entries",
+    "reference_records": 8,
+    "variant_rows": 64,
+    "records": 12,
+    "output_sha256": "a8763b368bd7a38b33a0146be72ebe0913930fcb9941536a96a28ce2418bdea0",
+    "pairs": 15,
+    "routes": {
+      "batch": {
+        "first_pass": true,
+        "input_bytes": 201,
+        "pipeline_p50_ms": 0.2164,
+        "pipeline_min_ms": 0.2143,
+        "pipeline_max_ms": 0.3038,
+        "fault_injection": {
+          "issue": {
+            "code": "invalid_rule",
+            "location": "/entries/amber-gate/rule/range",
+            "message": "Expected ascending 32-bit integer bounds with at most 256 values"
+          },
+          "reject_ms": 0.167,
+          "repair_and_validate_ms": 0.3606,
+          "records_replaced": 1
+        }
+      },
+      "explicit": {
+        "first_pass": true,
+        "input_bytes": 400,
+        "pipeline_p50_ms": 0.2098,
+        "pipeline_min_ms": 0.2072,
+        "pipeline_max_ms": 0.2271,
+        "fault_injection": {
+          "issue": {
+            "code": "invalid_expansion",
+            "location": "/entries/amber-gate/variants",
+            "message": "Variants do not match rule"
+          },
+          "reject_ms": 0.1755,
+          "repair_and_validate_ms": 0.2947,
+          "records_replaced": 1
+        }
+      }
+    }
+  },
+  "assets": {
+    "seed": 412,
+    "checks": 10,
+    "metrics": [
+      {
+        "arm": "a",
+        "asset": "tile",
+        "ms": 20.054099999470054,
+        "size": [
+          32,
+          32
+        ],
+        "wrapped_edges": true
+      },
+      {
+        "arm": "a",
+        "asset": "model",
+        "ms": 11.101300000518677,
+        "vertices": 56,
+        "triangles": 108,
+        "height": 1.36
+      },
+      {
+        "arm": "a",
+        "asset": "layers",
+        "ms": 2.3753000004944624,
+        "size": [
+          48,
+          48
+        ],
+        "origin": [
+          24,
+          36
+        ],
+        "attachment": [
+          34,
+          30
+        ],
+        "bounds": [
+          7,
+          5,
+          41,
+          43
+        ],
+        "lantern_luma_delta": 171.3
+      },
+      {
+        "arm": "a",
+        "asset": "pickup.wav",
+        "ms": 12.526800001069205,
+        "seconds": 0.18,
+        "peak_dbfs": -7.03,
+        "rms_dbfs": -16.46,
+        "onset_ms": 0.18,
+        "edge_pcm": [
+          0,
+          0
+        ]
+      },
+      {
+        "arm": "a",
+        "asset": "music.wav",
+        "ms": 345.66459999950894,
+        "seconds": 8.0,
+        "peak_dbfs": -16.07,
+        "rms_dbfs": -26.07,
+        "onset_ms": 0.98,
+        "edge_pcm": [
+          0,
+          0
+        ]
+      },
+      {
+        "arm": "b",
+        "asset": "tile",
+        "ms": 0.6716999996569939,
+        "size": [
+          32,
+          32
+        ],
+        "wrapped_edges": true
+      },
+      {
+        "arm": "b",
+        "asset": "model",
+        "ms": 1.169899998785695,
+        "vertices": 28,
+        "triangles": 52,
+        "height": 1.38
+      },
+      {
+        "arm": "b",
+        "asset": "layers",
+        "ms": 2.1652000014000805,
+        "size": [
+          48,
+          48
+        ],
+        "origin": [
+          24,
+          36
+        ],
+        "attachment": [
+          34,
+          30
+        ],
+        "bounds": [
+          7,
+          6,
+          41,
+          43
+        ],
+        "lantern_luma_delta": 129.2
+      },
+      {
+        "arm": "b",
+        "asset": "pickup.wav",
+        "ms": 18.31539999875531,
+        "seconds": 0.26,
+        "peak_dbfs": -7.43,
+        "rms_dbfs": -19.93,
+        "onset_ms": 0.2,
+        "edge_pcm": [
+          0,
+          0
+        ]
+      },
+      {
+        "arm": "b",
+        "asset": "music.wav",
+        "ms": 350.08790000028966,
+        "seconds": 8.0,
+        "peak_dbfs": -18.66,
+        "rms_dbfs": -27.37,
+        "onset_ms": 1.09,
+        "edge_pcm": [
+          0,
+          0
+        ]
+      }
+    ],
+    "files": {
+      "a/beacon.obj": {
+        "sha256": "b2cc25d7520e3d90065e3ff2d0f51513b658d73ecd3582f94ecad0e16073b81d",
+        "bytes": 9283
+      },
+      "a/body.png": {
+        "sha256": "77f3d6201405b21334cc98daf3912702bef9d7e8fd5ffd9f011a0be2174e4e55",
+        "bytes": 605
+      },
+      "a/equipment.png": {
+        "sha256": "b8072239c3a2a0fefd14d24ffe12bf01b5deae4db4b67de85528384724b0800b",
+        "bytes": 213
+      },
+      "a/music.wav": {
+        "sha256": "1b70584982ea78748237492c531fa0712292a63d59b53fc43ff996c5e2ff69b9",
+        "bytes": 705644
+      },
+      "a/pickup.wav": {
+        "sha256": "e1487b3e1ac896937a5c7d9d4619c218e52fc00b68151bc8449327faa963a935",
+        "bytes": 15920
+      },
+      "a/tile.png": {
+        "sha256": "5d04363723c960c745de6440315a1ee1d1d19ea217095de0f2148817179e5468",
+        "bytes": 685
+      },
+      "b/beacon.obj": {
+        "sha256": "851e0acc0c31fa2aac0e87e0350bf87ad2e34c37426aab5931ce4e7197c741b2",
+        "bytes": 4447
+      },
+      "b/body.png": {
+        "sha256": "f6004dcf3f5c1e0a2e2a26d2e4cbf1decb14b5f46950e5511de4c525cdf18295",
+        "bytes": 542
+      },
+      "b/equipment.png": {
+        "sha256": "92fcffe7c9b9d5358ccffb0f0ca777b880dcbd20f5904bbcfaca16131a7b329b",
+        "bytes": 213
+      },
+      "b/music.wav": {
+        "sha256": "6ac587a85595c262b570738803fce26e673a4677b77d981cae6f708bcbf8e81d",
+        "bytes": 705644
+      },
+      "b/pickup.wav": {
+        "sha256": "a1abcc2ee4d34df36bb466d35dd04e99be1a6ca2cd378bfc22127d5dcf39a61b",
+        "bytes": 22976
+      },
+      "b/tile.png": {
+        "sha256": "8a8d45b1851a892257d4509c79fd5e02fd8c14c889129c1d8a7a78d5f9c85778",
+        "bytes": 389
+      }
+    }
+  },
+  "rendering": {
+    "qt": {
+      "backend": "qt-raster",
+      "frames": 240,
+      "draw_p50_ms": 0.1253,
+      "draw_p95_ms": 0.149,
+      "readback_p50_ms": 0.3629,
+      "readback_p95_ms": 0.3957,
+      "win_frame": 208,
+      "pickups": 3,
+      "observed_pixels": 30182
+    },
+    "raylib": {
+      "backend": "raylib-opengl",
+      "frames": 240,
+      "draw_p50_ms": 0.0712,
+      "draw_p95_ms": 0.1076,
+      "readback_p50_ms": 0.9684,
+      "readback_p95_ms": 1.087,
+      "win_frame": 208,
+      "pickups": 3,
+      "observed_pixels": 30182
+    }
+  },
+  "frames": {
+    "size": [
+      960,
+      540
+    ],
+    "max_channel_delta": 1,
+    "model_colored_pixels": {
+      "a": 34508,
+      "b": 41563
+    }
+  },
+  "screenshot_sha256": {
+    "frame-qt.png": "ced9f94c2bcf2e184b577e4eac78fd4ea058e7d1688a313d7eaca79dc65b4b20",
+    "frame-raylib.png": "5ee15733c0cc4d8b0e7adc2b91723a99f03939cfd7fc7baf744e03890327da5d",
+    "model-a.png": "f4e39e7bd6cfd1900db74e9a1b27ddf819d501f845fe9e24ccd348adbc24b8fc",
+    "model-b.png": "b296d26e85898ff32dcfbda70a528739aea54c483497e1c1c65a93d284c9a8c9",
+    "assets/graphics-ab.png": "02d03ca39de3fe2dbfef7fac1eca7b994a789db9f8ec3beaff04933f559e688e"
+  },
+  "observed_refit": {
+    "initial_failure": "Win32 0xC0000005 when raylib 5.5 loaded the initial OBJ",
+    "change": "Explicit triangles, UV coordinates and normals",
+    "seconds_from_failure_log_to_pass_log": 170,
+    "remaining_loader_warning": "Trying to re-load an already loaded mesh (VAO)"
+  }
+}

@@ -39,6 +39,10 @@ ctest --test-dir build --output-on-failure
 
 Visual Studio 生成器可作为 Windows 的备选。两组使用同一个编译器，Linux 由构建骨架 CI 补验证，macOS 仍待验证。最低 CMake 版本需另测。动态插件、故障恢复、依赖管理和第三方库随相关任务评估。
 
+## W4 运行后端对照
+
+在 Windows 同一场景试跑 Qt 栅格和 raylib OpenGL，共用输入状态及绘制顺序。实测与选型条件见 [W4 实测](../project/w4-benchmarks.md#运行后端)。
+
 ## 其他开放问题
 
 | 领域 | 需要回答的问题 | 比较重点 | 最小证据 |
