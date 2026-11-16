@@ -1,6 +1,6 @@
 # 方块项目验收基准
 
-[50 周开发计划](50-week-plan.md)的参考目标为 **30 分钟内从零资产复刻《我的世界》Java 1.16.5**。可运行、可编辑的产物都必须在限时内交付。参考以 Mojang 官方客户端和服务端为准。版本元数据证明版本身份，规则和数值另用版本资料及原版实测核验。原版协议互通、存档格式、账号及外部服务边界由发起人在 W2 确认。 [官方发布公告](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-16-5) · [版本元数据](https://piston-meta.mojang.com/v1/packages/fba9f7833e858a1257d810d21a3a9e3c967f9077/1.16.5.json) · [Java 下界更新说明](https://feedback.minecraft.net/hc/en-us/articles/360044911972-Minecraft-Java-Edition-Nether-Release)
+[50 周开发计划](50-week-plan.md)的参考目标为 **30 分钟内从零资产复刻《我的世界》Java 1.16.5**。可运行、可编辑的产物都必须在限时内交付。参考以 Mojang 官方客户端和服务端为准。版本元数据证明版本身份，规则和数值另用版本资料及原版实测核验。W2 已确认独立复刻。WDS 实现同等玩法、局域网和独立服务端联机，使用 WDS 原生存档。原版协议互通、原版存档兼容、账号及外部服务列为范围外。 [官方发布公告](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-16-5) · [版本元数据](https://piston-meta.mojang.com/v1/packages/fba9f7833e858a1257d810d21a3a9e3c967f9077/1.16.5.json) · [Java 下界更新说明](https://feedback.minecraft.net/hc/en-us/articles/360044911972-Minecraft-Java-Edition-Nether-Release)
 
 ## 全量矩阵
 
@@ -18,6 +18,30 @@
 | 多人 | 局域网和独立服务端、加入退出、权限、同步、掉线重连、服务端存档 | RUN-07、VOX-10 |
 
 每项记录稳定 ID、版本、模式、前置条件、操作、原版与 WDS 结果、证据及阻塞能力。数据条目批量验证，玩法顺序保留重放场景。不能直接用跨版本通用资料代替 1.16.5 的观察。通用玩法能力另用原创任务验证。
+
+## W2 逐领域对照
+
+从 Mojang [版本目录](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)选 `id=1.16.5`、`type=release`。已核对[该版本元数据](https://piston-meta.mojang.com/v1/packages/fba9f7833e858a1257d810d21a3a3c967f9077/1.16.5.json)及其下载长度、SHA-1。客户端为 `37fd3c903861eeff3bc24b71eed48f828b5269c8`，服务端为 `1b557e7b033b583cd9f66746b7a9ab1ec1673ced`。两端内置 `version.json` 一致，世界数据版本 2586，协议 754，资源包格式 6。Mojang 启动器清单为此版本声明 Java 8。W2 仅在本机 JDK 25 实测生成报告及初始化。
+
+把校验过的服务端文件命名为 `server.jar`，在隔离工作目录运行原版入口。生成报告和配置后，按表中路径核查。试玩时用固定版本、无模组、新建临时世界，记录种子及起始存档。关于启动器和服务器配置，见 [Mojang 版本切换说明](https://help.minecraft.net/hc/en-us/articles/360034754852-Changing-game-versions-) 和[服务端设置说明](https://help.minecraft.net/hc/en-us/articles/360058525452)。
+
+```powershell
+java -cp server.jar net.minecraft.data.Main --reports --output reports
+java -jar server.jar --initSettings
+```
+
+以下各条均验证了原版数据列。操作列定义实际运行时的对照步骤，W2 尚未执行该列。后续由对应平台任务在原版和 WDS 各跑一次，分别记录实际输出。
+
+| ID 与领域 | 已复现的原版数据 | 原版与 WDS 运行时对照步骤 |
+| --- | --- | --- |
+| `MC-SAVE-001` 创建、设置与存档 | `server.properties` 的默认模式为生存、难度为简单。两端 `version.json` 世界数据版本为 2586 | 各自创建默认存档，记录模式和难度。在已记录坐标放一块方块，退出重开，核查设置及方块保持 |
+| `MC-WORLD-001` 世界与探索 | `reports/reports/biomes/warped_forest.json` 中诡异森林归为下界，命令报告含定位生物群系的入口 | 在固定种子的可用下界存档中定位诡异森林，并在离开后再返回，记录群系、维度和位置 |
+| `MC-BLOCK-001` 方块、环境与自动化 | `reports/reports/blocks.json` 中重生锚充能状态为 0 到 4。[Mojang 下界更新说明](https://www.minecraft.net/en-us/article/nether-update-java)说明每次重生消耗一格 | 下界放置重生锚，依次使用五块荧石，读回充能状态。设置重生点并死亡一次，记录位置及剩余充能 |
+| `MC-SURVIVAL-001` 玩家与生存 | 原版 `registries.json` 注册中毒效果，`commands.json` 有施加效果命令 | 以固定血量和生存模式对玩家施加指定时长的中毒，记录状态显示、生命轨迹及结束状态 |
+| `MC-CRAFT-001` 物品与制作 | 服务端包 `data/minecraft/recipes/bread.json` 确认三份小麦横排产出面包 | 工作台上横排三份小麦并取走产物。变体改为竖排，记录拾取结果、消耗和竖排时的产出 |
+| `MC-ENTITY-001` 生物与载具 | `registries.json` 注册炽足兽。[Mojang 下界更新说明](https://www.minecraft.net/en-us/article/nether-update-java)说明其可在熔岩上移动及骑乘 | 在下界生成一只炽足兽，装鞍，用诡异菌钓竿跨过一段熔岩，记录骑乘移动和下车结果 |
+| `MC-UI-001` 玩家工具与表现 | `commands.json` 中游戏模式有生存、创造、冒险、旁观四支 | 用具有权限的玩家切换四种模式，记录当前模式提示、HUD 变化及破坏同一方块的结果 |
+| `MC-NET-001` 多人 | 初始化的服务端默认端口 25565，配置含在线校验，命令报告含白名单 | 先让第二个玩家加入局域网世界。再于各自独立服务端验证允许与拒绝加入、方块同步、掉线重连以及服务端重开后的状态 |
 
 ## 计时及续编
 
