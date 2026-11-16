@@ -85,12 +85,6 @@ if(WIN32)
   endif()
   set(wds_gui_option -DGUI=$<TARGET_FILE:wds_editor>)
 
-  add_executable(wds_studio WIN32 src/windows_studio.cpp)
-  target_link_libraries(wds_studio PRIVATE wds_project wds_compile_options user32 gdi32)
-  if(MINGW)
-    target_link_options(wds_studio PRIVATE -municode)
-  endif()
-
   add_executable(wds_sandbox WIN32 src/windows_sandbox.cpp)
   target_link_libraries(wds_sandbox PRIVATE wds_voxel wds_compile_options user32 gdi32 shell32)
   if(MINGW)

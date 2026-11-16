@@ -33,10 +33,11 @@
 - [技术评估](engineering/technical-evaluation.md)：C++ 核心的选定理由、工具链与依赖调研、进入编码的条件。
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
 - [实施路线](project/roadmap.md)：工程底座、创作闭环、可复用生产和全量验证。
-- [全量开发计划与工期估算](project/delivery-estimate.md)：当前基线、所有工作包、剩余工作量和里程碑时间。
+- [最终版 50 周开发计划](project/50-week-plan.md)：逐周目标和验收、零资产计时、共同调研与产能复核。
 - [开发任务](project/development-tasks.md)：可认领的交付物、依赖关系和验收条件。
 - [并行开发计划](project/parallel-delivery.md)：工作树、首批派发、各模块的交付边界和合并顺序。
-- [方块项目验收基准](project/voxel-benchmark.md)：1.6 全量内容与行为对照、耗时、Token 和人工接手。
+- [方块项目验收基准](project/voxel-benchmark.md)：Java 1.16.5 版本、行为矩阵及 30 分钟交付。
+- [饥荒项目验收基准](project/dontstarve-benchmark.md)：PC 单机原版、巨人国及海难 2017 年前的内容及 30 分钟交付。
 - [前期原型与验证](project/prototype-baseline.md)：已完成的 M0、M1 技术样例与限制。
 
 ## 社区、许可与研究
@@ -44,7 +45,6 @@
 - [贡献指南](../CONTRIBUTING.md)、[社区规范](../CODE_OF_CONDUCT.md)、[社区治理](community/governance.md)。
 - [MIT 许可说明](legal/license.md)。
 - [DeepSeek Harness 专题研究](research/deepseek-harness.md)、[相关项目调研](research/landscape.md)。
-- [Windows 工作台首轮验收](research/studio-windows-check.md)。
 
 ## 文档维护规则
 

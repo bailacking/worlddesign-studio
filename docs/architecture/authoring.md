@@ -4,17 +4,9 @@
 
 WDS 同时提供代码与可视化逻辑编辑，允许根据任务和经验选择或混合使用。图形编辑器面向场景、资源和行为组织，命令行与 AI 可通过共享操作完成相应任务。首版界面布局见 [桌面工作台](workbench.md)，脚本语言和图形表达形式仍待选型。
 
-### Windows 工作台与框架评估
+### 桌面工作台
 
-`wds_studio` 是 Windows 的首个通用项目工作台。它验证项目创建、打开、诊断和资源读取，复用 CLI 的项目服务。选用原生窗口先降低接入成本，项目模型与操作语义在平台核心，界面可替换。
-
-| 候选 | 当前证据 | 下一步验证 |
-| --- | --- | --- |
-| Win32 原生控件 | 本机已构建并验证项目入口与资源列表 | 键盘焦点、长路径、DPI 和错误展示；跨平台需另写适配 |
-| wxWidgets + AUI | 官方资料提供停靠工作区与分发许可说明 | 在同一场景验证停靠状态、输入、可访问性与 Windows/Linux 构建 |
-| Qt Widgets | 官方资料提供停靠控件及许可选项 | 复跑同一工作流，核对实际使用模块及分发条件 |
-
-目前仅 Win32 的首个流程已实测。新工作台采用 Qt Widgets 作为首版前端，布局和依赖由工作台自身管理。WKB-01 在实际构建时确认版本、许可和部署边界。 [桌面工作台技术路线](workbench.md#首版技术路线) · [Win32 控件](https://learn.microsoft.com/en-us/windows/win32/controls/about-tree-view-controls) · [wxWidgets AUI](https://docs.wxwidgets.org/3.2/overview_aui.html) · [wxWidgets 许可](https://www.wxwidgets.org/about/licence/)
+通用项目的桌面入口是 Qt Widgets 工作台。它通过共享项目服务支持创建、打开、场景编辑、试玩、整数数据字段预览和恢复。工作台按需构建，默认核心和 CLI 不依赖 Qt。各平台的实测范围以发布规格为准。 [桌面工作台](workbench.md) · [平台与交付](platforms.md)
 
 ## 共同语义基础
 

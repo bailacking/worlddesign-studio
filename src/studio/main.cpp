@@ -11,6 +11,7 @@
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -132,10 +133,13 @@ class Workbench final : public QMainWindow {
     save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
+    recover_ = project_menu_->addAction(QString{}, this, &Workbench::recoverProject);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
     edit_menu_ = menuBar()->addMenu(QString{});
     undo_ = edit_menu_->addAction(QString{}, this, [this] { restoreHistory(false); });
     redo_ = edit_menu_->addAction(QString{}, this, [this] { restoreHistory(true); });
+    edit_menu_->addSeparator();
+    edit_data_ = edit_menu_->addAction(QString{}, this, &Workbench::editDataField);
     undo_->setShortcuts(QKeySequence::Undo);
     redo_->setShortcuts(QKeySequence::Redo);
     scene_menu_ = menuBar()->addMenu(QString{});
@@ -267,7 +271,9 @@ class Workbench final : public QMainWindow {
     create_->setText(tr("&New Project…"));
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
+    recover_->setText(tr("Recover Project…"));
     close_->setText(tr("Close Project"));
+    edit_data_->setText(tr("Edit Integer Data Field…"));
     add_entity_->setText(tr("Add Entity…"));
     copy_entity_->setText(tr("Duplicate Entity…"));
     remove_entity_->setText(tr("Delete Entity…"));
@@ -344,6 +350,25 @@ class Workbench final : public QMainWindow {
       stop();
       root_ = path;
       clearProject();
+      refresh();
+    });
+  }
+
+  void recoverProject() {
+    if (QMessageBox::question(
+            this, tr("Recover Project…"), tr("Recover the pending transaction in %1?").arg(root_),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
+      return;
+    }
+    setBusy(true);
+    bridge_.run({"project", "recover", root_}, [this](const QJsonObject& result) {
+      if (result.value("code") != "ok") {
+        report({nullptr, {}, result});
+        setBusy(false);
+        return;
+      }
+      clearProject();
+      report({QT_TR_NOOP("Project recovery completed."), {}, {}});
       refresh();
     });
   }
@@ -606,6 +631,71 @@ class Workbench final : public QMainWindow {
     });
   }
 
+  void editDataField() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Edit Integer Data Field…"));
+    QFormLayout form(&dialog);
+    QLineEdit resource(resources_->selectedId(), &dialog);
+    QLineEdit field(&dialog);
+    QLineEdit value(&dialog);
+    form.addRow(tr("Resource ID"), &resource);
+    form.addRow(tr("Field"), &field);
+    form.addRow(tr("New integer value"), &value);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons.button(QDialogButtonBox::Ok)->setText(tr("Preview"));
+    buttons.button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+    connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form.addRow(&buttons);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    QStringList args{"project",
+                     "preview-field",
+                     root_,
+                     resource.text(),
+                     field.text(),
+                     argument(*revision_),
+                     value.text().trimmed()};
+    setBusy(true);
+    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
+      if (preview.value("code") != "ok") {
+        report({nullptr, {}, preview});
+        setBusy(false);
+        return;
+      }
+      const auto old_value = argument(preview.value("old_value").toInteger());
+      const auto new_value = argument(preview.value("new_value").toInteger());
+      if (!preview.value("changed").toBool()) {
+        report({QT_TR_NOOP("The data field already has this value."), {}, {}});
+        setBusy(false);
+        return;
+      }
+      if (QMessageBox::question(
+              this, tr("Preview"),
+              tr("Apply %1 · %2 → %3?")
+                  .arg(preview.value("location").toString(), old_value, new_value),
+              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
+        setBusy(false);
+        return;
+      }
+      args[1] = "set-field";
+      bridge_.run(args, [this](const QJsonObject& result) {
+        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+          report({nullptr, {}, result});
+          setBusy(false);
+          return;
+        }
+        revision_ = result.value("revision").toInteger();
+        report(
+            {QT_TR_NOOP("Saved %1 · %2 → %3"),
+             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
+              argument(result.value("new_value").toInteger())},
+             {}});
+        readScene(false);
+      });
+    });
+  }
+
   void play() {
     if (busy_ || dirty_ || !revision_ || !scene_ready_) return;
 #ifdef Q_OS_WIN
@@ -680,6 +770,8 @@ class Workbench final : public QMainWindow {
     open_->setEnabled(!busy_);
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
+    recover_->setEnabled(!busy_ && !session_ && !dirty_ && !root_.isEmpty());
+    edit_data_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
     save_->setEnabled(editable && dirty_);
     revert_->setEnabled(editable && dirty_);
     const bool structure_editable = scene_ready_ && !busy_ && !session_ && !dirty_ && revision_;
@@ -734,6 +826,8 @@ class Workbench final : public QMainWindow {
   QAction* open_;
   QAction* create_;
   QAction* close_;
+  QAction* recover_;
+  QAction* edit_data_;
   QAction* save_;
   QAction* undo_;
   QAction* redo_;

@@ -24,7 +24,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 - **开放的项目资料**：普通文件夹保存源内容，资源编号与路径共同维持引用，自动项目说明帮助人类与 AI 理解项目。
 - **2D 与 3D 并行发展**：共享通用逻辑，渲染、物理与空间处理分别优化。桌面优先，将 Windows、Linux、macOS 与 Web 的约束纳入架构研究。
 
-首个可用平台用两个不同类型的项目验证创建、编辑、试玩和导出。长期以《我的世界》Java 版 1.6 全量内容和行为的一比一复刻检验平台，目标是在 10 分钟内用少量 Token 交付可玩、可编辑项目。[验收基准](docs/project/voxel-benchmark.md)
+按 [50 周开发计划](docs/project/50-week-plan.md)推进平台建设。目标是各用 **30 分钟**从零资产复刻《我的世界》Java 1.16.5 与《饥荒》单机原版、巨人国和海难在 2017 年前的内容，并各用 **60 分钟**从新需求制作同量级方块与非方块游戏。四项均需交付可玩成品和可续编工程。 [方块验收](docs/project/voxel-benchmark.md) · [饥荒验收](docs/project/dontstarve-benchmark.md)
 
 ## 文档入口
 
@@ -33,7 +33,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 | 理解产品目标与范围 | [愿景与设计原则](docs/product/vision.md) · [产品范围](docs/product/scope.md) |
 | 理解各系统如何协作 | [系统架构](docs/architecture/overview.md) · [离线架构图解](docs/architecture.html) |
 | 开展工程设计与原型开发 | [开发指南](docs/engineering/development.md) · [长期维护](docs/engineering/quality.md#长期维护) · [技术评估](docs/engineering/technical-evaluation.md) |
-| 认领任务与查看里程碑 | [全量计划与工期](docs/project/delivery-estimate.md) · [并行开发计划](docs/project/parallel-delivery.md) · [实施路线](docs/project/roadmap.md) |
+| 认领任务与查看里程碑 | [最终版 50 周计划](docs/project/50-week-plan.md) · [并行开发计划](docs/project/parallel-delivery.md) · [实施路线](docs/project/roadmap.md) |
 | 研究相关技术 | [DeepSeek Harness 专题](docs/research/deepseek-harness.md) · [相关项目](docs/research/landscape.md) |
 | 参与项目 | [贡献指南](CONTRIBUTING.md) · [社区治理](docs/community/governance.md) · [社区规范](CODE_OF_CONDUCT.md) |
 
