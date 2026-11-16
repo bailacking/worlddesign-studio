@@ -174,6 +174,34 @@
             <source>scene_content_conflict</source>
             <translation>场景内容已变更，请重新打开项目</translation>
         </message>
+        <message>
+            <source>import_too_large</source>
+            <translation>导入超出清单或事务大小限制</translation>
+        </message>
+        <message>
+            <source>invalid_content</source>
+            <translation>源文件内容与所选资源类型不匹配</translation>
+        </message>
+        <message>
+            <source>invalid_provenance</source>
+            <translation>导入来源记录无效</translation>
+        </message>
+        <message>
+            <source>invalid_source</source>
+            <translation>找不到可导入的源文件</translation>
+        </message>
+        <message>
+            <source>source_changed</source>
+            <translation>源文件在预览后已变更，请重新预览</translation>
+        </message>
+        <message>
+            <source>source_too_large</source>
+            <translation>源文件超过 1 MiB</translation>
+        </message>
+        <message>
+            <source>target_exists</source>
+            <translation>目标路径上已有项目外的文件</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -244,6 +272,10 @@
         <message>
             <source>None</source>
             <translation>无</translation>
+        </message>
+        <message>
+            <source>Import source</source>
+            <translation>导入来源</translation>
         </message>
     </context>
     <context>
@@ -577,6 +609,52 @@
         <message>
             <source>Scene change undone.</source>
             <translation>已撤销场景改动。</translation>
+        </message>
+        <message>
+            <source>Import Resource…</source>
+            <translation>导入资源…</translation>
+        </message>
+        <message>
+            <source>Choose Resource File</source>
+            <translation>选择资源文件</translation>
+        </message>
+        <message>
+            <source>JSON files (*.json);;All files (*)</source>
+            <translation>JSON 文件 (*.json);;所有文件 (*)</translation>
+        </message>
+        <message>
+            <source>Data</source>
+            <translation>数据</translation>
+        </message>
+        <message>
+            <source>Resource Type</source>
+            <translation>资源类型</translation>
+        </message>
+        <message>
+            <source>Target Path</source>
+            <translation>目标路径</translation>
+        </message>
+        <message>
+            <source>Resource %1 is already imported.</source>
+            <translation>资源 %1 已导入。</translation>
+        </message>
+        <message>
+            <source>Import %1 as %2?
+%3 · %4 bytes</source>
+            <translation>将 %1 导入为 %2？
+%3 · %4 字节</translation>
+        </message>
+        <message>
+            <source>Import Preview</source>
+            <translation>导入预览</translation>
+        </message>
+        <message>
+            <source>Import</source>
+            <translation>导入</translation>
+        </message>
+        <message>
+            <source>Imported %1.</source>
+            <translation>已导入 %1。</translation>
         </message>
     </context>
 </TS>

@@ -127,6 +127,7 @@ struct ImportRequest {
   std::string kind;
   std::string path;
   std::uint64_t revision = 0;
+  std::string expected_digest{};
 };
 
 struct ImportResult {

@@ -772,6 +772,9 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
     if (node(source, false) != PathState::ok) return {"invalid_source", "/source", revision};
     const auto imported = read_bytes(source, max_edit_bytes);
     if (!imported) return {"source_too_large", "/source", revision};
+    const auto digest = digest64(*imported);
+    if (!request.expected_digest.empty() && request.expected_digest != digest)
+      return {"source_changed", "/source", revision};
     const auto content = imported_content_code(request.kind, *imported);
     if (content != "ok") return {content, "/source", revision};
 
@@ -794,7 +797,7 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
               imported->size(),
               false,
               portable(source.filename()),
-              digest64(*imported)};
+              digest};
     }
     if (std::ranges::any_of(project.resources, [&](const Resource& resource) {
           return resource.path == request.path;
@@ -810,8 +813,8 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
       return {provenance.code, imports_name, revision};
 
     const ImportRecord record{
-        request.id,       request.kind,        request.path, portable(source.filename()),
-        imported->size(), digest64(*imported), revision + 1};
+        request.id,       request.kind, request.path, portable(source.filename()),
+        imported->size(), digest,       revision + 1};
     auto manifest = parse_json(*manifest_bytes);
     manifest["resources"].push_back({{"id", request.id},
                                      {"kind", request.kind},
@@ -1264,8 +1267,12 @@ std::string project_operations_json() {
                           {"expected_revision", "integer"}};
   add("resource.import.preview", "project preview-import DIRECTORY SOURCE ID KIND PATH REVISION",
       false, import_input, import_errors);
-  add("resource.import.apply", "project import DIRECTORY SOURCE ID KIND PATH REVISION", true,
-      import_input, import_errors);
+  auto apply_import_input = import_input;
+  apply_import_input["expected_digest"] = "optional digest from preview";
+  import_errors.push_back("source_changed");
+  add("resource.import.apply",
+      "project import DIRECTORY SOURCE ID KIND PATH REVISION [--expect-digest DIGEST]", true,
+      std::move(apply_import_input), import_errors);
   auto provenance_errors = read_errors;
   provenance_errors.push_back("invalid_provenance");
   add("project.imports", "project imports DIRECTORY", false, path_input, provenance_errors);

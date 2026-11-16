@@ -73,7 +73,7 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 新建与复制追加到场景末尾。实际编辑提交后修订加一，相同位置的移动不产生新修订。结构编辑使用事务记录版本 3，恢复时重放该操作并核对新旧场景内容，兼容旧事务。当前以本机单写入者为使用边界。
 
-`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data` 或 `scene` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。导入使用事务记录版本 5。[资源导入](project-format.md#资源导入)
+`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data` 或 `scene` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，可附 `--expect-digest DIGEST` 约定预览的源文件字节。用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。导入使用事务记录版本 5。[资源导入](project-format.md#资源导入)
 
 提出请求 → 校验参数和权限 → 检查项目修订 → 解析能力实现 → 准备变更 → 应用与持久化 → 更新或失效相关索引 → 返回变更及诊断 → 运行验证。
 

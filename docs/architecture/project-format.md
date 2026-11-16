@@ -53,10 +53,11 @@ PRD-05 让外部文件成为项目资源。当前支持 `data` 与 `scene` 两�
 | --- | --- |
 | 输入 | 项目目录、源文件、资源 ID、类型、`assets/` 下的目标路径、预期修订 |
 | 预览 | `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION`，返回资源身份、目标路径、字节数、摘要与 `changed`，不写盘 |
-| 提交 | `project import DIRECTORY SOURCE ID KIND PATH REVISION`，成功一次递增修订并追加清单条目 |
+| 提交 | `project import DIRECTORY SOURCE ID KIND PATH REVISION [--expect-digest DIGEST]`，新资源提交后递增修订并追加清单条目 |
 | 查询 | `project imports DIRECTORY` 列出导入来源记录 |
 
-- 同一个资源 ID、同一目标路径且字节完全一致时返回 `ok` 与 `changed=false`，修订保持不变，重复导入可判定为无变化。
+- 工作台提交携带预览的 `digest`。指定摘要与当前读入的字节不匹配时返回 `source_changed`，在写入前结束。
+- 同一个资源 ID、同一目标路径且类型和字节完全一致时返回 `ok` 与 `changed=false`，修订保持不变，重复导入可判定为无变化。
 - 已有 ID 换成不同字节返回 `duplicate_id`；目标路径已被其他资源占用返回 `duplicate_path`；目标位置存在不属于本项目的文件返回 `target_exists`。三者都不改动已有内容。
 - 源文件上限 1 MiB，超过返回 `source_too_large`。目标路径沿用 v1 规则：`assets/` 开头、路径段合法、拒绝大小写不符与歧义项、拒绝符号链接与重解析点。
 - 内容校验：`scene` 须能被试玩读取（场景 v1），`data` 须是 JSON 对象且数值可精确交换。不满足返回 `invalid_content`。

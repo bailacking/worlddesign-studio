@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QJsonArray>
 #include <QString>
 #include <QStringList>
@@ -36,6 +37,8 @@ class ResourcePanel final : public QWidget {
 
   // 重建资源列表。保留仍存在的逻辑选中；传入空数组视为关闭项目，同时清空选中。
   void setResources(const QJsonArray& resources);
+  // 使用 project imports 的记录按资源 ID 展示源文件名。
+  void setImportRecords(const QJsonArray& records);
 
   // 由其他面板联动选中。不触发回调；目标被过滤隐藏时只保留逻辑选中。
   void setSelectedId(const QString& id);
@@ -81,6 +84,9 @@ class ResourcePanel final : public QWidget {
   QLabel* references_value_ = nullptr;
   QLabel* backlinks_caption_ = nullptr;
   QLabel* backlinks_value_ = nullptr;
+  QLabel* source_caption_ = nullptr;
+  QLabel* source_value_ = nullptr;
+  QHash<QString, QString> import_sources_;
   QString selected_id_;
   // 程序化改动 currentItem 时抑制回调：Qt 无法区分用户与代码触发的选中变化。
   bool updating_ = false;

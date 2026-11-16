@@ -75,7 +75,7 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | WKB-07 | 实现 | WKB-03 | src/studio/output/ | 分级展示真实诊断，按资源定位，过期会话的输出有明确归属 |
 | WKB-08 | 核心 | WKB-03、SIM-01 | src/studio/viewport/ | 视口与场景选择联动，运行会话进出可控，结束后返回编辑选中态 |
 | WKB-09 | 实现 | WKB-06、WKB-08、CMD-04 | src/studio/gizmos/ | 二维移动工具带吸附和取消，拖动提交合并成一次可撤销操作 |
-| WKB-10 | 实现 | WKB-05、PRD-05 | src/studio/import/ | 拖入一个图像或文本后显示来源和导入结果，选中项可预览 |
+| WKB-10 | 实现 | WKB-05、PRD-05 | src/studio/import/ | W3 从工作台预览并提交场景和数据，选中资源可见来源。W5 接入图像和文本的拖放与预览 |
 | WKB-11 | 实现 | WKB-03、SHIP-04 | src/studio/export/ | 选择导出目标与目录，可取消并定位失败，成功后打开成品目录 |
 | WKB-12 | 实现 | WKB-01、WKB-06、WKB-07 | src/studio/i18n/ | 首批菜单、操作和诊断可切换简体中文与英文，资源 ID 保持稳定 |
 | WKB-13 | 核心 | WKB-02、WKB-04、WKB-05、WKB-06、WKB-07、WKB-08 | src/studio/ | 集成第一条创作路径，真实项目能编辑保存和试玩，缩放与键盘可操作 |

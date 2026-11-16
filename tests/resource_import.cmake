@@ -55,6 +55,7 @@ string(JSON changed GET "${result}" changed)
 string(JSON revision GET "${result}" revision)
 string(JSON size GET "${result}" bytes)
 string(JSON resource_id GET "${result}" resource_id)
+string(JSON preview_digest GET "${result}" digest)
 file(SIZE "${sources}/notes.json" source_size)
 if(NOT changed OR NOT revision EQUAL 0 OR NOT resource_id STREQUAL "notes" OR
    NOT size EQUAL source_size)
@@ -67,8 +68,20 @@ if(NOT manifest_after_preview STREQUAL manifest_before OR NOT scene_after_previe
   message(FATAL_ERROR "Preview wrote to the project")
 endif()
 
+# 预览后被外部修改的源文件不能通过确认提交。
+file(WRITE "${sources}/notes.json" "{\"limit\":31}")
+check(source_changed import "${project}" "${sources}/notes.json" notes data assets/notes.json 0
+  --expect-digest "${preview_digest}")
+file(READ "${manifest}" manifest_after_source_change)
+if(NOT manifest_after_source_change STREQUAL manifest_before OR EXISTS "${target}" OR
+   EXISTS "${provenance}" OR EXISTS "${journal}")
+  message(FATAL_ERROR "Changed source left a project write")
+endif()
+file(WRITE "${sources}/notes.json" "${source_content}")
+
 # 提交写入原字节、追加清单条目、记录来源，并提升一个修订。
-check(ok import "${project}" "${sources}/notes.json" notes data assets/notes.json 0)
+check(ok import "${project}" "${sources}/notes.json" notes data assets/notes.json 0
+  --expect-digest "${preview_digest}")
 string(JSON changed GET "${result}" changed)
 string(JSON revision GET "${result}" revision)
 if(NOT changed OR NOT revision EQUAL 1)

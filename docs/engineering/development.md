@@ -115,7 +115,11 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 
 ### 导入外部资源
 
-外部文件可导入为 `data` 或 `scene` 资源，源文件按原字节保存。先预览，再提交。
+外部文件可导入为 `data` 或 `scene` 资源，源文件按原字节保存。
+
+在工作台打开项目副本，选择 **项目 → 导入资源**。选源文件，检查资源 ID、类型和 `assets/` 下的目标路径，点击 **预览**。核对确认框的文件名、目标与大小后点击 **导入**。在资源面板选中新资源可见 **导入来源**。重新打开项目后仍可查看，同一资源重复导入时修订和数量保持原值。已有入口场景由项目清单决定。
+
+命令行复用相同项目服务。
 
 ```powershell
 Copy-Item -Recurse examples/scene-editing build/import-demo
@@ -126,6 +130,26 @@ Copy-Item -Recurse examples/scene-editing build/import-demo
 ```
 
 预览不落盘，项目文件字节保持不变。提交后修订加一，`project resources` 与重开都能读回新资源。再执行一次同样的导入返回 `changed=false`，修订保持不变。换内容占同一 ID 返回 `duplicate_id`，目标路径已属于其他资源返回 `duplicate_path`，两者都保留已有资源。源文件上限 1 MiB。中断后若提示 `recovery_required`，用 `project recover DIRECTORY` 回到原修订或保留已提交结果。[资源导入](../architecture/project-format.md#资源导入)
+
+### 生成与修补内容
+
+[样例源文件](../../examples/content-generation/entries.json)来自 [W2 参考用例](../project/w2-references.md)，包含重生锚状态范围、小麦与面包、花衬衫的已知用料、巨人国默认季节。样例保留来源 ID。《饥荒》配方的 `layout: "partial"` 只表达已知材料要求，历史原版行为仍待核对。
+
+```powershell
+python scripts/content_bundle.py expand examples/content-generation/entries.json build/content-demo/bundle.json
+python scripts/content_bundle.py validate build/content-demo/bundle.json
+Copy-Item examples/content-generation/entries.json build/content-demo/edited.json
+```
+
+用文本编辑器在 `edited.json` 修改 `mc-bread` 的名称，按 ID 生成一份修补后的数据包。
+
+```powershell
+python scripts/content_bundle.py repair build/content-demo/edited.json build/content-demo/bundle.json build/content-demo/repaired.json mc-bread
+```
+
+源文件的 `entries` 按稳定 ID 列出 `kind`、参考用例 `reference` 和 `rule`。方块规则把整数范围展开为状态，物品提供名称，配方引用物品 ID，状态规则把启用项展开为记录。校验核对字段、整数区间、重复状态、引用对象和展开结果。把重生锚范围改成 `[4, 0]`，或把配方用料改成缺失的 ID，可看到带字段位置的 `invalid_rule` 和 `missing_reference`。
+
+修补以现有包为输入，仅从源文件替换指定条目，再校验整个结果。所有命令返回 JSON 诊断，校验失败保留已有文件。有效结果可作为数据资源导入项目。运行中消费这些规则由后续运行时与玩法任务接入。
 
 ### 试玩通用场景
 

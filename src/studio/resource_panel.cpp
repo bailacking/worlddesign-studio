@@ -75,15 +75,18 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   relations_layout->setVerticalSpacing(theme::tight_spacing);
   references_caption_ = new QLabel(relations_);
   backlinks_caption_ = new QLabel(relations_);
-  for (QLabel* caption : {references_caption_, backlinks_caption_}) {
+  source_caption_ = new QLabel(relations_);
+  for (QLabel* caption : {references_caption_, backlinks_caption_, source_caption_}) {
     caption->setProperty("state", "empty");  // 次要文本色
     caption->setAlignment(Qt::AlignTop | Qt::AlignLeft);
   }
   references_value_ = new QLabel(relations_);
   backlinks_value_ = new QLabel(relations_);
+  source_value_ = new QLabel(relations_);
+  source_value_->setObjectName(QStringLiteral("resourceImportSource"));
   references_value_->setObjectName(QStringLiteral("resourceReferences"));
   backlinks_value_->setObjectName(QStringLiteral("resourceBacklinks"));
-  for (QLabel* value : {references_value_, backlinks_value_}) {
+  for (QLabel* value : {references_value_, backlinks_value_, source_value_}) {
     value->setWordWrap(true);
     value->setTextFormat(Qt::PlainText);
     // 只读：可选中复制 ID，但不能编辑。
@@ -93,6 +96,8 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   relations_layout->addWidget(references_value_, 0, 1);
   relations_layout->addWidget(backlinks_caption_, 1, 0);
   relations_layout->addWidget(backlinks_value_, 1, 1);
+  relations_layout->addWidget(source_caption_, 2, 0);
+  relations_layout->addWidget(source_value_, 2, 1);
   relations_layout->setColumnStretch(1, 1);
   layout->addWidget(relations_);
   relations_->hide();
@@ -123,6 +128,8 @@ void ResourcePanel::retranslate() {
                           QCoreApplication::translate("ResourcePanel", "Path")});
   references_caption_->setText(QCoreApplication::translate("ResourcePanel", "References"));
   backlinks_caption_->setText(QCoreApplication::translate("ResourcePanel", "Referenced by"));
+  source_caption_->setText(QCoreApplication::translate("ResourcePanel", "Import source"));
+  source_value_->setAccessibleName(source_caption_->text());
   references_value_->setAccessibleName(
       QCoreApplication::translate("ResourcePanel", "Selected resource references"));
   backlinks_value_->setAccessibleName(
@@ -134,6 +141,16 @@ void ResourcePanel::retranslate() {
   rebuildKindFilter();
   updateEmptyState();
   refreshRelations();  // “None”等文案随语言切换重算
+}
+
+void ResourcePanel::setImportRecords(const QJsonArray& records) {
+  import_sources_.clear();
+  for (const auto& value : records) {
+    const auto record = value.toObject();
+    import_sources_.insert(record.value("resource").toString(),
+                           record.value("source_name").toString());
+  }
+  refreshRelations();
 }
 
 void ResourcePanel::setResources(const QJsonArray& resources) {
@@ -335,6 +352,11 @@ void ResourcePanel::refreshRelations() {
   relations_->show();
   showRelation(references_value_, referencesOf(selected_id_));
   showRelation(backlinks_value_, referencedBy(selected_id_));
+  const auto source = import_sources_.value(selected_id_);
+  source_caption_->setVisible(!source.isEmpty());
+  source_value_->setVisible(!source.isEmpty());
+  source_value_->setText(source);
+  source_value_->setToolTip(source);
 }
 
 void ResourcePanel::showRelation(QLabel* value, const QStringList& ids) {
