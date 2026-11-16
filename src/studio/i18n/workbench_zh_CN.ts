@@ -291,6 +291,46 @@
     <context>
         <name>wds::studio::Workbench</name>
         <message>
+            <source>Recover Project…</source>
+            <translation>恢复项目…</translation>
+        </message>
+        <message>
+            <source>Recover the pending transaction in %1?</source>
+            <translation>恢复 %1 中未完成的事务？</translation>
+        </message>
+        <message>
+            <source>Project recovery completed.</source>
+            <translation>项目恢复完成。</translation>
+        </message>
+        <message>
+            <source>Edit Integer Data Field…</source>
+            <translation>编辑整数数据字段…</translation>
+        </message>
+        <message>
+            <source>Resource ID</source>
+            <translation>资源 ID</translation>
+        </message>
+        <message>
+            <source>Field</source>
+            <translation>字段</translation>
+        </message>
+        <message>
+            <source>New integer value</source>
+            <translation>新整数值</translation>
+        </message>
+        <message>
+            <source>Preview</source>
+            <translation>预览</translation>
+        </message>
+        <message>
+            <source>The data field already has this value.</source>
+            <translation>数据字段已是此值。</translation>
+        </message>
+        <message>
+            <source>Apply %1 · %2 → %3?</source>
+            <translation>应用 %1 · %2 → %3？</translation>
+        </message>
+        <message>
             <source>Open a WDS project to begin.</source>
             <translation>打开一个 WDS 项目开始编辑。</translation>
         </message>
