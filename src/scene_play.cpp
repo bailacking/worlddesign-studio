@@ -134,6 +134,12 @@ bool SceneSession::advance(std::uint64_t ticks, const SceneInput& input) {
   return true;
 }
 
+void SceneSession::restart() {
+  state_.entities = initial_entities_;
+  state_.ticks = 0;
+  state_.outcome = SceneOutcome::playing;
+}
+
 void SceneSession::step(const SceneInput& input) {
   const auto& controls = *controls_;
   const auto direction = [&](std::size_t positive, std::size_t negative) {

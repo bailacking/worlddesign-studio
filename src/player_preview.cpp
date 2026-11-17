@@ -1,6 +1,7 @@
 #include <raylib.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iostream>
 #include <map>
@@ -12,6 +13,20 @@ namespace wds::player {
 namespace {
 
 using namespace wds::platform;
+
+std::string game_title(std::string title) {
+  bool first = true;
+  for (auto& ch : title) {
+    if (ch == '-') {
+      ch = ' ';
+      first = true;
+    } else if (first) {
+      ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+      first = false;
+    }
+  }
+  return title;
+}
 
 SceneInput read_keys() {
   SceneInput keys;
@@ -68,8 +83,49 @@ class Sprites {
   std::map<std::string, Texture2D> textures_;
 };
 
+struct Movement {
+  SceneInput keys;
+  std::string hint;
+};
+
+Movement movement(const std::optional<SceneControls>& controls) {
+  if (!controls) return {};
+  Movement result;
+  constexpr std::array labels{"Left", "Right", "Up", "Down"};
+  constexpr std::array default_keys{'A', 'D', 'W', 'S'};
+  auto arrows_and_wasd = true;
+  for (std::size_t direction = 0; direction < labels.size(); ++direction) {
+    const auto& keys = controls->keys[direction];
+    result.keys |= keys;
+    const auto arrows = static_cast<std::size_t>(SceneKey::left);
+    arrows_and_wasd = arrows_and_wasd && keys.test(default_keys[direction] - 'A') &&
+                      keys.test(arrows + direction);
+    for (std::size_t index = 0; index < keys.size(); ++index) {
+      if (!keys.test(index)) continue;
+      if (!result.hint.empty()) result.hint += "  ";
+      result.hint += labels[direction][0];
+      result.hint += ' ';
+      result.hint +=
+          index < arrows ? std::string(1, static_cast<char>('A' + index)) : labels[index - arrows];
+      break;
+    }
+  }
+  if (arrows_and_wasd) result.hint = "WASD / arrows to move";
+  return result;
+}
+
+const char* status_text(const SceneSnapshot& scene, bool started, bool focused) {
+  if (scene.outcome == SceneOutcome::won) return "Delivered!";
+  if (scene.outcome == SceneOutcome::lost) return "Delivery failed.";
+  if (scene.outcome == SceneOutcome::timed_out) return "Time is up.";
+  if (scene.ticks == SceneSession::max_ticks) return "Playback finished.";
+  if (!focused) return "Paused";
+  if (!started) return "Reach the goal";
+  return "Playing";
+}
+
 void draw(const SceneSnapshot& scene, const Sprites& sprites, const SceneBounds& bounds,
-          bool focused) {
+          const char* status, const std::string& controls_hint) {
   const auto width = static_cast<float>(GetScreenWidth());
   const auto height = static_cast<float>(GetScreenHeight());
   const auto scale = std::min({2.0f, width / (static_cast<float>(bounds.right - bounds.left) + 56),
@@ -83,31 +139,31 @@ void draw(const SceneSnapshot& scene, const Sprites& sprites, const SceneBounds&
                          height * 0.5f - (static_cast<float>(entity.y) - origin_y) * scale};
     sprites.draw(entity, center, scale);
   }
-  const char* status = "Playing";
-  if (scene.outcome == SceneOutcome::won)
-    status = "Delivered!";
-  else if (scene.outcome == SceneOutcome::lost)
-    status = "Delivery failed.";
-  else if (scene.outcome == SceneOutcome::timed_out)
-    status = "Time is up.";
-  else if (!focused)
-    status = "Paused";
-  else if (scene.ticks == SceneSession::max_ticks)
-    status = "Playback finished.";
   DrawText(status, 20, 18, 22, RAYWHITE);
-  DrawText(TextFormat("Tick %llu / %llu", static_cast<unsigned long long>(scene.ticks),
-                      static_cast<unsigned long long>(SceneSession::max_ticks)),
-           20, GetScreenHeight() - 30, 17, LIGHTGRAY);
-  DrawText("Esc: close", GetScreenWidth() - 106, GetScreenHeight() - 30, 17, LIGHTGRAY);
+  const auto rate = SceneClock::ticks_per_second;
+  const auto seconds = (SceneSession::max_ticks - scene.ticks + rate - 1) / rate;
+  if (scene.interactive)
+    DrawText(TextFormat("%llus", static_cast<unsigned long long>(seconds)), GetScreenWidth() - 64,
+             18, 22, RAYWHITE);
+  const bool terminal =
+      scene.outcome != SceneOutcome::playing || scene.ticks == SceneSession::max_ticks;
+  const char* hint = terminal ? "Enter: replay" : controls_hint.c_str();
+  const auto hint_size = MeasureText(hint, 16) > GetScreenWidth() - 132 ? 13 : 16;
+  DrawText(hint, 20, GetScreenHeight() - 30, hint_size, LIGHTGRAY);
+  DrawText("Esc: quit", GetScreenWidth() - 100, GetScreenHeight() - 30, 16, LIGHTGRAY);
   EndDrawing();
 }
 
 }  // namespace
 
 bool play_scene(SceneSession& session, const char* title) {
-  const auto bounds = scene_play_bounds(session.snapshot());
+  const auto& snapshot = session.snapshot();
+  const auto bounds = scene_play_bounds(snapshot);
+  const auto controls = movement(session.controls());
+  const auto window_title = title ? std::string(title) : game_title(snapshot.project_id);
+  std::string caption;
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(900, 570, title);
+  InitWindow(900, 570, window_title.c_str());
   if (!IsWindowReady()) return false;
   SetWindowMinSize(360, 260);
   SetTargetFPS(60);
@@ -120,7 +176,9 @@ bool play_scene(SceneSession& session, const char* title) {
       auto previous = Clock::now();
       SceneClock clock;
       bool had_focus = false;
+      bool started = !snapshot.interactive;
       SceneInput blocked;
+      std::string_view previous_status;
       while (!WindowShouldClose()) {
         const auto now = Clock::now();
         const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(now - previous);
@@ -131,12 +189,31 @@ bool play_scene(SceneSession& session, const char* title) {
           // Keys held across a focus change need a release before they can move again.
           blocked = had_focus ? blocked & keys : keys;
           if (had_focus) {
-            const auto remaining = SceneSession::max_ticks - session.snapshot().ticks;
-            session.advance(std::min(clock.consume(elapsed), remaining), keys & ~blocked);
+            const auto input = keys & ~blocked;
+            const bool terminal = snapshot.outcome != SceneOutcome::playing ||
+                                  snapshot.ticks == SceneSession::max_ticks;
+            if (terminal && IsKeyPressed(KEY_ENTER)) {
+              session.restart();
+              started = !snapshot.interactive;
+              blocked = keys;
+              clock = {};
+            } else if (!terminal) {
+              started = started || (input & controls.keys).any();
+              if (started) {
+                const auto remaining = SceneSession::max_ticks - snapshot.ticks;
+                session.advance(std::min(clock.consume(elapsed), remaining), input);
+              }
+            }
           }
         }
         had_focus = focused;
-        draw(session.snapshot(), sprites, bounds, focused);
+        const auto* status = status_text(snapshot, started, focused);
+        if (previous_status != status) {
+          caption = window_title + " - " + status;
+          SetWindowTitle(caption.c_str());
+          previous_status = status;
+        }
+        draw(snapshot, sprites, bounds, status, controls.hint);
       }
     }
   }

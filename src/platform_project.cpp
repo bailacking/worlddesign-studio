@@ -638,6 +638,8 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
     session.state_.interactive = session.controls_.has_value();
+    session.state_.project_id = project.id;
+    session.initial_entities_ = session.state_.entities;
 
     constexpr std::size_t max_sprite_bytes = 32 * 1024 * 1024;
     std::size_t decoded = 0;

@@ -53,6 +53,7 @@ struct SceneSnapshot {
   std::vector<SceneEntity> entities;
   bool interactive = false;
   SceneOutcome outcome = SceneOutcome::playing;
+  std::string project_id{};
 };
 
 struct SceneBounds {
@@ -83,7 +84,9 @@ class SceneSession {
 
   const SceneSnapshot& snapshot() const { return state_; }
   const std::vector<SceneSprite>& sprites() const { return sprites_; }
+  const std::optional<SceneControls>& controls() const { return controls_; }
   bool advance(std::uint64_t ticks, const SceneInput& input = {});
+  void restart();
 
  private:
   friend SceneResult start_scene(const std::filesystem::path&, std::uint64_t);
@@ -92,6 +95,7 @@ class SceneSession {
   void step(const SceneInput& input);
 
   SceneSnapshot state_;
+  std::vector<SceneEntity> initial_entities_;
   std::optional<SceneControls> controls_;
   std::vector<SceneSprite> sprites_;
 };

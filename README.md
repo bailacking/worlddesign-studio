@@ -43,7 +43,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 项目在 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 维护。构建、测试及运行样例见 [开发指南](docs/engineering/development.md#运行-m0-样例)。
 
-W1–W7 已交付 Windows 基线、参考版本与验收口径、工作台导入、内容生成、图文预览、二维交互试玩和 Windows x64 导出。默认 Linux CI 覆盖核心和 CLI。Windows 发行链在本机验收，第二台机器列入 W8。 [验收记录](docs/project/roadmap.md#周交付记录) · [W4 后端对照](examples/w4-lab/README.md)
+W1–W7 已交付 Windows 基线、参考版本与验收口径、工作台导入、内容生成、图文预览、二维交互试玩和 Windows x64 导出。W8 已备好「礁灯投递」独立包和创作者练习包，待另一位创作者及第二台 Windows 机器签收。 [周交付记录](docs/project/roadmap.md#周交付记录) · [W8 验收](docs/project/w8-acceptance.md)
 
 ## 开源与协作
 

@@ -27,7 +27,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
   if (!scene.session)
     return failure("Could not load the game scene.\n\n" + scene_result_json(scene));
   if (check_only) return 0;
-  if (!wds::player::play_scene(*scene.session, "WDS Game"))
+  if (!wds::player::play_scene(*scene.session, nullptr))
     return failure("Could not start graphics. The game requires OpenGL 3.3.");
   return 0;
 }

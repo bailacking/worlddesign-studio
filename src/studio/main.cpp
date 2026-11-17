@@ -273,6 +273,9 @@ class Workbench final : public QMainWindow {
     refresh();
   }
 
+ signals:
+  void inspectionFinished(bool ready);
+
  protected:
   void dragEnterEvent(QDragEnterEvent* event) override {
     if (!import_->isEnabled() || !event->possibleActions().testFlag(Qt::CopyAction) ||
@@ -657,6 +660,7 @@ class Workbench final : public QMainWindow {
           !result.value("resources").isArray() || !result.value("project_id").isString()) {
         report({nullptr, {}, result});
         setBusy(false);
+        emit inspectionFinished(false);
         return;
       }
       project_id_ = result.value("project_id").toString();
@@ -690,6 +694,7 @@ class Workbench final : public QMainWindow {
                   else if (!scene_ready_)
                     report({nullptr, {}, result});
                   setBusy(false);
+                  emit inspectionFinished(scene_ready_);
                 });
   }
 
@@ -1207,12 +1212,22 @@ class Workbench final : public QMainWindow {
 
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
+  const auto arguments = app.arguments();
+  const bool smoke = arguments.size() == 3 && arguments.at(1) == "--smoke";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName("WDS Studio");
+  QCoreApplication::setApplicationName(smoke ? "WDS Studio Smoke" : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
   window.show();
-  if (app.arguments().size() == 2) window.openProject(app.arguments().at(1));
+  if (smoke) {
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      app.exit(ready && !window.centralWidget()->grab().isNull() ? 0 : 1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
+  } else if (arguments.size() == 2) {
+    window.openProject(arguments.at(1));
+  }
   return app.exec();
 }

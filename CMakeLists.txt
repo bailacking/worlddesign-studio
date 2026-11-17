@@ -139,6 +139,12 @@ if(WDS_BUILD_MODERN_STUDIO)
     SOURCE_TARGETS wds_studio_modern
     TS_FILES src/studio/i18n/workbench_zh_CN.ts
     RESOURCE_PREFIX "/studio/i18n")
+  if(WIN32)
+    add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
+    set_tests_properties(workbench_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+      TIMEOUT 25)
+  endif()
 endif()
 
 add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)

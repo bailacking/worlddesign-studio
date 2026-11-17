@@ -74,6 +74,11 @@ int main() {
           "Entering the delivery zone must stop at the first winning tick");
   require(session.advance(10, keys({"D"})) && player.x == 205 && state.ticks == 121,
           "Terminal snapshots must remain available without further simulation");
+  session.restart();
+  require(state.ticks == 0 && state.outcome == SceneOutcome::playing &&
+              state.entities.back().x == -223 && state.entities.back().y == 0 &&
+              session.sprites().size() == 4,
+          "Replay must reset the saved spawn and preserve the loaded sprites");
 
   auto hazard = load();
   require(hazard.advance(13, keys({"Down"})) && hazard.advance(30, keys({"Right"})) &&
