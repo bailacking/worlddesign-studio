@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include "scene_play.hpp"
+
 namespace wds::platform {
 
 struct Resource {
@@ -57,14 +59,6 @@ struct FieldResult {
   std::optional<SceneChange> scene_change{};
 };
 
-struct SceneEntity {
-  std::string id;
-  std::int64_t x = 0;
-  std::int64_t y = 0;
-  std::int64_t vx = 0;
-  std::int64_t vy = 0;
-};
-
 struct SceneField {
   std::string_view name;
   std::int64_t SceneEntity::*member;
@@ -88,29 +82,6 @@ struct EntityEdit {
   std::uint64_t revision = 0;
   std::string target{};
   std::size_t index = 0;
-};
-
-struct SceneSnapshot {
-  std::uint64_t revision = 0;
-  std::string scene_id;
-  std::uint64_t ticks = 0;
-  std::vector<SceneEntity> entities;
-};
-
-struct SceneResult;
-
-class SceneSession {
- public:
-  static constexpr std::uint64_t max_ticks = 600;
-
-  const SceneSnapshot& snapshot() const { return state_; }
-  bool advance(std::uint64_t ticks);
-
- private:
-  friend SceneResult start_scene(const std::filesystem::path&, std::uint64_t);
-
-  SceneSession() = default;
-  SceneSnapshot state_;
 };
 
 struct SceneResult {

@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
@@ -44,8 +45,72 @@ void Viewport::setScene(QJsonArray entities, bool running) {
   if (running_) {
     panning_ = false;
     unsetCursor();
+  } else {
+    interactive_ = false;
+    input_.reset();
+    sprites_.clear();
+    setFocusPolicy(Qt::NoFocus);
   }
   update();
+}
+
+void Viewport::beginPlayback(const platform::SceneSession& session) {
+  for (const auto& sprite : session.sprites()) {
+    const QImage image(sprite.rgba.data(), static_cast<int>(sprite.width),
+                       static_cast<int>(sprite.height), QImage::Format_RGBA8888);
+    sprites_.insert(QString::fromStdString(sprite.id), image.copy());
+  }
+  interactive_ = session.snapshot().interactive;
+  if (!interactive_) return;
+  const auto bounds = platform::scene_play_bounds(session.snapshot());
+  play_bounds_ =
+      QRectF(QPointF(static_cast<double>(bounds.left), static_cast<double>(bounds.bottom)),
+             QPointF(static_cast<double>(bounds.right), static_cast<double>(bounds.top)));
+  setFocusPolicy(Qt::ClickFocus);
+}
+
+void Viewport::focusOutEvent(QFocusEvent* event) {
+  clearSceneInput();
+  QWidget::focusOutEvent(event);
+}
+
+bool Viewport::setSceneKey(QKeyEvent* event, bool down) {
+  if (!interactive_) return false;
+  constexpr auto ignored = Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier;
+  if (down && (event->modifiers() & ignored)) return false;
+  const int key = event->key();
+  std::optional<platform::SceneKey> mapped;
+  if (Qt::Key_A <= key && key <= Qt::Key_Z) {
+    mapped = static_cast<platform::SceneKey>(key - Qt::Key_A);
+  } else {
+    switch (key) {
+      case Qt::Key_Left:
+        mapped = platform::SceneKey::left;
+        break;
+      case Qt::Key_Right:
+        mapped = platform::SceneKey::right;
+        break;
+      case Qt::Key_Up:
+        mapped = platform::SceneKey::up;
+        break;
+      case Qt::Key_Down:
+        mapped = platform::SceneKey::down;
+        break;
+      default:
+        return false;
+    }
+  }
+  if (!event->isAutoRepeat()) input_.set(static_cast<std::size_t>(*mapped), down);
+  event->accept();
+  return true;
+}
+
+void Viewport::keyPressEvent(QKeyEvent* event) {
+  if (!setSceneKey(event, true)) QWidget::keyPressEvent(event);
+}
+
+void Viewport::keyReleaseEvent(QKeyEvent* event) {
+  if (!setSceneKey(event, false)) QWidget::keyReleaseEvent(event);
 }
 
 void Viewport::setSelectedId(QString id) {
@@ -61,16 +126,25 @@ void Viewport::resetView() {
   update();
 }
 
+double Viewport::viewScale() const {
+  if (!interactive_) return scale_;
+  return std::min(
+      {2.0, width() / (play_bounds_.width() + 56.0), height() / (play_bounds_.height() + 56.0)});
+}
+
 QPointF Viewport::screenPosition(const QJsonObject& entity) const {
-  return QPointF(width() * 0.5 + offset_.x() + scale_ * entity.value("x").toDouble(),
-                 height() * 0.5 + offset_.y() - scale_ * entity.value("y").toDouble());
+  const auto center = interactive_ ? play_bounds_.center() : QPointF{};
+  const auto offset = interactive_ ? QPointF{} : offset_;
+  return QPointF(
+      width() * 0.5 + offset.x() + viewScale() * (entity.value("x").toDouble() - center.x()),
+      height() * 0.5 + offset.y() - viewScale() * (entity.value("y").toDouble() - center.y()));
 }
 
 void Viewport::paintEvent(QPaintEvent*) {
   QPainter painter(this);
   painter.fillRect(rect(), theme::color::viewport_background);
   const auto origin = screenPosition({});
-  const int grid = std::max(4, static_cast<int>(std::lround(24.0 * scale_ / kDefaultScale)));
+  const int grid = std::max(4, static_cast<int>(std::lround(24.0 * viewScale() / kDefaultScale)));
   painter.setPen(theme::color::viewport_grid);
   for (int x = static_cast<int>(origin.x()) % grid; x < width(); x += grid)
     painter.drawLine(x, 0, x, height());
@@ -85,6 +159,23 @@ void Viewport::paintEvent(QPaintEvent*) {
     const auto entity = value.toObject();
     const auto name = entity.value("id").toString();
     const auto position = screenPosition(entity);
+    const auto half_width = entity.value("half_width").toDouble() * viewScale();
+    const auto half_height = entity.value("half_height").toDouble() * viewScale();
+    if (running_ && half_width > 0) {
+      const QRectF area(position - QPointF(half_width, half_height),
+                        position + QPointF(half_width, half_height));
+      const auto image = sprites_.constFind(entity.value("sprite").toString());
+      if (image != sprites_.cend()) {
+        painter.drawImage(area, *image);
+      } else {
+        const auto role = static_cast<platform::SceneRole>(entity.value("role").toInt());
+        QColor color = theme::color::entity_fill;
+        if (role == platform::SceneRole::goal) color = theme::color::running;
+        if (role == platform::SceneRole::hazard) color = theme::color::scene_hazard;
+        painter.fillRect(area, color);
+      }
+      continue;
+    }
     const bool selected = name == selected_;
     painter.setPen(QPen(selected ? theme::color::entity_selected_line : theme::color::entity_line,
                         selected ? 2 : 1));

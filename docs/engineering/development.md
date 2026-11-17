@@ -27,7 +27,7 @@
 | 项目、路径、资源、修订、写入与恢复 | `src/platform_project.hpp/.cpp`。GUI 和 CLI 共用项目服务，旧工具的存储另见 `src/project_store.*` | [项目格式](../architecture/project-format.md) |
 | 操作发现、CLI 和工作台调用 | `src/cli.cpp`、`project_operations_json()`、`src/studio/bridge.*`。公共入口负责参数与结果，调用方在项目服务中复用业务规则 | [操作与状态](../architecture/commands.md) |
 | 工作台状态、视觉与交互 | `src/studio/main.cpp` 装配窗口；`src/studio/theme/` 管全局主题和通用控件；`scene_tree`、`resource_panel`、`output_panel`、`viewport` 管各自交互；`i18n/` 管语言 | [桌面工作台](../architecture/workbench.md#组件与交互规范) |
-| 运行时与方块样例 | `src/platform_project.*` 的场景会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 运行时与方块样例 | `src/platform_project.*` 装载指定修订，`src/scene_play.*` 推进二维会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
 | 插件生命周期与能力边界 | `src/plugin_host.*` 是现有宿主入口，新能力包跟随对应契约 | [插件与组合](../architecture/plugins.md) |
 | 构建、依赖与覆盖范围 | `CMakeLists.txt`、`CMakePresets.json`、`.github/workflows/quality.yml`、`tests/` | [质量与验证](quality.md) |
 
@@ -162,6 +162,20 @@ python scripts/content_bundle.py repair build/content-demo/edited.json build/con
 ```
 
 在现代工作台打开同一项目，点击 **试玩** 和 **停止**。视口显示静止的原点和移动的标记。重新试玩从源位置开始。CLI 与工作台都使用同一个会话核心。 [场景格式与限制](../architecture/runtime.md#场景与试玩会话-v1)
+
+### 试玩礁灯投递
+
+用 [现代工作台](#运行现代工作台)打开 `examples/reef-delivery`，按 **F5** 开始，使用 **WASD** 或 **方向键**移动，将信送到绿色信站。**Shift+F5** 停止试玩。可以先复制样例再编辑。试玩只读取保存后的修订，停止后会丢弃运行位置和胜负状态。
+
+在仓库根可选构建 raylib 5.5 试验播放器。配置时下载锁定的 5.5 源码，也可用 `FETCHCONTENT_SOURCE_DIR_RAYLIB` 指向已有的同版本源码。
+
+```powershell
+cmake --preset dev -B build/scene-preview -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_RAYLIB_PREVIEW=ON
+cmake --build build/scene-preview --target wds_player_preview
+./build/scene-preview/wds_player_preview.exe examples/reef-delivery
+```
+
+试验播放器直接读取项目文件夹，**Esc** 退出。W7 从保存修订生成可发布的产物。 [示例操作](../../examples/reef-delivery/README.md)
 
 ### 运行现代工作台
 

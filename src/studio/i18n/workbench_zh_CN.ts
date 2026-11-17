@@ -211,6 +211,10 @@
             <translation>PNG 图片损坏或格式不符</translation>
         </message>
         <message>
+            <source>invalid_sprite</source>
+            <translation>找不到场景声明引用的图片资源</translation>
+        </message>
+        <message>
             <source>invalid_utf8</source>
             <translation>源文件需为 UTF-8 纯文本</translation>
         </message>
@@ -557,6 +561,26 @@
         <message>
             <source>Playing · tick %1</source>
             <translation>正在试玩 · 第 %1 步</translation>
+        </message>
+        <message>
+            <source>Playing · %1 s remaining</source>
+            <translation>正在试玩 · 剩余 %1 秒</translation>
+        </message>
+        <message>
+            <source>Paused. Click the viewport to resume.</source>
+            <translation>已暂停。点击视口继续。</translation>
+        </message>
+        <message>
+            <source>Delivered! Select Stop to play again.</source>
+            <translation>送达成功！点击停止后可重新试玩。</translation>
+        </message>
+        <message>
+            <source>Delivery failed. Select Stop to play again.</source>
+            <translation>送达失败。点击停止后可重新试玩。</translation>
+        </message>
+        <message>
+            <source>Time is up. Select Stop to play again.</source>
+            <translation>时间到。点击停止后可重新试玩。</translation>
         </message>
         <message>
             <source>Playback stopped.</source>

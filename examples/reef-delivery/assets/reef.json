@@ -1,0 +1,102 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "north",
+      "x": 0,
+      "y": 150,
+      "box": {
+        "half_width": 280,
+        "half_height": 10
+      },
+      "sprite": "wall"
+    },
+    {
+      "id": "south",
+      "x": 0,
+      "y": -150,
+      "box": {
+        "half_width": 280,
+        "half_height": 10
+      },
+      "sprite": "wall"
+    },
+    {
+      "id": "west",
+      "x": -280,
+      "y": 0,
+      "box": {
+        "half_width": 10,
+        "half_height": 160
+      },
+      "sprite": "wall"
+    },
+    {
+      "id": "east",
+      "x": 280,
+      "y": 0,
+      "box": {
+        "half_width": 10,
+        "half_height": 160
+      },
+      "sprite": "wall"
+    },
+    {
+      "id": "barrier",
+      "x": 0,
+      "y": 0,
+      "box": {
+        "half_width": 10,
+        "half_height": 79
+      },
+      "sprite": "wall"
+    },
+    {
+      "id": "shallow-reef",
+      "x": -118,
+      "y": -70,
+      "box": {
+        "half_width": 34,
+        "half_height": 27
+      },
+      "sprite": "hazard"
+    },
+    {
+      "id": "signal-station",
+      "x": 208,
+      "y": 0,
+      "box": {
+        "half_width": 23,
+        "half_height": 27
+      },
+      "sprite": "landing"
+    },
+    {
+      "id": "courier",
+      "x": -223,
+      "y": 0,
+      "box": {
+        "half_width": 13,
+        "half_height": 16
+      },
+      "sprite": "courier"
+    }
+  ],
+  "play": {
+    "player": "courier",
+    "speed": 6,
+    "walls": [
+      "north",
+      "south",
+      "west",
+      "east",
+      "barrier"
+    ],
+    "goals": [
+      "signal-station"
+    ],
+    "hazards": [
+      "shallow-reef"
+    ]
+  }
+}

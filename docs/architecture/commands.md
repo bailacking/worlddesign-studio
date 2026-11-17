@@ -58,7 +58,7 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 `resource.field.set` 已支持替换已有数据资源的顶层整数。CLI 与工作台使用共享 C++ 服务。统一 JSON 请求的传输入口与领域元信息仍待实现。[首批字段写入](project-format.md#首批字段写入)
 
-`project.play` 接收目录、预期修订号和运行步数（0 到 600），读取入口场景并返回修订、场景 ID、步数和实体状态。修订冲突返回当前修订号，场景诊断带资源相对路径及字段位置。该操作只读取源项目。[场景与试玩会话](runtime.md#场景与试玩会话-v1)
+`project.play` 接收目录、预期修订号和运行步数（0 到 600），读取入口场景并返回修订、场景 ID、步数和实体状态。交互场景按空输入步进并额外返回 `outcome`，提前结束时报告实际执行步数。修订冲突返回当前修订号，场景和精灵诊断带资源相对路径及字段位置。该操作只读取源项目。 [场景与试玩会话](runtime.md#场景与试玩会话-v1)
 
 `scene.inspect` 对应 `project scene DIRECTORY REVISION`，返回入口实体的初始值及字段类型、默认值与范围。用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。按稳定实体 ID 选中实体，支持 `x`、`y`、`vx`、`vy`；修改曾省略的字段时从默认值计算差异。保存复用字段编辑事务，场景事务使用版本 2，恢复也兼容现有版本 1。
 

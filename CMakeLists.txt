@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
+option(WDS_BUILD_RAYLIB_PREVIEW "Build the experimental raylib scene player" OFF)
 if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
@@ -48,11 +49,21 @@ target_compile_definitions(wds_png PUBLIC
   LODEPNG_NO_COMPILE_ANCILLARY_CHUNKS
 )
 
-add_library(wds_project STATIC src/platform_project.cpp src/asset_import.cpp)
+add_library(wds_project STATIC src/platform_project.cpp src/asset_import.cpp src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
 target_link_libraries(wds_cli PRIVATE wds_project)
+
+if(WDS_BUILD_RAYLIB_PREVIEW)
+  enable_language(C)
+  include(cmake/raylib.cmake)
+  add_executable(wds_player_preview src/player_preview.cpp)
+  target_link_libraries(wds_player_preview PRIVATE raylib wds_project wds_compile_options)
+  if(MINGW)
+    target_link_options(wds_player_preview PRIVATE -municode)
+  endif()
+endif()
 
 if(WDS_BUILD_MODERN_STUDIO)
   find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets LinguistTools)
@@ -128,6 +139,10 @@ add_test(
           -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
 )
+add_executable(wds_scene_controls_test tests/scene_controls.cpp)
+target_link_libraries(wds_scene_controls_test PRIVATE wds_project wds_compile_options)
+add_test(NAME scene_controls COMMAND wds_scene_controls_test
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
 add_test(
   NAME resource_import
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

@@ -7,6 +7,7 @@
 #include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -18,6 +19,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
@@ -84,6 +86,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
@@ -246,15 +249,9 @@ class Workbench final : public QMainWindow {
     const QSettings settings;
     restoreGeometry(settings.value("workbench/geometry").toByteArray());
     restoreState(settings.value("workbench/layout").toByteArray(), 1);
-    timer_.setInterval(33);
-    connect(&timer_, &QTimer::timeout, this, [this] {
-      if (!session_->advance(1)) {
-        timer_.stop();
-        setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
-        return;
-      }
-      drawSession();
-    });
+    timer_.setInterval(16);
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, &Workbench::advancePlayback);
     retranslate();
   }
 
@@ -288,6 +285,8 @@ class Workbench final : public QMainWindow {
   void changeEvent(QEvent* event) override {
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) retranslate();
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow())
+      viewport_->clearSceneInput();
   }
 
   void closeEvent(QCloseEvent* event) override {
@@ -930,13 +929,41 @@ class Workbench final : public QMainWindow {
       report({nullptr,
               {},
               {{"code", QString::fromStdString(result.code)},
+               {"resource_path", QString::fromStdString(result.resource_path)},
                {"location", QString::fromStdString(result.location)}}});
       return;
     }
     session_ = std::move(result.session);
+    viewport_->beginPlayback(*session_);
+    if (session_->snapshot().interactive) {
+      play_focus_ = focusWidget();
+      viewport_->setFocus(Qt::OtherFocusReason);
+    }
     drawSession();
+    clock_ = {};
+    play_elapsed_.start();
+    last_play_ns_ = 0;
     timer_.start();
     updateActions();
+  }
+
+  void advancePlayback() {
+    const auto now = play_elapsed_.nsecsElapsed();
+    const auto elapsed = std::chrono::nanoseconds(now - last_play_ns_);
+    last_play_ns_ = now;
+    const auto& snapshot = session_->snapshot();
+    if (snapshot.interactive && (!viewport_->hasFocus() || !isActiveWindow())) {
+      setStatus(QT_TR_NOOP("Paused. Click the viewport to resume."));
+      return;
+    }
+    const auto count =
+        std::min(clock_.consume(elapsed), platform::SceneSession::max_ticks - snapshot.ticks);
+    if (count == 0) return;
+    session_->advance(count, viewport_->sceneInput());
+    drawSession();
+    if (snapshot.outcome != platform::SceneOutcome::playing ||
+        snapshot.ticks == platform::SceneSession::max_ticks)
+      timer_.stop();
   }
 
   void drawSession() {
@@ -944,10 +971,36 @@ class Workbench final : public QMainWindow {
     for (const auto& entity : session_->snapshot().entities) {
       entities.append(QJsonObject{{"id", QString::fromStdString(entity.id)},
                                   {"x", static_cast<qint64>(entity.x)},
-                                  {"y", static_cast<qint64>(entity.y)}});
+                                  {"y", static_cast<qint64>(entity.y)},
+                                  {"half_width", static_cast<qint64>(entity.half_width)},
+                                  {"half_height", static_cast<qint64>(entity.half_height)},
+                                  {"sprite", QString::fromStdString(entity.sprite)},
+                                  {"role", static_cast<int>(entity.role)}});
     }
     viewport_->setScene(std::move(entities), true);
-    setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(session_->snapshot().ticks)});
+    const auto& snapshot = session_->snapshot();
+    switch (snapshot.outcome) {
+      case platform::SceneOutcome::won:
+        setStatus(QT_TR_NOOP("Delivered! Select Stop to play again."));
+        return;
+      case platform::SceneOutcome::lost:
+        setStatus(QT_TR_NOOP("Delivery failed. Select Stop to play again."));
+        return;
+      case platform::SceneOutcome::timed_out:
+        setStatus(QT_TR_NOOP("Time is up. Select Stop to play again."));
+        return;
+      default:
+        break;
+    }
+    if (snapshot.ticks == platform::SceneSession::max_ticks) {
+      setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
+    } else if (snapshot.interactive) {
+      const auto rate = platform::SceneClock::ticks_per_second;
+      const auto remaining = (platform::SceneSession::max_ticks - snapshot.ticks + rate - 1) / rate;
+      setStatus(QT_TR_NOOP("Playing · %1 s remaining"), {QString::number(remaining)});
+    } else {
+      setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(snapshot.ticks)});
+    }
   }
 
   void stop() {
@@ -955,8 +1008,10 @@ class Workbench final : public QMainWindow {
     timer_.stop();
     session_.reset();
     viewport_->setScene(entities_, false);
-    setStatus(QT_TR_NOOP("Playback stopped."));
     updateActions();
+    if (play_focus_) play_focus_->setFocus(Qt::OtherFocusReason);
+    play_focus_.clear();
+    setStatus(QT_TR_NOOP("Playback stopped."));
   }
 
   void setStatus(const char* pattern, QStringList arguments = {}) {
@@ -1029,6 +1084,10 @@ class Workbench final : public QMainWindow {
   std::deque<HistoryEntry> undo_history_;
   std::deque<HistoryEntry> redo_history_;
   QTimer timer_;
+  QElapsedTimer play_elapsed_;
+  qint64 last_play_ns_ = 0;
+  platform::SceneClock clock_;
+  QPointer<QWidget> play_focus_;
   Viewport* viewport_;
   SceneTreePanel* scene_tree_;
   ResourcePanel* resources_;

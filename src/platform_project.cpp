@@ -8,6 +8,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <json.hpp>
 #include <map>
@@ -300,14 +301,82 @@ const Resource& entry_resource(const Project& project) {
   return *std::ranges::find(project.resources, project.entry_scene, &Resource::id);
 }
 
-FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output) {
+FieldResult parse_controls(const Json& rules, std::vector<SceneEntity>& entities,
+                           std::optional<SceneControls>* controls) {
+  if (!has_fields(rules, {"player", "speed", "walls", "goals", "hazards"}) &&
+      !has_fields(rules, {"player", "speed", "walls", "goals", "hazards", "keys"}))
+    return {"invalid_scene", "/play"};
+  const auto speed = integer(rules["speed"]);
+  if (!speed || *speed <= 0 || *speed > 256) return {"invalid_scene", "/play/speed"};
+
+  const auto mark = [&](const Json& value, SceneRole role) -> SceneEntity* {
+    if (!value.is_string()) return nullptr;
+    const auto entity =
+        std::ranges::find(entities, value.get_ref<const std::string&>(), &SceneEntity::id);
+    if (entity == entities.end() || entity->role != SceneRole::none || entity->half_width == 0 ||
+        entity->vx != 0 || entity->vy != 0)
+      return nullptr;
+    entity->role = role;
+    return &*entity;
+  };
+  const auto* player = mark(rules["player"], SceneRole::player);
+  if (!player) return {"invalid_scene", "/play/player"};
+  for (const auto& [name, role] : {std::pair{"walls", SceneRole::wall},
+                                   {"goals", SceneRole::goal},
+                                   {"hazards", SceneRole::hazard}}) {
+    const auto& list = rules[name];
+    const auto location = std::string("/play/") + name;
+    if (!list.is_array() || (role == SceneRole::goal && list.empty()))
+      return {"invalid_scene", location};
+    for (std::size_t index = 0; index < list.size(); ++index) {
+      const auto* entity = mark(list[index], role);
+      if (!entity || (role == SceneRole::wall &&
+                      std::abs(player->x - entity->x) < player->half_width + entity->half_width &&
+                      std::abs(player->y - entity->y) < player->half_height + entity->half_height))
+        return {"invalid_scene", location + "/" + std::to_string(index)};
+    }
+  }
+
+  SceneControls config{static_cast<std::size_t>(player - entities.data()), *speed, {}};
+  constexpr std::array directions{"left", "right", "up", "down"};
+  constexpr std::array defaults{"A", "D", "W", "S"};
+  const auto authored = rules.find("keys");
+  if (authored != rules.end() && !has_fields(*authored, {"left", "right", "up", "down"}))
+    return {"invalid_scene", "/play/keys"};
+  SceneInput used;
+  for (std::size_t index = 0; index < directions.size(); ++index) {
+    auto& keys = config.keys[index];
+    if (authored == rules.end()) {
+      keys.set(static_cast<std::size_t>(SceneKey::left) + index);
+      keys.set(static_cast<std::size_t>(*scene_key(defaults[index])));
+      continue;
+    }
+    const auto& list = (*authored)[directions[index]];
+    const auto location = std::string("/play/keys/") + directions[index];
+    if (!list.is_array() || list.empty()) return {"invalid_scene", location};
+    for (const auto& value : list) {
+      const auto key =
+          value.is_string() ? scene_key(value.get_ref<const std::string&>()) : std::nullopt;
+      if (!key || used.test(static_cast<std::size_t>(*key))) return {"invalid_scene", location};
+      used.set(static_cast<std::size_t>(*key));
+      keys.set(static_cast<std::size_t>(*key));
+    }
+  }
+  if (controls) *controls = std::move(config);
+  return {"ok"};
+}
+
+FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
+                        std::optional<SceneControls>* controls = nullptr) {
   // Older projects use an empty object for a new scene.
   if (json.is_object() && json.empty()) return {"ok"};
   if (!json.is_object() || !json.contains("format_version") ||
       !json["format_version"].is_number_integer())
     return {"invalid_scene", "/format_version"};
   if (json["format_version"] != 1) return {"unsupported_scene_version", "/format_version"};
-  if (!has_fields(json, {"format_version", "entities"})) return {"invalid_scene", "/"};
+  if (!has_fields(json, {"format_version", "entities"}) &&
+      !has_fields(json, {"format_version", "entities", "play"}))
+    return {"invalid_scene", "/"};
   const auto& entities = json["entities"];
   if (!entities.is_array()) return {"invalid_scene", "/entities"};
   if (entities.size() > max_scene_entities) return {"scene_too_large", "/entities"};
@@ -322,6 +391,24 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output) {
     if (!ids.insert(entity.id).second) return {"duplicate_entity_id", where + "/id"};
     for (auto it = row.begin(); it != row.end(); ++it) {
       if (it.key() == "id") continue;
+      if (it.key() == "sprite") {
+        if (!it->is_string() || !valid_id(it->get_ref<const std::string&>()))
+          return {"invalid_scene", where + "/sprite"};
+        entity.sprite = it->get<std::string>();
+        continue;
+      }
+      if (it.key() == "box") {
+        if (!has_fields(*it, {"half_width", "half_height"}))
+          return {"invalid_scene", where + "/box"};
+        const auto width = integer((*it)["half_width"]);
+        const auto height = integer((*it)["half_height"]);
+        if (!width || !height || *width <= 0 || *height <= 0 || *width > scene_field_limit ||
+            *height > scene_field_limit)
+          return {"invalid_scene", where + "/box"};
+        entity.half_width = *width;
+        entity.half_height = *height;
+        continue;
+      }
       const auto field = std::ranges::find(scene_fields, it.key(), &SceneField::name);
       if (field == scene_fields.end()) return {"invalid_scene", where};
       const auto value = integer(*it);
@@ -329,9 +416,10 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output) {
         return {"invalid_scene", where + "/" + it.key()};
       entity.*(field->member) = *value;
     }
+    if (!entity.sprite.empty() && entity.half_width == 0) return {"invalid_scene", where + "/box"};
     output.push_back(std::move(entity));
   }
-  return {"ok"};
+  return json.contains("play") ? parse_controls(json["play"], output, controls) : FieldResult{"ok"};
 }
 
 FieldResult change_scene(Json& json, const SceneEdit& edit) {
@@ -437,6 +525,14 @@ FieldResult edit_scene_file(const fs::path& root, std::uint64_t expected, const 
     auto result = change(scene);
     result.revision = revision;
     if (result.code != "ok" || !result.changed) return result;
+    if (scene.contains("play") && !restore) {
+      std::vector<SceneEntity> entities;
+      auto checked = parse_scene(scene, entities);
+      if (checked.code != "ok") {
+        checked.revision = revision;
+        return checked;
+      }
+    }
     if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
     const auto next = restore ? restore->after : scene.dump(2) + "\n";
     const auto code = commit_edit(root, resource, journal, *manifest_bytes, *scene_bytes, manifest,
@@ -627,17 +723,6 @@ ProjectResult open_project(const fs::path& directory) {
   }
 }
 
-bool SceneSession::advance(std::uint64_t ticks) {
-  if (ticks > max_ticks - state_.ticks) return false;
-  const auto steps = static_cast<std::int64_t>(ticks);
-  for (auto& entity : state_.entities) {
-    entity.x += entity.vx * steps;
-    entity.y += entity.vy * steps;
-  }
-  state_.ticks += ticks;
-  return true;
-}
-
 SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revision) {
   if (expected_revision > max_revision) return {std::nullopt, "invalid_argument", "/revision"};
   const auto opened = open_project(directory);
@@ -653,9 +738,39 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
   try {
     const auto bytes = read_bytes(directory / scene.path, max_edit_bytes);
     if (!bytes) return {std::nullopt, "scene_too_large", "/", scene.path, project.revision};
-    const auto parsed = parse_scene(parse_json(*bytes), session.state_.entities);
+    const auto parsed =
+        parse_scene(parse_json(*bytes), session.state_.entities, &session.controls_);
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
+    session.state_.interactive = session.controls_.has_value();
+
+    constexpr std::size_t max_sprite_bytes = 32 * 1024 * 1024;
+    std::size_t decoded = 0;
+    std::set<std::string_view> loaded;
+    for (std::size_t index = 0; index < session.state_.entities.size(); ++index) {
+      const auto& id = session.state_.entities[index].sprite;
+      if (id.empty() || !loaded.insert(id).second) continue;
+      const auto asset = std::ranges::find(project.resources, id, &Resource::id);
+      const auto location = "/entities/" + std::to_string(index) + "/sprite";
+      if (asset == project.resources.end() || asset->kind != "image" ||
+          std::ranges::find(scene.refs, id) == scene.refs.end())
+        return {std::nullopt, "invalid_sprite", location, scene.path, project.revision};
+      const auto source = read_bytes(directory / asset->path, max_edit_bytes);
+      if (!source)
+        return {std::nullopt, "source_too_large", location, asset->path, project.revision};
+      const auto info = assets::inspect_png(*source);
+      if (info.code != "ok")
+        return {std::nullopt, std::string(info.code), location, asset->path, project.revision};
+      const auto size = static_cast<std::size_t>(info.width) * info.height * 4;
+      if (size > max_sprite_bytes - decoded)
+        return {std::nullopt, "scene_too_large", location, asset->path, project.revision};
+      auto image = assets::decode_png(*source);
+      if (image.info.code != "ok")
+        return {std::nullopt, std::string(image.info.code), location, asset->path,
+                project.revision};
+      session.sprites_.push_back({id, info.width, info.height, std::move(image.rgba)});
+      decoded += size;
+    }
     return {std::move(session), "ok"};
   } catch (const std::filesystem::filesystem_error&) {
     return {std::nullopt, "io_error", "/", scene.path, project.revision};
@@ -1152,6 +1267,10 @@ ProjectResult recover_project(const fs::path& root) {
            old_project.project->revision, operation["target"].get<std::string>(),
            operation["index"].get<std::size_t>()});
       if (change.code != "ok" || !change.changed) return blocked();
+      if (new_data.contains("play")) {
+        std::vector<SceneEntity> entities;
+        if (parse_scene(new_data, entities).code != "ok") return blocked();
+      }
     } else if (scene_edit) {
       std::vector<SceneEntity> entities;
       if (parse_scene(new_data, entities).code != "ok") return blocked();
@@ -1303,6 +1422,7 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
               {"scene_id", scene.scene_id},
               {"ticks", scene.ticks},
               {"entities", std::move(entities)}};
+  if (scene.interactive) output["outcome"] = outcome_name(scene.outcome);
   if (include_fields) {
     auto fields = Json::array();
     for (const auto& field : scene_fields) {
@@ -1365,7 +1485,8 @@ std::string project_operations_json() {
   add("project.imports", "project imports DIRECTORY", false, path_input, provenance_errors);
   auto scene_errors = read_errors;
   for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_scene",
-                           "unsupported_scene_version", "scene_too_large", "duplicate_entity_id"})
+                           "unsupported_scene_version", "scene_too_large", "duplicate_entity_id",
+                           "invalid_sprite", "invalid_png", "image_too_large", "source_too_large"})
     scene_errors.push_back(code);
   add("project.play", "project play DIRECTORY REVISION TICKS", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"ticks", "integer 0 through 600"}},
