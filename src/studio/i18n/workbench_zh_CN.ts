@@ -202,6 +202,18 @@
             <source>target_exists</source>
             <translation>目标路径上已有项目外的文件</translation>
         </message>
+        <message>
+            <source>image_too_large</source>
+            <translation>PNG 尺寸超过 2048 × 2048 像素</translation>
+        </message>
+        <message>
+            <source>invalid_png</source>
+            <translation>PNG 图片损坏或格式不符</translation>
+        </message>
+        <message>
+            <source>invalid_utf8</source>
+            <translation>源文件需为 UTF-8 纯文本</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -276,6 +288,30 @@
         <message>
             <source>Import source</source>
             <translation>导入来源</translation>
+        </message>
+        <message>
+            <source>PNG Image</source>
+            <translation>PNG 图片</translation>
+        </message>
+        <message>
+            <source>UTF-8 Text</source>
+            <translation>UTF-8 文本</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Lines · %1</source>
+            <translation>%1 行</translation>
+        </message>
+        <message>
+            <source>Text Preview</source>
+            <translation>文本预览</translation>
+        </message>
+        <message>
+            <source>Image Preview</source>
+            <translation>图片缩略图</translation>
         </message>
     </context>
     <context>
@@ -619,10 +655,6 @@
             <translation>选择资源文件</translation>
         </message>
         <message>
-            <source>JSON files (*.json);;All files (*)</source>
-            <translation>JSON 文件 (*.json);;所有文件 (*)</translation>
-        </message>
-        <message>
             <source>Data</source>
             <translation>数据</translation>
         </message>
@@ -655,6 +687,38 @@
         <message>
             <source>Imported %1.</source>
             <translation>已导入 %1。</translation>
+        </message>
+        <message>
+            <source>PNG Image</source>
+            <translation>PNG 图片</translation>
+        </message>
+        <message>
+            <source>UTF-8 Text</source>
+            <translation>UTF-8 文本</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Lines · %1</source>
+            <translation>%1 行</translation>
+        </message>
+        <message>
+            <source>Supported files (*.json *.png *.txt *.md);;All files (*)</source>
+            <translation>支持的文件 (*.json *.png *.txt *.md);;所有文件 (*)</translation>
+        </message>
+        <message>
+            <source>Clear Thumbnail Cache</source>
+            <translation>清理缩略图缓存</translation>
+        </message>
+        <message>
+            <source>Could not clear all thumbnails.</source>
+            <translation>无法清理部分缩略图。</translation>
+        </message>
+        <message>
+            <source>Thumbnail cache cleared.</source>
+            <translation>已清理缩略图缓存。</translation>
         </message>
     </context>
 </TS>

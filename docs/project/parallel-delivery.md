@@ -90,9 +90,9 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | PRD-03 | 核心 | PRD-02 | src/platform_project.* | 场景层级与父子变换，防环、旧场景保持可读，变更可撤回 |
 | PRD-04 | 核心 | PRJ-05、CMD-02 | src/resources/index/ | 资源移动和删除前显示引用方，改名不改 ID，仍有引用时可取消 |
 | PRD-05 | 核心 | PRJ-06、CMD-02 | src/resources/import/ | 导入接口保存原始资源和来源，重复导入可复用，失败保留旧资产 |
-| PRD-06 | 实现 | PRD-05 | src/resources/importers/image/ | 支持一类图像导入、尺寸和缩略图，错误可定位原文件 |
-| PRD-07 | 实现 | PRD-05 | src/resources/importers/text/ | 识别 UTF-8 文本，输出内容摘要和规范化诊断 |
-| PRD-08 | 核心 | PRD-05、PRD-06、PRD-07 | src/resources/cache/ | 源和派生物分离，按输入指纹增量重建，缓存可清除重建 |
+| PRD-06 | 实现 | PRD-05 | `src/asset_import.*`、`src/studio/asset_preview.*` | PNG 可导入并查看尺寸和缩略图，错误可定位原文件 |
+| PRD-07 | 实现 | PRD-05 | `src/asset_import.*` | UTF-8 文本可导入，输出行数与规范化试读 |
+| PRD-08 | 核心 | PRD-05、PRD-06、PRD-07 | `src/studio/asset_preview.*` | PNG 派生缩略图按输入摘要复用，清理后可重建 |
 | PRD-09 | 核心 | PRJ-03、PRD-01 | src/migrations/ | 旧通用项目、旧方块项目显式迁移或报告不支持项，原目录可重开 |
 | PRD-10 | 核心 | PRD-04、CMD-04 | src/resources/diff/ | 用稳定 ID 比较结构化改动，区分内容冲突和路径冲突 |
 | CMD-01 | 核心 | OPS-01、OPS-03 | src/operations/registry/ | 统一 JSON 请求、结果及字段说明，旧 CLI 参数可用 |

@@ -1,5 +1,7 @@
 #include "platform_project.hpp"
 
+#include "asset_import.hpp"
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -42,6 +44,10 @@ bool digit(char ch) { return ch >= '0' && ch <= '9'; }
 bool valid_id(std::string_view id) {
   return !id.empty() && id.size() <= 64 && lower(id.front()) &&
          std::ranges::all_of(id, [](char ch) { return lower(ch) || digit(ch) || ch == '-'; });
+}
+
+bool valid_resource_kind(std::string_view kind) {
+  return kind == "scene" || kind == "data" || kind == "image" || kind == "text";
 }
 
 bool valid_segment(std::string_view name) {
@@ -198,8 +204,7 @@ ProjectResult validate_manifest(const fs::path& root, const Json& json) {
     Resource resource{row["id"].get<std::string>(), row["kind"].get<std::string>(),
                       row["path"].get<std::string>(), row["refs"].get<std::vector<std::string>>()};
     if (!valid_id(resource.id)) return failure("invalid_manifest", where + "/id");
-    if (resource.kind != "scene" && resource.kind != "data")
-      return failure("invalid_manifest", where + "/kind");
+    if (!valid_resource_kind(resource.kind)) return failure("invalid_manifest", where + "/kind");
     if (!valid_path(resource.path)) return failure("invalid_path", where + "/path");
     if (!ids.emplace(resource.id, project.resources.size()).second)
       return failure("duplicate_id", where + "/id");
@@ -474,8 +479,50 @@ std::string digest64(std::string_view bytes) {
   return "fnv1a64:" + text;
 }
 
-// 导入内容校验：场景要能被试玩读取，数据要能进入首版字段编辑。
-std::string imported_content_code(std::string_view kind, std::string_view bytes) {
+std::string encode_binary(std::string_view bytes) {
+  constexpr std::string_view hex = "0123456789abcdef";
+  std::string encoded;
+  encoded.reserve(bytes.size() * 2);
+  for (const auto ch : bytes) {
+    const auto value = static_cast<unsigned char>(ch);
+    encoded += hex[value >> 4];
+    encoded += hex[value & 15];
+  }
+  return encoded;
+}
+
+std::optional<std::string> decode_binary(std::string_view encoded) {
+  constexpr std::string_view hex = "0123456789abcdef";
+  if (encoded.size() > max_edit_bytes * 2 || encoded.size() % 2 != 0) return std::nullopt;
+  std::string bytes;
+  bytes.reserve(encoded.size() / 2);
+  for (std::size_t index = 0; index < encoded.size(); index += 2) {
+    const auto high = hex.find(encoded[index]);
+    const auto low = hex.find(encoded[index + 1]);
+    if (high == std::string_view::npos || low == std::string_view::npos) return std::nullopt;
+    bytes += static_cast<char>((high << 4) | low);
+  }
+  return bytes;
+}
+
+std::string_view imported_content_code(std::string_view kind, std::string_view bytes,
+                                       ImportResult* preview = nullptr) {
+  if (kind == "image") {
+    const auto image = assets::decode_png(bytes);
+    if (preview && image.info.code == "ok") {
+      preview->width = image.info.width;
+      preview->height = image.info.height;
+    }
+    return image.info.code;
+  }
+  if (kind == "text") {
+    auto text = assets::inspect_text(bytes);
+    if (preview && text.code == "ok") {
+      preview->line_count = text.lines;
+      preview->text_preview = std::move(text.excerpt);
+    }
+    return text.code;
+  }
   try {
     const auto json = parse_json(bytes);
     if (json.is_discarded()) return "invalid_content";
@@ -502,7 +549,7 @@ bool valid_provenance(const Json& json) {
         !row["bytes"].is_number_unsigned() || !row["revision"].is_number_unsigned())
       return false;
     if (!valid_id(row["resource"].get_ref<const std::string&>()) ||
-        (row["kind"] != "scene" && row["kind"] != "data") ||
+        !valid_resource_kind(row["kind"].get_ref<const std::string&>()) ||
         !valid_path(row["path"].get_ref<const std::string&>()))
       return false;
   }
@@ -763,8 +810,7 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
   const auto revision = project.revision;
   if (request.revision != revision) return {"revision_conflict", "/revision", revision};
   if (!valid_id(request.id)) return {"invalid_argument", "/id", revision};
-  if (request.kind != "scene" && request.kind != "data")
-    return {"invalid_argument", "/kind", revision};
+  if (!valid_resource_kind(request.kind)) return {"invalid_argument", "/kind", revision};
   if (!valid_path(request.path)) return {"invalid_path", "/path", revision};
 
   try {
@@ -775,8 +821,18 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
     const auto digest = digest64(*imported);
     if (!request.expected_digest.empty() && request.expected_digest != digest)
       return {"source_changed", "/source", revision};
-    const auto content = imported_content_code(request.kind, *imported);
-    if (content != "ok") return {content, "/source", revision};
+    ImportResult result{"ok",
+                        request.path,
+                        revision,
+                        request.id,
+                        request.kind,
+                        request.path,
+                        imported->size(),
+                        false,
+                        portable(source.filename()),
+                        digest};
+    const auto content = imported_content_code(request.kind, *imported, &result);
+    if (content != "ok") return {std::string(content), "/source", revision};
 
     const auto target = project_path(root, fs::path(request.path));
     if (target == PathState::unsafe) return {"unsafe_path", request.path, revision};
@@ -788,16 +844,7 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
                                : std::nullopt;
       if (!current || *current != *imported || existing->kind != request.kind)
         return {"duplicate_id", request.id, revision};
-      return {"ok",
-              request.path,
-              revision,
-              request.id,
-              request.kind,
-              request.path,
-              imported->size(),
-              false,
-              portable(source.filename()),
-              digest};
+      return result;
     }
     if (std::ranges::any_of(project.resources, [&](const Resource& resource) {
           return resource.path == request.path;
@@ -812,9 +859,8 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
     if (provenance.code != "ok" && provenance.code != "missing")
       return {provenance.code, imports_name, revision};
 
-    const ImportRecord record{
-        request.id,       request.kind, request.path, portable(source.filename()),
-        imported->size(), digest,       revision + 1};
+    const ImportRecord record{request.id,       request.kind, request.path, result.source_name,
+                              imported->size(), digest,       revision + 1};
     auto manifest = parse_json(*manifest_bytes);
     manifest["resources"].push_back({{"id", request.id},
                                      {"kind", request.kind},
@@ -826,11 +872,10 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
     if (next_manifest.size() > max_edit_bytes || next_provenance.size() > max_imports_bytes)
       return {"import_too_large", "/path", revision};
 
-    ImportResult result{
-        "ok",         request.path,     revision, request.id,         request.kind,
-        request.path, imported->size(), true,     record.source_name, record.digest};
+    result.changed = true;
     if (!apply) return result;
-    const Json journal{{"version", 5},
+    const bool binary = request.kind == "image";
+    const Json journal{{"version", binary ? 6 : 5},
                        {"resource", request.id},
                        {"kind", request.kind},
                        {"path", request.path},
@@ -838,7 +883,7 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
                        {"after_manifest", next_manifest},
                        {"before_provenance", provenance.bytes},
                        {"after_provenance", next_provenance},
-                       {"after_data", *imported}};
+                       {"after_data", binary ? encode_binary(*imported) : *imported}};
     const auto encoded = journal.dump() + "\n";
     if (encoded.size() > max_manifest_bytes) return {"import_too_large", "/path", revision};
     if (!replace_file(root, root / journal_name, encoded) ||
@@ -883,6 +928,22 @@ ImportListResult list_imports(const fs::path& root) {
   }
 }
 
+AssetSource read_asset_source(const fs::path& root, std::string_view id) {
+  const auto opened = open_project(root);
+  if (!opened.project) return {opened.code, opened.location};
+  const auto& resources = opened.project->resources;
+  const auto asset = std::ranges::find(resources, id, &Resource::id);
+  if (asset == resources.end() || (asset->kind != "image" && asset->kind != "text"))
+    return {"invalid_resource", std::string(id)};
+  try {
+    auto bytes = read_bytes(root / asset->path, max_edit_bytes);
+    if (!bytes) return {"source_too_large", asset->path};
+    return {"ok", asset->path, std::move(*bytes)};
+  } catch (const fs::filesystem_error&) {
+    return {"io_error", asset->path};
+  }
+}
+
 namespace {
 
 // 导入中断恢复：清单是提交点，目标是本次新建的文件与来源记录。
@@ -906,13 +967,16 @@ ProjectResult recover_import(const fs::path& root, const Json& journal) {
   const auto& after_manifest = text("after_manifest");
   const auto& before_provenance = text("before_provenance");
   const auto& after_provenance = text("after_provenance");
-  const auto& after_data = text("after_data");
-  if (!valid_id(id) || (kind != "scene" && kind != "data") || !valid_path(path) ||
-      before_manifest.size() > max_edit_bytes || after_manifest.size() > max_edit_bytes ||
-      before_provenance.size() > max_imports_bytes || after_provenance.size() > max_imports_bytes ||
-      after_data.size() > max_edit_bytes || after_provenance.empty())
+  const auto& payload = text("after_data");
+  const bool binary = journal["version"] == 6;
+  if (!valid_id(id) || !valid_resource_kind(kind) || binary != (kind == "image") ||
+      !valid_path(path) || before_manifest.size() > max_edit_bytes ||
+      after_manifest.size() > max_edit_bytes || before_provenance.size() > max_imports_bytes ||
+      after_provenance.size() > max_imports_bytes || after_provenance.empty() ||
+      payload.size() > (binary ? 2 : 1) * max_edit_bytes)
     return blocked();
-  if (imported_content_code(kind, after_data) != "ok") return blocked();
+  const auto after_data = binary ? decode_binary(payload) : std::optional{payload};
+  if (!after_data || imported_content_code(kind, *after_data) != "ok") return blocked();
 
   try {
     auto previous = parse_json(before_manifest);
@@ -930,14 +994,28 @@ ProjectResult recover_import(const fs::path& root, const Json& journal) {
         {{"id", id}, {"kind", kind}, {"path", path}, {"refs", Json::array()}});
     if (expected != parse_json(after_manifest)) return blocked();
 
-    if (!valid_provenance(parse_json(after_provenance))) return blocked();
+    const auto after = parse_json(after_provenance);
+    if (!valid_provenance(after)) return blocked();
+    const auto& rows = after["imports"];
+    const auto imported_row = std::ranges::find(
+        rows, id, [](const Json& row) { return row["resource"].get<std::string>(); });
+    if (imported_row == rows.end()) return blocked();
+    Provenance before;
     if (!before_provenance.empty()) {
-      const auto before = parse_json(before_provenance);
-      if (!valid_provenance(before) || std::ranges::any_of(before["imports"], [&](const Json& row) {
-            return row["resource"] == id;
-          }))
+      before.json = parse_json(before_provenance);
+      if (!valid_provenance(before.json) ||
+          std::ranges::any_of(before.json["imports"],
+                              [&](const Json& row) { return row["resource"] == id; }))
         return blocked();
     }
+    const ImportRecord record{id,
+                              kind,
+                              path,
+                              imported_row->at("source_name").get<std::string>(),
+                              after_data->size(),
+                              digest64(*after_data),
+                              before_project.project->revision + 1};
+    if (parse_json(provenance_with(before, record)) != after) return blocked();
 
     const auto data_state = project_path(root, path);
     if (data_state == PathState::unsafe) return blocked();
@@ -957,8 +1035,9 @@ ProjectResult recover_import(const fs::path& root, const Json& journal) {
     const bool uncommitted = *actual_manifest == before_manifest;
     if (!committed && !uncommitted) return blocked();
     // 提交后清单已发布，目标文件必须是本次导入的字节；提交前只允许本次写入的字节存在。
-    if (committed && (!data_exists || actual_data != after_data)) return blocked();
-    if (uncommitted && data_exists && actual_data != after_data) return blocked();
+    if (data_exists ? actual_data != *after_data : committed) return blocked();
+    if (provenance.bytes != before_provenance && provenance.bytes != after_provenance)
+      return blocked();
     if (!remove_reserved(root, staging_name)) return blocked();
     if (uncommitted && data_exists) {
       std::error_code error;
@@ -998,7 +1077,7 @@ ProjectResult recover_project(const fs::path& root) {
     if (!journal.is_object() || !journal.contains("version") ||
         !journal["version"].is_number_integer())
       return blocked();
-    if (journal["version"] == 5) return recover_import(root, journal);
+    if (journal["version"] == 5 || journal["version"] == 6) return recover_import(root, journal);
     const bool scene_edit = journal["version"] == 2;
     const bool entity_edit = journal["version"] == 3;
     const bool scene_restore = journal["version"] == 4;
@@ -1141,6 +1220,14 @@ std::string import_result_json(const ImportResult& result) {
     json["source_name"] = result.source_name;
     json["digest"] = result.digest;
     if (result.bytes) json["bytes"] = *result.bytes;
+    if (result.width != 0) {
+      json["width"] = result.width;
+      json["height"] = result.height;
+    }
+    if (result.line_count) {
+      json["line_count"] = *result.line_count;
+      json["text_preview"] = result.text_preview;
+    }
   }
   if (result.code == "ok") json["changed"] = result.changed;
   return json.dump();
@@ -1254,15 +1341,15 @@ std::string project_operations_json() {
   add("project.resources", "project resources DIRECTORY", false, path_input, read_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
   auto import_errors = read_errors;
-  for (const auto* code :
-       {"invalid_argument", "invalid_path", "invalid_source", "source_too_large", "invalid_content",
-        "duplicate_id", "duplicate_path", "target_exists", "revision_conflict",
-        "revision_exhausted", "import_too_large", "invalid_provenance"})
+  for (const auto* code : {"invalid_argument", "invalid_path", "invalid_source", "source_too_large",
+                           "invalid_content", "duplicate_id", "duplicate_path", "target_exists",
+                           "revision_conflict", "revision_exhausted", "import_too_large",
+                           "invalid_provenance", "invalid_png", "invalid_utf8", "image_too_large"})
     import_errors.push_back(code);
   const Json import_input{{"directory", "path"},
                           {"source", "external file read once, bytes preserved"},
                           {"resource_id", "new resource identifier"},
-                          {"kind", "scene | data"},
+                          {"kind", "scene | data | image | text"},
                           {"path", "assets/ relative target path"},
                           {"expected_revision", "integer"}};
   add("resource.import.preview", "project preview-import DIRECTORY SOURCE ID KIND PATH REVISION",

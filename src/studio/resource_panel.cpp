@@ -9,6 +9,8 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPixmap>
+#include <QPlainTextEdit>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QStackedWidget>
@@ -26,6 +28,8 @@ namespace {
 QString displayKind(const QString& kind) {
   if (kind == "scene") return QCoreApplication::translate("ResourcePanel", "Scene");
   if (kind == "data") return QCoreApplication::translate("ResourcePanel", "Data");
+  if (kind == "image") return QCoreApplication::translate("ResourcePanel", "PNG Image");
+  if (kind == "text") return QCoreApplication::translate("ResourcePanel", "UTF-8 Text");
   return kind;
 }
 
@@ -65,7 +69,22 @@ ResourcePanel::ResourcePanel(std::function<void(QString)> onSelect, QWidget* par
   stack_ = new QStackedWidget(this);
   stack_->addWidget(tree_);
   stack_->addWidget(empty_state_);
-  layout->addWidget(stack_, 1);
+  auto* browser = new QHBoxLayout;
+  browser->addWidget(stack_, 1);
+  preview_ = new QWidget(this);
+  auto* preview_layout = new QVBoxLayout(preview_);
+  theme::configurePanelLayout(*preview_layout);
+  preview_caption_ = new QLabel(preview_);
+  thumbnail_ = new QLabel(preview_);
+  thumbnail_->setObjectName("resourceThumbnail");
+  text_preview_ = new QPlainTextEdit(preview_);
+  text_preview_->setObjectName("resourceTextPreview");
+  text_preview_->setReadOnly(true);
+  preview_layout->addWidget(preview_caption_);
+  preview_layout->addWidget(thumbnail_);
+  preview_layout->addWidget(text_preview_, 1);
+  browser->addWidget(preview_, 1);
+  layout->addLayout(browser, 1);
 
   // 引用区放在列表下方：两张只读标签，无选中时整块隐藏。
   relations_ = new QWidget(this);
@@ -141,6 +160,9 @@ void ResourcePanel::retranslate() {
   rebuildKindFilter();
   updateEmptyState();
   refreshRelations();  // “None”等文案随语言切换重算
+  text_preview_->setAccessibleName(QCoreApplication::translate("ResourcePanel", "Text Preview"));
+  thumbnail_->setAccessibleName(QCoreApplication::translate("ResourcePanel", "Image Preview"));
+  refreshPreview();
 }
 
 void ResourcePanel::setImportRecords(const QJsonArray& records) {
@@ -151,6 +173,29 @@ void ResourcePanel::setImportRecords(const QJsonArray& records) {
                            record.value("source_name").toString());
   }
   refreshRelations();
+}
+
+void ResourcePanel::setPreview(AssetPreview preview) {
+  selected_preview_ = std::move(preview);
+  thumbnail_->setPixmap(QPixmap::fromImage(selected_preview_.thumbnail));
+  text_preview_->setPlainText(selected_preview_.text);
+  refreshPreview();
+}
+
+void ResourcePanel::refreshPreview() {
+  const bool image = !selected_preview_.thumbnail.isNull();
+  const bool text = selected_preview_.lines.has_value();
+  preview_->setVisible(image || text);
+  thumbnail_->setVisible(image);
+  text_preview_->setVisible(text);
+  if (image) {
+    preview_caption_->setText(QCoreApplication::translate("ResourcePanel", "%1 × %2 px")
+                                  .arg(selected_preview_.width)
+                                  .arg(selected_preview_.height));
+  } else if (text) {
+    preview_caption_->setText(QCoreApplication::translate("ResourcePanel", "Lines · %1")
+                                  .arg(static_cast<qulonglong>(*selected_preview_.lines)));
+  }
 }
 
 void ResourcePanel::setResources(const QJsonArray& resources) {

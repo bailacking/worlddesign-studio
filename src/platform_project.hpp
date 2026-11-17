@@ -141,6 +141,16 @@ struct ImportResult {
   bool changed = false;
   std::string source_name{};
   std::string digest{};
+  unsigned width = 0;
+  unsigned height = 0;
+  std::optional<std::size_t> line_count{};
+  std::string text_preview{};
+};
+
+struct AssetSource {
+  std::string code;
+  std::string location{};
+  std::string bytes{};
 };
 
 struct ImportRecord {
@@ -164,6 +174,7 @@ ProjectResult create_project(const std::filesystem::path& directory, std::string
 ImportResult import_resource(const std::filesystem::path& directory, const ImportRequest& request,
                              bool apply);
 ImportListResult list_imports(const std::filesystem::path& directory);
+AssetSource read_asset_source(const std::filesystem::path& directory, std::string_view id);
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);

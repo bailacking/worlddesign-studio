@@ -40,16 +40,25 @@ target_link_libraries(wds_m0 PRIVATE wds_compile_options)
 add_executable(wds_cli src/cli.cpp)
 target_link_libraries(wds_cli PRIVATE wds_m0 wds_compile_options)
 
-add_library(wds_project STATIC src/platform_project.cpp)
+add_library(wds_png STATIC third_party/lodepng/lodepng.cpp)
+target_include_directories(wds_png SYSTEM PUBLIC third_party/lodepng)
+target_compile_definitions(wds_png PUBLIC
+  LODEPNG_NO_COMPILE_ENCODER
+  LODEPNG_NO_COMPILE_DISK
+  LODEPNG_NO_COMPILE_ANCILLARY_CHUNKS
+)
+
+add_library(wds_project STATIC src/platform_project.cpp src/asset_import.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
-target_link_libraries(wds_project PRIVATE wds_compile_options)
+target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
 target_link_libraries(wds_cli PRIVATE wds_project)
 
 if(WDS_BUILD_MODERN_STUDIO)
   find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets LinguistTools)
   qt_add_executable(wds_studio_modern WIN32
     src/studio/main.cpp
+    src/studio/asset_preview.cpp
     src/studio/bridge.cpp
     src/studio/i18n/language.cpp
     src/studio/output_panel.cpp
@@ -96,6 +105,7 @@ endif()
 install(TARGETS wds_cli RUNTIME DESTINATION .)
 install(FILES LICENSE DESTINATION .)
 install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION licenses RENAME nlohmann-json.txt)
+install(FILES third_party/lodepng/LICENSE DESTINATION licenses RENAME lodepng.txt)
 
 add_executable(wds_plugin_test tests/plugin_host.cpp)
 target_link_libraries(wds_plugin_test PRIVATE wds_m0 wds_compile_options)

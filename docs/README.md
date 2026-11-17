@@ -32,7 +32,7 @@
 - [质量与验证](engineering/quality.md)：契约测试、故障矩阵、平台证据和可玩性验收。
 - [技术评估](engineering/technical-evaluation.md)：C++ 核心的选定理由、工具链与依赖调研、进入编码的条件。
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
-- [实施路线](project/roadmap.md)：W1–W4 验收记录、W5 入口及各阶段放行条件。
+- [实施路线](project/roadmap.md)：W1–W5 验收记录、下一周入口及各阶段放行条件。
 - [最终版 50 周开发计划](project/50-week-plan.md)：逐周目标和验收、零资产计时、共同调研与产能复核。
 - [W1 基线与需求台账](project/w1-baseline.md)：Windows 实测、核心需求与任务映射、验收机器与本周投入。
 - [W2 参考证据与评分](project/w2-references.md)：版本、兼容边界、对照步骤、历史缺证和同量级评分。

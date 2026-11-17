@@ -5,6 +5,8 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -15,6 +17,7 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
@@ -23,11 +26,13 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
 #include <algorithm>
 #include <deque>
 #include <optional>
 #include <utility>
 
+#include "asset_preview.hpp"
 #include "bridge.hpp"
 #include "i18n/language.hpp"
 #include "output_panel.hpp"
@@ -42,6 +47,22 @@ namespace {
 
 QString argument(qint64 number) { return QString::number(number); }
 
+QString file_kind(const QString& path) {
+  const auto extension = QFileInfo(path).suffix().toLower();
+  if (extension == "png") return "image";
+  if (extension == "txt" || extension == "md") return "text";
+  if (extension == "json") return "data";
+  return {};
+}
+
+QString dropped_file(const QMimeData* mime) {
+  if (!mime->hasUrls()) return {};
+  const auto urls = mime->urls();
+  if (urls.size() != 1 || !urls.front().isLocalFile()) return {};
+  const auto path = urls.front().toLocalFile();
+  return file_kind(path).isEmpty() ? QString{} : path;
+}
+
 QString diagnostic(const QJsonObject& result) {
   static constexpr std::array codes{
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "already_exists"),
@@ -53,6 +74,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_id"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "edit_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "image_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "import_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_argument"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_content"),
@@ -61,9 +83,11 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_utf8"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_scene"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
@@ -130,6 +154,7 @@ class Workbench final : public QMainWindow {
  public:
   explicit Workbench(LanguageSettings& language) : language_(language) {
     setObjectName("workbench");
+    setAcceptDrops(true);
     resize(1360, 840);
     setDockOptions(AllowTabbedDocks | AllowNestedDocks | AnimatedDocks);
 
@@ -142,6 +167,7 @@ class Workbench final : public QMainWindow {
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
     import_ = project_menu_->addAction(QString{}, this, &Workbench::importResource);
+    clear_cache_ = project_menu_->addAction(QString{}, this, &Workbench::clearThumbnailCache);
     recover_ = project_menu_->addAction(QString{}, this, &Workbench::recoverProject);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
     edit_menu_ = menuBar()->addMenu(QString{});
@@ -241,6 +267,24 @@ class Workbench final : public QMainWindow {
   }
 
  protected:
+  void dragEnterEvent(QDragEnterEvent* event) override {
+    if (!import_->isEnabled() || !event->possibleActions().testFlag(Qt::CopyAction) ||
+        dropped_file(event->mimeData()).isEmpty())
+      return;
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+  }
+
+  void dropEvent(QDropEvent* event) override {
+    const auto path = dropped_file(event->mimeData());
+    if (!import_->isEnabled() || !event->possibleActions().testFlag(Qt::CopyAction) ||
+        path.isEmpty())
+      return;
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    importFile(path);
+  }
+
   void changeEvent(QEvent* event) override {
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) retranslate();
@@ -281,6 +325,7 @@ class Workbench final : public QMainWindow {
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
     import_->setText(tr("Import Resource…"));
+    clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
     close_->setText(tr("Close Project"));
     edit_data_->setText(tr("Edit Integer Data Field…"));
@@ -366,21 +411,25 @@ class Workbench final : public QMainWindow {
 
   void importResource() {
     if (busy_ || session_ || dirty_ || !revision_) return;
-    const auto source = QFileDialog::getOpenFileName(this, tr("Choose Resource File"), {},
-                                                     tr("JSON files (*.json);;All files (*)"),
-                                                     nullptr, QFileDialog::DontUseNativeDialog);
-    if (source.isEmpty()) return;
+    const auto source =
+        QFileDialog::getOpenFileName(this, tr("Choose Resource File"), {},
+                                     tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
+                                     nullptr, QFileDialog::DontUseNativeDialog);
+    if (!source.isEmpty()) importFile(source);
+  }
 
+  void importFile(const QString& source) {
+    if (busy_ || session_ || dirty_ || !revision_) return;
+    const auto suggested_kind = file_kind(source);
     auto suggested_id = QFileInfo(source).completeBaseName().toLower();
     suggested_id.replace(QRegularExpression("[^a-z0-9]+"), "-");
     suggested_id.remove(QRegularExpression("^-|-$"));
     if (suggested_id.isEmpty())
-      suggested_id = "resource";
+      suggested_id = suggested_kind == "image" || suggested_kind == "text" ? suggested_kind
+                                                                           : QString("resource");
     else if (suggested_id.front().isDigit())
       suggested_id = "resource-" + suggested_id;
     suggested_id = suggested_id.left(59);
-    const auto targetFor = [](const QString& id) { return QString("assets/%1.json").arg(id); };
-
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Import Resource…"));
     QFormLayout form(&dialog);
@@ -388,11 +437,22 @@ class Workbench final : public QMainWindow {
     QComboBox kind(&dialog);
     kind.addItem(tr("Data"), "data");
     kind.addItem(tr("Scene"), "scene");
+    kind.addItem(tr("PNG Image"), "image");
+    kind.addItem(tr("UTF-8 Text"), "text");
+    const int type_index = kind.findData(suggested_kind);
+    if (type_index >= 0) kind.setCurrentIndex(type_index);
+    const auto targetFor = [&kind](const QString& id) {
+      const auto chosen = kind.currentData().toString();
+      const auto suffix = chosen == "image" ? "png" : chosen == "text" ? "txt" : "json";
+      return QString("assets/%1.%2").arg(id, suffix);
+    };
     QLineEdit target(targetFor(suggested_id), &dialog);
     target.setPlaceholderText(QStringLiteral("assets/example.json"));
-    connect(&id, &QLineEdit::textEdited, &dialog, [&target, targetFor](const QString& value) {
-      if (!target.isModified()) target.setText(targetFor(value.trimmed()));
-    });
+    const auto update_target = [&id, &target, targetFor] {
+      if (!target.isModified()) target.setText(targetFor(id.text().trimmed()));
+    };
+    connect(&id, &QLineEdit::textEdited, &dialog, update_target);
+    connect(&kind, &QComboBox::currentIndexChanged, &dialog, update_target);
     form.addRow(tr("Resource ID"), &id);
     form.addRow(tr("Resource Type"), &kind);
     form.addRow(tr("Target Path"), &target);
@@ -415,7 +475,7 @@ class Workbench final : public QMainWindow {
     setBusy(true);
     bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
       if (preview.value("code") != "ok") {
-        report({nullptr, {}, preview});
+        reportImportError(preview, args[3]);
         setBusy(false);
         return;
       }
@@ -431,10 +491,16 @@ class Workbench final : public QMainWindow {
         setBusy(false);
         return;
       }
-      const auto details =
+      auto details =
           tr("Import %1 as %2?\n%3 · %4 bytes")
               .arg(preview.value("source_name").toString(), resource,
                    preview.value("path").toString(), argument(preview.value("bytes").toInteger()));
+      if (preview.contains("width"))
+        details += "\n" + tr("%1 × %2 px")
+                              .arg(preview.value("width").toInt())
+                              .arg(preview.value("height").toInt());
+      else if (preview.contains("line_count"))
+        details += "\n" + tr("Lines · %1").arg(preview.value("line_count").toInteger());
       QMessageBox confirm(QMessageBox::Question, tr("Import Preview"), details,
                           QMessageBox::Yes | QMessageBox::Cancel, this);
       confirm.setTextFormat(Qt::PlainText);
@@ -447,9 +513,9 @@ class Workbench final : public QMainWindow {
       }
       args[1] = "import";
       args.append({"--expect-digest", digest});
-      bridge_.run(args, [this](const QJsonObject& result) {
+      bridge_.run(args, [this, source = args[3]](const QJsonObject& result) {
         if (result.value("code") != "ok") {
-          report({nullptr, {}, result});
+          reportImportError(result, source);
           setBusy(false);
           return;
         }
@@ -457,6 +523,20 @@ class Workbench final : public QMainWindow {
         refresh(false);
       });
     });
+  }
+
+  void reportImportError(QJsonObject result, const QString& source) {
+    if (result.value("location") == "/source") result.insert("resource_path", source);
+    report({nullptr, {}, std::move(result)});
+  }
+
+  void clearThumbnailCache() {
+    if (!clear_thumbnail_cache()) {
+      report({QT_TR_NOOP("Could not clear all thumbnails."), {}, {}, "warning"});
+      return;
+    }
+    showResource(resources_->selectedId());
+    report({QT_TR_NOOP("Thumbnail cache cleared."), {}, {}});
   }
 
   void recoverProject() {
@@ -506,6 +586,7 @@ class Workbench final : public QMainWindow {
     entities_ = {};
     resources_model_ = {};
     resources_->setImportRecords({});
+    resources_->setPreview({});
     selected_.clear();
     dirty_ = false;
     resources_->setResources(resources_model_);
@@ -696,10 +777,39 @@ class Workbench final : public QMainWindow {
   }
 
   void showResource(const QString& id) {
+    resources_->setPreview({});
     if (id.isEmpty()) return;
     for (const auto item : resources_model_) {
       const auto resource = item.toObject();
-      if (resource.value("id") == id) setStatus(nullptr, {resource.value("path").toString()});
+      if (resource.value("id") != id) continue;
+      const auto path = resource.value("path").toString();
+      setStatus(nullptr, {path});
+      const auto kind = resource.value("kind").toString();
+      if (kind != "image" && kind != "text") return;
+#ifdef Q_OS_WIN
+      const std::filesystem::path directory(root_.toStdWString());
+#else
+      const std::filesystem::path directory(root_.toStdString());
+#endif
+      const auto source = platform::read_asset_source(directory, id.toStdString());
+      if (source.code != "ok") {
+        report({nullptr,
+                {},
+                {{"code", QString::fromStdString(source.code)},
+                 {"location", QString::fromStdString(source.location)}}});
+        return;
+      }
+      auto preview = preview_asset(kind.toStdString(), source.bytes);
+      if (preview.code != "ok") {
+        report({nullptr,
+                {},
+                {{"code", QString::fromLatin1(preview.code.data(),
+                                              static_cast<qsizetype>(preview.code.size()))},
+                 {"location", path}}});
+        return;
+      }
+      resources_->setPreview(std::move(preview));
+      return;
     }
   }
 
@@ -879,10 +989,12 @@ class Workbench final : public QMainWindow {
     for (std::size_t index = 0; index < fields_.size(); ++index)
       fields_[index]->setEnabled(editable && (!dirty_ || index == editing_));
     scene_tree_->setEnabled(!busy_ && !session_);
+    resources_->setEnabled(!busy_);
     open_->setEnabled(!busy_);
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
     import_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
+    clear_cache_->setEnabled(!busy_ && revision_.has_value());
     recover_->setEnabled(!busy_ && !session_ && !dirty_ && !root_.isEmpty());
     edit_data_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
     save_->setEnabled(editable && dirty_);
@@ -940,6 +1052,7 @@ class Workbench final : public QMainWindow {
   QAction* create_;
   QAction* close_;
   QAction* import_;
+  QAction* clear_cache_;
   QAction* recover_;
   QAction* edit_data_;
   QAction* save_;

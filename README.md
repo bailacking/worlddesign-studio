@@ -4,17 +4,17 @@
 
 WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。项目以可组合的插件体系为基础，将图形界面、命令行、代码与可视化编辑连接到统一的项目模型和操作能力。
 
-> **Windows 工作台支持场景编辑、试玩和场景及数据导入。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文。
+> **Windows 工作台支持场景编辑、试玩、资源导入与图文预览。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文。
 
 ## 体验现代工作台
 
 在 Windows x64 使用 MSVC 和 Qt 6.8 以上版本从源码构建。打开「四方汇流」示例的副本，在场景树选中 `drifter`，修改 **X 速度**，保存后用新修订试玩。[示例](examples/scene-editing/README.md) · [构建与运行](docs/engineering/development.md#运行现代工作台)
 
-- **项目与资源**：新建或打开项目，按 ID、路径及类型筛选资源，查看引用，预览导入场景和数据，重开后可查导入来源。
+- **项目与资源**：新建或打开项目，按 ID、路径及类型筛选资源，查看引用，预览导入场景、数据、PNG 和 UTF-8 文本，重开后可查来源和图文预览。
 - **场景编辑**：在可平移缩放的二维视口选中实体，修改位置或速度；支持实体新建、复制、删除、排序和当前会话内撤销重做。
 - **AI 与命令行**支持按修订读取、预览和提交项目改动、恢复中断写入和生成 Markdown 交接摘要。内容工具可展开规则、校验引用和按 ID 修补生成结果。[资源导入](docs/engineering/development.md#导入外部资源) · [内容生成](docs/engineering/development.md#生成与修补内容)
 
-当前提供源码构建。W5 集中做 PNG 与 UTF-8 文本导入、缩略图和可重建缓存。独立导出与完整 3D 编辑分别在后续阶段推进。[开发进度](docs/project/roadmap.md#周交付记录)
+当前提供源码构建。W5 已接通图文导入、拖放和可重建缩略图缓存。接下来推进 2D 输入、碰撞和 Windows 独立导出。[开发进度](docs/project/roadmap.md#周交付记录)
 
 ## 产品方向
 
@@ -43,7 +43,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 项目在 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 维护。构建、测试及运行样例见 [开发指南](docs/engineering/development.md#运行-m0-样例)。
 
-W1–W4 已交付 Windows 基线、参考版本与验收口径、工作台导入和内容生成工具，以及原创图形、音频与运行后端试验。默认 Linux CI 覆盖核心和 CLI，Qt 工作台及 W4 样机在 Windows x64 实测。可独立构建「礁灯信使」，在同一场景切换两套原创资产。 [验收记录](docs/project/roadmap.md#周交付记录) · [样机](examples/w4-lab/README.md) · [W4 工期评估](docs/project/w4-benchmarks.md#工期更新)
+W1–W5 已交付 Windows 基线、参考版本与验收口径、工作台导入、内容生成与图文预览，以及原创图形、音频与运行后端试验。默认 Linux CI 覆盖核心和 CLI，Qt 工作台及 W4 样机在 Windows x64 实测。可独立构建「礁灯信使」，在同一场景切换两套原创资产。 [验收记录](docs/project/roadmap.md#周交付记录) · [样机](examples/w4-lab/README.md) · [W4 工期评估](docs/project/w4-benchmarks.md#工期更新)
 
 ## 开源与协作
 
