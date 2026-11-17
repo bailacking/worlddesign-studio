@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "runtime_id": "wds-scene2d-win64-v1",
+  "target": "windows-x64",
+  "minimum_environment": {
+    "os": "Windows 10 x64",
+    "graphics": "OpenGL 3.3"
+  },
+  "graphics_module": "opengl32.dll (resolved by GLFW at runtime)",
+  "plugins": [
+    {"id": "wds.scene2d", "version": 1},
+    {"id": "wds.png", "version": 1},
+    {"id": "wds.raylib-player", "version": 1}
+  ],
+  "dependencies": [
+    {"id": "raylib", "version": "5.5", "linkage": "static"},
+    {"id": "glfw", "version": "3.4.0 (raylib vendored)", "linkage": "static"},
+    {"id": "nlohmann-json", "version": "3.12.0", "linkage": "compiled-in"},
+    {"id": "lodepng", "version": "7b2893e35891c0c85bee5595caafaf3c2044b409", "linkage": "static"},
+    {"id": "msvc-crt", "linkage": "static"}
+  ]
+}

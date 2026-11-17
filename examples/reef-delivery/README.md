@@ -6,6 +6,6 @@
 - **试赢**：先向上绕过隔墙，再向右到信站上方，最后下行送达。
 - **试编辑**：停止后选中 `courier`，修改并保存 **X 位置**。再试玩会从新位置开始。位置、墙体、终点和按键映射也可在 `assets/reef.json` 查看。
 
-角色精灵沿用 W4 样机 A 的原创角色图并裁去透明边，围栏、浅礁标识和信站是本样例的原创 PNG。项目清单把四张图登记为入口场景的引用。
+角色精灵沿用 W4 样机 A 的原创角色图并裁去透明边，围栏、浅礁标识和信站是本样例的原创 PNG。项目清单把四张图登记为入口场景的引用。源项目的 `LICENSE` 随 Windows 导出包收录。
 
-[构建工作台与试验播放器](../../docs/engineering/development.md#试玩礁灯投递) · [场景规则与输入格式](../../docs/architecture/runtime.md#二维精灵与试玩规则)
+[构建工作台与试验播放器](../../docs/engineering/development.md#试玩礁灯投递) · [场景规则与输入格式](../../docs/architecture/runtime.md#二维精灵与试玩规则) · [导出独立游戏](../../docs/engineering/development.md#导出-windows-x64-游戏)

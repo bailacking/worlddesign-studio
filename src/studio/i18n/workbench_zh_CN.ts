@@ -107,6 +107,26 @@
             <translation>入口场景无效</translation>
         </message>
         <message>
+            <source>export_too_large</source>
+            <translation>导出文件或成品超过大小上限</translation>
+        </message>
+        <message>
+            <source>invalid_export_destination</source>
+            <translation>请在项目外选择一个可写的父目录和新文件夹名</translation>
+        </message>
+        <message>
+            <source>invalid_runtime_dependency</source>
+            <translation>Windows 播放器或依赖文件与构建锁不一致</translation>
+        </message>
+        <message>
+            <source>missing_runtime_dependency</source>
+            <translation>缺少 Windows 播放器或许可文件</translation>
+        </message>
+        <message>
+            <source>unsupported_export_target</source>
+            <translation>当前入口只支持在 Windows 上导出 Windows x64</translation>
+        </message>
+        <message>
             <source>invalid_field</source>
             <translation>属性或属性值无效</translation>
         </message>
@@ -673,6 +693,46 @@
         <message>
             <source>Import Resource…</source>
             <translation>导入资源…</translation>
+        </message>
+        <message>
+            <source>Export for Windows x64…</source>
+            <translation>导出 Windows x64…</translation>
+        </message>
+        <message>
+            <source>Export for Windows x64</source>
+            <translation>导出 Windows x64</translation>
+        </message>
+        <message>
+            <source>Choose Export Parent</source>
+            <translation>选择导出父目录</translation>
+        </message>
+        <message>
+            <source>New folder for revision %1</source>
+            <translation>修订 %1 的新文件夹名称</translation>
+        </message>
+        <message>
+            <source>Enter a name for a new export folder.</source>
+            <translation>请输入新导出文件夹的名称。</translation>
+        </message>
+        <message>
+            <source>Exporting revision %1…</source>
+            <translation>正在导出修订 %1…</translation>
+        </message>
+        <message>
+            <source>Exported revision %1 · %2</source>
+            <translation>已导出修订 %1 · %2</translation>
+        </message>
+        <message>
+            <source>Export Complete</source>
+            <translation>导出完成</translation>
+        </message>
+        <message>
+            <source>Open Play.exe from the exported folder to run the game.</source>
+            <translation>打开导出文件夹中的 Play.exe 即可运行游戏。</translation>
+        </message>
+        <message>
+            <source>Open Folder</source>
+            <translation>打开文件夹</translation>
         </message>
         <message>
             <source>Choose Resource File</source>

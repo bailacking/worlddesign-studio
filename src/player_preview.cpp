@@ -6,7 +6,9 @@
 #include <map>
 
 #include "platform_project.hpp"
+#include "player_view.hpp"
 
+namespace wds::player {
 namespace {
 
 using namespace wds::platform;
@@ -100,31 +102,20 @@ void draw(const SceneSnapshot& scene, const Sprites& sprites, const SceneBounds&
   EndDrawing();
 }
 
-int run(const std::filesystem::path& path) {
-  const auto opened = open_project(path);
-  if (!opened.project) {
-    std::cerr << project_result_json(opened) << '\n';
-    return 1;
-  }
-  auto result = start_scene(path, opened.project->revision);
-  if (!result.session) {
-    std::cerr << scene_result_json(result) << '\n';
-    return 1;
-  }
-  auto& session = *result.session;
+}  // namespace
+
+bool play_scene(SceneSession& session, const char* title) {
   const auto bounds = scene_play_bounds(session.snapshot());
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(900, 570, "WDS Scene Preview");
-  if (!IsWindowReady()) return 1;
+  InitWindow(900, 570, title);
+  if (!IsWindowReady()) return false;
   SetWindowMinSize(360, 260);
   SetTargetFPS(60);
-  int exit_code = 0;
+  bool ready = false;
   {
     Sprites sprites(session);
-    if (!sprites.ready()) {
-      std::cerr << "Unable to prepare PNG textures for playback.\n";
-      exit_code = 1;
-    } else {
+    ready = sprites.ready();
+    if (ready) {
       using Clock = std::chrono::steady_clock;
       auto previous = Clock::now();
       SceneClock clock;
@@ -150,17 +141,35 @@ int run(const std::filesystem::path& path) {
     }
   }
   CloseWindow();
-  return exit_code;
+  return ready;
 }
 
-}  // namespace
+}  // namespace wds::player
 
+#ifndef WDS_PACKAGED_PLAYER
 #ifdef _WIN32
 int wmain(int argc, wchar_t** argv) {
 #else
 int main(int argc, char** argv) {
 #endif
-  if (argc == 2) return run(std::filesystem::path(argv[1]));
-  std::cerr << "Usage: wds_player_preview PROJECT_DIRECTORY\n";
-  return 2;
+  using namespace wds::platform;
+  if (argc != 2) {
+    std::cerr << "Usage: wds_player_preview PROJECT_DIRECTORY\n";
+    return 2;
+  }
+  const std::filesystem::path path(argv[1]);
+  const auto opened = open_project(path);
+  if (!opened.project) {
+    std::cerr << project_result_json(opened) << '\n';
+    return 1;
+  }
+  auto result = start_scene(path, opened.project->revision);
+  if (!result.session) {
+    std::cerr << scene_result_json(result) << '\n';
+    return 1;
+  }
+  if (wds::player::play_scene(*result.session, "WDS Scene Preview")) return 0;
+  std::cerr << "Unable to prepare graphics for playback.\n";
+  return 1;
 }
+#endif

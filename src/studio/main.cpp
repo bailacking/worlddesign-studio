@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -76,12 +77,14 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_id"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "edit_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "export_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "image_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "import_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_argument"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_content"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entity"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entry_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_export_destination"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
@@ -89,6 +92,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_runtime_dependency"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_utf8"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_scene"),
@@ -96,6 +100,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_runtime_dependency"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "recovery_required"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
@@ -105,6 +110,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "target_exists"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsafe_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_export_target"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_version"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_version")};
   const auto code = result.value("code").toString();
@@ -170,6 +176,10 @@ class Workbench final : public QMainWindow {
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
     import_ = project_menu_->addAction(QString{}, this, &Workbench::importResource);
+    export_ = project_menu_->addAction(QString{}, this, &Workbench::exportGame);
+#ifndef Q_OS_WIN
+    export_->setVisible(false);
+#endif
     clear_cache_ = project_menu_->addAction(QString{}, this, &Workbench::clearThumbnailCache);
     recover_ = project_menu_->addAction(QString{}, this, &Workbench::recoverProject);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
@@ -324,6 +334,7 @@ class Workbench final : public QMainWindow {
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
     import_->setText(tr("Import Resource…"));
+    export_->setText(tr("Export for Windows x64…"));
     clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
     close_->setText(tr("Close Project"));
@@ -415,6 +426,51 @@ class Workbench final : public QMainWindow {
                                      tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
                                      nullptr, QFileDialog::DontUseNativeDialog);
     if (!source.isEmpty()) importFile(source);
+  }
+
+  void exportGame() {
+    if (busy_ || session_ || dirty_ || !revision_) return;
+    const auto parent = QFileDialog::getExistingDirectory(
+        this, tr("Choose Export Parent"), QFileInfo(root_).absolutePath(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
+    if (parent.isEmpty()) return;
+
+    bool accepted = false;
+    const auto name =
+        QInputDialog::getText(this, tr("Export for Windows x64"),
+                              tr("New folder for revision %1").arg(*revision_), QLineEdit::Normal,
+                              project_id_ + "-win64-r" + argument(*revision_), &accepted)
+            .trimmed();
+    if (!accepted) return;
+    if (name.isEmpty() || name.contains('/') || name.contains('\\') || name.contains(':') ||
+        name == "." || name == "..") {
+      report({QT_TR_NOOP("Enter a name for a new export folder."), {}, {}, "warning"});
+      return;
+    }
+
+    const auto destination = QDir(parent).filePath(name);
+    setBusy(true);
+    setStatus(QT_TR_NOOP("Exporting revision %1…"), {argument(*revision_)});
+    bridge_.run(
+        {"project", "export", root_, argument(*revision_), "windows-x64", destination},
+        [this](const QJsonObject& result) {
+          setBusy(false);
+          if (result.value("code") != "ok") {
+            report({nullptr, {}, result});
+            return;
+          }
+          const auto path = result.value("destination").toString();
+          report({QT_TR_NOOP("Exported revision %1 · %2"),
+                  {argument(result.value("revision").toInteger()), QDir::toNativeSeparators(path)},
+                  {},
+                  "info"});
+          QMessageBox notice(QMessageBox::Information, tr("Export Complete"),
+                             tr("Open Play.exe from the exported folder to run the game."),
+                             QMessageBox::Close, this);
+          auto* show = notice.addButton(tr("Open Folder"), QMessageBox::ActionRole);
+          notice.exec();
+          if (notice.clickedButton() == show) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        });
   }
 
   void importFile(const QString& source) {
@@ -1049,6 +1105,7 @@ class Workbench final : public QMainWindow {
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
     import_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
+    export_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
     clear_cache_->setEnabled(!busy_ && revision_.has_value());
     recover_->setEnabled(!busy_ && !session_ && !dirty_ && !root_.isEmpty());
     edit_data_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
@@ -1111,6 +1168,7 @@ class Workbench final : public QMainWindow {
   QAction* create_;
   QAction* close_;
   QAction* import_;
+  QAction* export_;
   QAction* clear_cache_;
   QAction* recover_;
   QAction* edit_data_;

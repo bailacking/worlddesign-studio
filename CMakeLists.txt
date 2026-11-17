@@ -11,8 +11,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
 option(WDS_BUILD_RAYLIB_PREVIEW "Build the experimental raylib scene player" OFF)
+option(WDS_BUILD_WINDOWS_PLAYER "Build the statically linked Windows x64 export runtime" OFF)
 if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+if(WDS_BUILD_WINDOWS_PLAYER)
+  if(NOT MSVC OR NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64" OR WDS_BUILD_MODERN_STUDIO)
+    message(FATAL_ERROR "Build the Windows player in a separate MSVC x64 build with Qt disabled.")
+  endif()
+  set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
 endif()
 
 # 编译告警统一挂在接口目标上，后续引擎目标直接链接即可继承同一组规则。
@@ -49,20 +56,65 @@ target_compile_definitions(wds_png PUBLIC
   LODEPNG_NO_COMPILE_ANCILLARY_CHUNKS
 )
 
-add_library(wds_project STATIC src/platform_project.cpp src/asset_import.cpp src/scene_play.cpp)
+add_library(wds_project STATIC
+  src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/asset_import.cpp
+  src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
 target_link_libraries(wds_cli PRIVATE wds_project)
+if(WIN32)
+  set(kit_spec "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-x64-runtime.json")
+  file(READ "${kit_spec}" WDS_WINDOWS_RUNTIME_SPEC)
+  configure_file(cmake/windows-runtime-spec.hpp.in generated/windows_runtime_spec.hpp @ONLY)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${kit_spec}")
+  target_include_directories(wds_project PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  target_link_libraries(wds_project PRIVATE bcrypt)
+endif()
 
-if(WDS_BUILD_RAYLIB_PREVIEW)
+if(WDS_BUILD_RAYLIB_PREVIEW OR WDS_BUILD_WINDOWS_PLAYER)
   enable_language(C)
+  if(WDS_BUILD_WINDOWS_PLAYER)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Link the packaged raylib statically" FORCE)
+    set(PLATFORM Desktop CACHE STRING "Build the Windows desktop runtime" FORCE)
+    set(USE_EXTERNAL_GLFW OFF CACHE STRING "Use the GLFW bundled with raylib" FORCE)
+    set(OPENGL_VERSION 3.3 CACHE STRING "Graphics API for the Windows runtime" FORCE)
+    set(CUSTOMIZE_BUILD ON CACHE BOOL "Build only the raylib features used by the player" FORCE)
+    foreach(feature USE_AUDIO SUPPORT_MODULE_RAUDIO SUPPORT_MODULE_RMODELS SUPPORT_CLIPBOARD_IMAGE
+          SUPPORT_FILEFORMAT_PNG SUPPORT_FILEFORMAT_GIF SUPPORT_FILEFORMAT_QOI SUPPORT_FILEFORMAT_TTF
+          SUPPORT_FILEFORMAT_FNT SUPPORT_SCREEN_CAPTURE SUPPORT_GIF_RECORDING SUPPORT_IMAGE_EXPORT
+          SUPPORT_COMPRESSION_API SUPPORT_RPRAND_GENERATOR)
+      set(${feature} OFF CACHE BOOL "Exclude unused Windows runtime features" FORCE)
+    endforeach()
+  endif()
   include(cmake/raylib.cmake)
+endif()
+if(WDS_BUILD_RAYLIB_PREVIEW)
   add_executable(wds_player_preview src/player_preview.cpp)
   target_link_libraries(wds_player_preview PRIVATE raylib wds_project wds_compile_options)
   if(MINGW)
     target_link_options(wds_player_preview PRIVATE -municode)
   endif()
+endif()
+if(WDS_BUILD_WINDOWS_PLAYER)
+  add_executable(wds_player WIN32 src/player_preview.cpp src/player_windows.cpp)
+  target_compile_definitions(wds_player PRIVATE WDS_PACKAGED_PLAYER)
+  target_link_libraries(wds_player PRIVATE raylib wds_project wds_compile_options user32)
+  set(kit_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-player-kit.cmake")
+  set(runtime_kit "$<TARGET_FILE_DIR:wds_player>/wds-runtime/windows-x64")
+  set_property(TARGET wds_player APPEND PROPERTY LINK_DEPENDS
+    "${kit_script}" "${kit_spec}" "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/LICENSE"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann/LICENSE.MIT"
+    "${raylib_SOURCE_DIR}/LICENSE" "${raylib_SOURCE_DIR}/src/external/glfw/LICENSE.md")
+  add_custom_command(TARGET wds_player POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+      "-DPLAYER=$<TARGET_FILE:wds_player>" "-DOUTPUT=${runtime_kit}" "-DLINKER=${CMAKE_LINKER}"
+      "-DREPO=${CMAKE_CURRENT_SOURCE_DIR}" "-DRAYLIB=${raylib_SOURCE_DIR}" "-DSPEC=${kit_spec}"
+      "-DTOOLCHAIN=${CMAKE_CXX_COMPILER_VERSION}"
+      -P "${kit_script}"
+    VERBATIM)
+  install(DIRECTORY "${runtime_kit}" DESTINATION wds-runtime COMPONENT WindowsRuntime)
 endif()
 
 if(WDS_BUILD_MODERN_STUDIO)
@@ -143,6 +195,14 @@ add_executable(wds_scene_controls_test tests/scene_controls.cpp)
 target_link_libraries(wds_scene_controls_test PRIVATE wds_project wds_compile_options)
 add_test(NAME scene_controls COMMAND wds_scene_controls_test
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
+if(WDS_BUILD_WINDOWS_PLAYER)
+  add_test(NAME project_export COMMAND "${CMAKE_COMMAND}"
+    -DCLI=$<TARGET_FILE:wds_cli>
+    -DKIT=${runtime_kit}
+    -DROOT=${CMAKE_CURRENT_BINARY_DIR}/exports
+    -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/project_export.cmake")
+endif()
 add_test(
   NAME resource_import
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

@@ -46,7 +46,8 @@ void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> 
           });
   const auto action = arguments.value(1);
   if (action != "create" && action != "set-scene-field" && action != "edit-entity" &&
-      action != "recover" && action != "restore-scene" && action != "import") {
+      action != "recover" && action != "restore-scene" && action != "import" &&
+      action != "export") {
     connect(deadline, &QTimer::timeout, process, [process, timed_out] {
       *timed_out = true;
       process->kill();

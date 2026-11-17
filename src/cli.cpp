@@ -11,6 +11,7 @@
 #endif
 
 #include "platform_project.hpp"
+#include "project_export.hpp"
 #include "sandbox_rules.hpp"
 #include "voxel_content.hpp"
 #include "workspace.hpp"
@@ -118,6 +119,15 @@ int run(int argc, char** argv) {
       std::string_view(argv[2]) != "asset.rename") {
     const std::string_view action(argv[2]);
     const auto directory = path_from_utf8(argv[3]);
+    if (action == "export") {
+      std::uint64_t revision = 0;
+      const auto result =
+          argc == 7 && parse_integer(argv[4], revision)
+              ? wds::platform::export_project(directory, revision, argv[5], path_from_utf8(argv[6]))
+              : wds::platform::ExportResult{"invalid_argument", "/input"};
+      std::cout << wds::platform::export_result_json(result) << '\n';
+      return result.code == "ok" ? 0 : 1;
+    }
     const bool inspect_scene = argc == 5 && action == "scene";
     if (inspect_scene || (argc == 6 && action == "play")) {
       std::uint64_t revision = 0;
@@ -217,6 +227,7 @@ int run(int argc, char** argv) {
       std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
                    "DIRECTORY\n"
                    "       wds_cli project play DIRECTORY REVISION TICKS\n"
+                   "       wds_cli project export DIRECTORY REVISION windows-x64 DESTINATION\n"
                    "       wds_cli project scene DIRECTORY REVISION\n"
                    "       wds_cli project preview-scene-field|set-scene-field DIRECTORY ENTITY "
                    "FIELD REVISION VALUE\n"

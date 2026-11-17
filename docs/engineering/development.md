@@ -175,7 +175,25 @@ cmake --build build/scene-preview --target wds_player_preview
 ./build/scene-preview/wds_player_preview.exe examples/reef-delivery
 ```
 
-试验播放器直接读取项目文件夹，**Esc** 退出。W7 从保存修订生成可发布的产物。 [示例操作](../../examples/reef-delivery/README.md)
+试验播放器直接读取项目文件夹，**Esc** 退出。可用正式导出入口把当前修订封装成独立游戏。 [示例操作](../../examples/reef-delivery/README.md)
+
+### 导出 Windows x64 游戏
+
+在 MSVC x64 开发环境中配置单独的播放器构建目录。Qt 工作台和独立播放器分别构建。播放器套件会在链接后生成，包含实际二进制、系统依赖、插件版本和许可。
+
+```powershell
+cmake --preset dev -B build/windows-player -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_WINDOWS_PLAYER=ON
+cmake --build build/windows-player --target wds_player wds_cli
+./build/windows-player/wds_cli.exe project export examples/reef-delivery 0 windows-x64 build/reef-release
+```
+
+在 [工作台构建目录](#运行现代工作台)装上同一套件，再通过 **项目 → 导出 Windows x64** 选择项目外的父目录和新文件夹名。导出菜单在保存属性或放弃草稿、停止试玩后可用。目标文件夹已存在时会提示改名。
+
+```powershell
+cmake --install build/windows-player --prefix build/studio --component WindowsRuntime
+```
+
+复制完整导出文件夹即可转移。双击 **Play.exe** 开始，**Esc** 退出。脚本可运行 `Play.exe --check` 检查发布锁和场景装载，成功返回 0。游戏所需环境和锁内字段见 [Windows x64 发布包](../architecture/platforms.md#windows-x64-发布包)。
 
 ### 运行现代工作台
 

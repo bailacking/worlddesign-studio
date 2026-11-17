@@ -1,0 +1,83 @@
+function(export expected executable revision dest)
+  execute_process(
+    COMMAND "${executable}" project export "${source}" "${revision}" windows-x64 "${dest}"
+    RESULT_VARIABLE status OUTPUT_VARIABLE result ERROR_VARIABLE error ENCODING UTF-8)
+  string(JSON code ERROR_VARIABLE invalid GET "${result}" code)
+  if(invalid OR NOT code STREQUAL expected OR
+      (expected STREQUAL "ok" AND NOT status STREQUAL "0") OR
+      (NOT expected STREQUAL "ok" AND NOT status STREQUAL "1"))
+    message(FATAL_ERROR "Expected ${expected}: ${status} ${result} ${error}")
+  endif()
+endfunction()
+
+string(RANDOM LENGTH 12 nonce)
+set(root "${ROOT}/${nonce}")
+set(source "${root}/源 工程")
+set(bundle "${root}/试玩 成品")
+set(clean "${root}/clean")
+file(MAKE_DIRECTORY "${clean}")
+file(COPY "${EXAMPLE}/" DESTINATION "${source}")
+set(scene "${source}/assets/reef.json")
+set(manifest "${source}/wds.project.json")
+file(WRITE "${source}/assets/notes.txt" "Accessible through courier.\n")
+file(WRITE "${source}/assets/draft.txt" "Excluded from the runtime.\n")
+file(WRITE "${source}/assets/courier.png.license.txt" "Sample image notice.\n")
+file(READ "${manifest}" spec)
+string(JSON spec SET "${spec}" resources 1 refs [=[["notes"]]=])
+string(JSON spec SET "${spec}" resources 5 [=[{"id":"notes","kind":"text","path":"assets/notes.txt","refs":["wall"]}]=])
+string(JSON spec SET "${spec}" resources 6 [=[{"id":"draft","kind":"text","path":"assets/draft.txt","refs":[]}]=])
+file(WRITE "${manifest}" "${spec}\n")
+execute_process(COMMAND "${CLI}" project set-scene-field "${source}" courier x 0 -202
+  RESULT_VARIABLE edited OUTPUT_VARIABLE detail ENCODING UTF-8)
+if(NOT edited STREQUAL "0")
+  message(FATAL_ERROR "Could not prepare revision one: ${detail}")
+endif()
+file(SHA256 "${manifest}" manifest_before)
+file(SHA256 "${scene}" scene_before)
+
+file(COPY_FILE "${CLI}" "${clean}/wds_cli.exe")
+export(missing_runtime_dependency "${clean}/wds_cli.exe" 1 "${bundle}")
+file(COPY "${KIT}" DESTINATION "${clean}/wds-runtime")
+file(APPEND "${clean}/wds-runtime/windows-x64/licenses/raylib.txt" "Modified")
+export(invalid_runtime_dependency "${clean}/wds_cli.exe" 1 "${bundle}")
+export(revision_conflict "${CLI}" 0 "${bundle}")
+export(invalid_export_destination "${CLI}" 1 "${source}/unused-package")
+if(EXISTS "${bundle}" OR EXISTS "${source}/unused-package")
+  message(FATAL_ERROR "A failed export created its final destination")
+endif()
+
+export(ok "${CLI}" 1 "${bundle}")
+export(target_exists "${CLI}" 1 "${bundle}")
+file(READ "${bundle}/wds.release.json" lock)
+file(READ "${bundle}/game/wds.project.json" packaged_project)
+string(JSON revision GET "${lock}" revision)
+string(JSON count LENGTH "${packaged_project}" resources)
+if(NOT revision EQUAL 1 OR NOT count EQUAL 6 OR EXISTS "${bundle}/game/assets/draft.txt" OR
+    EXISTS "${bundle}/game/README.md" OR NOT EXISTS "${bundle}/game/assets/notes.txt" OR
+    NOT EXISTS "${bundle}/licenses/assets/courier/notice.txt" OR
+    NOT EXISTS "${bundle}/licenses/project.txt")
+  message(FATAL_ERROR "Unexpected published revision or resource closure: ${packaged_project}")
+endif()
+file(SHA256 "${manifest}" manifest_after)
+file(SHA256 "${scene}" scene_after)
+file(SHA256 "${bundle}/game/assets/reef.json" released_scene)
+if(NOT manifest_before STREQUAL manifest_after OR NOT scene_before STREQUAL scene_after OR
+    NOT released_scene STREQUAL scene_before)
+  message(FATAL_ERROR "Export changed source bytes or copied a different scene")
+endif()
+file(GLOB stages "${root}/.wds-export-*")
+if(stages)
+  message(FATAL_ERROR "Export left temporary output: ${stages}")
+endif()
+
+function(check_package expected)
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env "PATH=$ENV{SystemRoot}/System32" "${bundle}/Play.exe" --check
+    WORKING_DIRECTORY "${clean}" RESULT_VARIABLE status TIMEOUT 10)
+  if(NOT status STREQUAL "${expected}")
+    message(FATAL_ERROR "Player startup check returned ${status}, expected ${expected}")
+  endif()
+endfunction()
+check_package(0)
+file(APPEND "${bundle}/game/assets/notes.txt" "Asset changed after export.\n")
+check_package(1)
