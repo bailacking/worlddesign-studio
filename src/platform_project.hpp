@@ -97,6 +97,9 @@ struct VoxelScene {
   voxel::World world;
   SceneChange source;
   std::uint64_t revision;
+  std::optional<items::Workshop> workshop{};
+
+  bool edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place);
 };
 
 struct SceneResult {

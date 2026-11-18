@@ -168,6 +168,7 @@ void SceneSession::restart() {
   state_.entities = initial_entities_;
   state_.ticks = 0;
   state_.outcome = SceneOutcome::playing;
+  if (workshop_) workshop_->reset();
   if (terrain_) {
     const auto& player = state_.entities[controls_->player];
     terrain_->stream(TileWorld::cell(player.x, player.y));
@@ -176,6 +177,21 @@ void SceneSession::restart() {
     state_.behavior_state = behavior_->initial_state;
     dispatch_behavior(behavior::Event::start);
   }
+}
+
+std::string_view SceneSession::work(const items::Action& action,
+                                    const std::vector<std::string>& grid) {
+  if (!workshop_) return "missing_workshop";
+  if (action.type == "gather") {
+    const auto source = std::ranges::find(state_.entities, action.id, &SceneEntity::id);
+    if (source == state_.entities.end() || !workshop_->catalog().sources.contains(action.id))
+      return "unknown_source";
+    const auto& player = state_.entities[controls_->player];
+    const auto dx = source->x - player.x;
+    const auto dy = source->y - player.y;
+    if (dx * dx + dy * dy > 36 * 36) return "source_out_of_reach";
+  }
+  return workshop_->apply(action, grid);
 }
 
 void SceneSession::dispatch_behavior(behavior::Event event) {

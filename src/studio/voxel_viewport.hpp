@@ -9,12 +9,16 @@
 
 #include "voxel_world.hpp"
 
+namespace wds::platform {
+struct VoxelScene;
+}
+
 namespace wds::studio {
 
 class VoxelViewport final : public QWidget {
  public:
   explicit VoxelViewport(std::function<void()> changed, QWidget* parent = nullptr);
-  void setWorld(voxel::World* world, bool reset_camera = true);
+  void setWorld(platform::VoxelScene* scene, bool reset_camera = true);
   void clearInput();
 
  protected:
@@ -30,6 +34,7 @@ class VoxelViewport final : public QWidget {
   void invalidateFrame();
 
   std::function<void()> changed_;
+  platform::VoxelScene* scene_ = nullptr;
   voxel::World* world_ = nullptr;
   voxel::Player player_;
   QImage frame_;

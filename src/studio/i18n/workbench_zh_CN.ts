@@ -888,4 +888,91 @@
             <translation>WASD 移动 · 方向键转头 · 空格跳跃 · 左键破坏 · 右键放置</translation>
         </message>
     </context>
+    <context>
+        <name>WorkshopDialog</name>
+        <message>
+            <source>Items and recipes</source>
+            <translation>物品与配方</translation>
+        </message>
+        <message>
+            <source>Bag</source>
+            <translation>背包</translation>
+        </message>
+        <message>
+            <source>Chest</source>
+            <translation>箱子</translation>
+        </message>
+        <message>
+            <source>Drops</source>
+            <translation>掉落</translation>
+        </message>
+        <message>
+            <source>Action</source>
+            <translation>操作</translation>
+        </message>
+        <message>
+            <source>Run</source>
+            <translation>执行</translation>
+        </message>
+        <message>
+            <source>Gather %1</source>
+            <translation>采集 %1</translation>
+        </message>
+        <message>
+            <source>Pick up %1</source>
+            <translation>拾取 %1</translation>
+        </message>
+        <message>
+            <source>Store one %1</source>
+            <translation>存入 1 个 %1</translation>
+        </message>
+        <message>
+            <source>Take one %1</source>
+            <translation>取出 1 个 %1</translation>
+        </message>
+        <message>
+            <source>Smelt %1</source>
+            <translation>熔炼 %1</translation>
+        </message>
+        <message>
+            <source>Cook %1</source>
+            <translation>烹饪 %1</translation>
+        </message>
+        <message>
+            <source>Craft %1</source>
+            <translation>合成 %1</translation>
+        </message>
+        <message>
+            <source>Done.</source>
+            <translation>已完成。</translation>
+        </message>
+        <message>
+            <source>Move closer to the source.</source>
+            <translation>请靠近采集点。</translation>
+        </message>
+        <message>
+            <source>Source depleted.</source>
+            <translation>采集点已用尽。</translation>
+        </message>
+        <message>
+            <source>Container full.</source>
+            <translation>容器已满。</translation>
+        </message>
+        <message>
+            <source>Station locked.</source>
+            <translation>工作设施或配方尚未解锁。</translation>
+        </message>
+        <message>
+            <source>Missing ingredients.</source>
+            <translation>材料不足。</translation>
+        </message>
+        <message>
+            <source>%1 → %2 × %3</source>
+            <translation>%1 → %2 × %3</translation>
+        </message>
+        <message>
+            <source>Requires %1</source>
+            <translation>需要 %1</translation>
+        </message>
+    </context>
 </TS>

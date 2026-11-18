@@ -144,8 +144,73 @@ void draw_tiles(const TileWorld& terrain, float scale, float left, float top, bo
   }
 }
 
+std::string_view workshop_feedback(std::string_view code) {
+  if (code == "ok") return "Done.";
+  if (code == "source_out_of_reach") return "Move closer to the source.";
+  if (code == "source_empty") return "Source depleted.";
+  if (code == "container_full") return "Container full.";
+  if (code == "station_locked") return "Station or recipe locked.";
+  if (code == "missing_ingredients") return "Missing ingredients.";
+  return code;
+}
+
+struct WorkshopPanel {
+  bool open = false;
+  std::size_t selected = 0;
+  std::string result;
+
+  void step(SceneSession& session) {
+    const auto options = session.workshop()->actions(true);
+    if (options.empty()) return;
+    selected = std::min(selected, options.size() - 1);
+    if (IsKeyPressed(KEY_UP) && selected > 0) --selected;
+    if (IsKeyPressed(KEY_DOWN) && selected + 1 < options.size()) ++selected;
+    if (IsKeyPressed(KEY_ENTER)) result = workshop_feedback(session.work(options[selected]));
+  }
+
+  void paint(const items::Workshop& workshop) const {
+    const auto left = 24;
+    const auto top = 46;
+    const auto width = GetScreenWidth() - 48;
+    const auto height = GetScreenHeight() - 92;
+    DrawRectangle(left, top, width, height, {16, 21, 31, 248});
+    DrawText("Items and recipes", left + 12, top + 10, 18, RAYWHITE);
+    DrawText("Up/Down: select    Enter: run    Tab: close", left + 12, top + 32, 12, LIGHTGRAY);
+    const auto inventory = [&](const char* title, const items::Container& items, int x) {
+      DrawText(title, x, top + 55, 14, RAYWHITE);
+      const auto lines =
+          std::min(items.size(), static_cast<std::size_t>(std::max(0, (height - 190) / 35)));
+      for (std::size_t i = 0; i < lines; ++i) {
+        const auto& stack = items[i];
+        const auto label = stack.id + " x" + std::to_string(stack.count);
+        DrawText(label.c_str(), x, top + 75 + static_cast<int>(i) * 14, 11, LIGHTGRAY);
+      }
+      if (items.size() > lines)
+        DrawText(TextFormat("+%d more slots", static_cast<int>(items.size() - lines)), x,
+                 top + 75 + static_cast<int>(lines) * 14, 10, LIGHTGRAY);
+    };
+    const auto& state = workshop.state();
+    inventory("Bag", state.bag, left + 12);
+    inventory("Chest", state.chest, left + width / 3);
+    inventory("Drops", state.loot, left + 2 * width / 3);
+    const auto options = workshop.actions(true);
+    if (!options.empty()) {
+      const auto current = std::min(selected, options.size() - 1);
+      const auto& action = options[current];
+      const bool recipe = action.type == "recipe";
+      const auto label = (recipe ? workshop.catalog().recipes.at(action.id).method : action.type) +
+                         "  " + action.id;
+      DrawText(label.c_str(), left + 12, top + height - 60, 18, SKYBLUE);
+      DrawText(
+          TextFormat("%d / %d", static_cast<int>(current + 1), static_cast<int>(options.size())),
+          left + 12, top + height - 39, 12, LIGHTGRAY);
+    }
+    if (!result.empty()) DrawText(result.c_str(), left + 12, top + height - 21, 12, RAYWHITE);
+  }
+};
+
 void draw(const SceneSession& session, const Sprites& sprites, const SceneBounds& bounds,
-          const char* status, const std::string& controls_hint) {
+          const char* status, const std::string& controls_hint, const WorkshopPanel& workshop) {
   const auto& scene = session.snapshot();
   const auto& terrain = session.terrain();
   const auto width = static_cast<float>(GetScreenWidth());
@@ -187,6 +252,10 @@ void draw(const SceneSession& session, const Sprites& sprites, const SceneBounds
   const auto hint_size = MeasureText(hint, 16) > GetScreenWidth() - 132 ? 13 : 16;
   DrawText(hint, 20, GetScreenHeight() - 30, hint_size, LIGHTGRAY);
   DrawText("Esc: quit", GetScreenWidth() - 100, GetScreenHeight() - 30, 16, LIGHTGRAY);
+  if (session.workshop()) {
+    DrawText("Tab: items", 20, GetScreenHeight() - 52, 14, LIGHTGRAY);
+    if (workshop.open) workshop.paint(*session.workshop());
+  }
   EndDrawing();
 }
 
@@ -214,6 +283,7 @@ bool play_scene(SceneSession& session, const char* title) {
       bool had_focus = false;
       bool started = !snapshot.interactive;
       SceneInput blocked;
+      WorkshopPanel workshop;
       std::string_view previous_status;
       while (!WindowShouldClose()) {
         const auto now = Clock::now();
@@ -224,7 +294,13 @@ bool play_scene(SceneSession& session, const char* title) {
           const auto keys = read_keys();
           // Keys held across a focus change need a release before they can move again.
           blocked = had_focus ? blocked & keys : keys;
-          if (had_focus) {
+          if (session.workshop() && IsKeyPressed(KEY_TAB)) {
+            workshop.open = !workshop.open;
+            blocked = keys;
+          }
+          if (workshop.open) {
+            workshop.step(session);
+          } else if (had_focus) {
             const auto input = keys & ~blocked;
             const bool terminal = snapshot.outcome != SceneOutcome::playing ||
                                   snapshot.ticks == SceneSession::max_ticks;
@@ -249,7 +325,7 @@ bool play_scene(SceneSession& session, const char* title) {
           SetWindowTitle(caption.c_str());
           previous_status = status;
         }
-        draw(session, sprites, bounds, status, controls.hint);
+        draw(session, sprites, bounds, status, controls.hint, workshop);
       }
     }
   }

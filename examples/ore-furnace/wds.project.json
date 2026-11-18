@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "project_id": "ore-furnace",
+  "revision": 0,
+  "entry_scene": "intro",
+  "resources": [
+    {
+      "id": "intro",
+      "kind": "scene",
+      "path": "assets/intro.json",
+      "refs": [
+        "ore-palette"
+      ]
+    },
+    {
+      "id": "ore-palette",
+      "kind": "text",
+      "path": "assets/ore-palette.txt",
+      "refs": []
+    }
+  ]
+}

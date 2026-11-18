@@ -48,6 +48,7 @@
 #include "theme/theme.hpp"
 #include "viewport.hpp"
 #include "voxel_viewport.hpp"
+#include "workshop_dialog.hpp"
 
 namespace wds::studio {
 namespace {
@@ -212,6 +213,8 @@ class Workbench final : public QMainWindow {
     play_->setShortcut(QKeySequence(Qt::Key_F5));
     stop_ = scene_menu_->addAction(QString{}, this, &Workbench::stop);
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
+    workshop_ = scene_menu_->addAction(QString{}, this, &Workbench::openWorkshop);
+    workshop_->setShortcut(QKeySequence(Qt::Key_F6));
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
     settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
@@ -223,7 +226,7 @@ class Workbench final : public QMainWindow {
     toolbar_->addSeparator();
     toolbar_->addActions({undo_, redo_});
     toolbar_->addSeparator();
-    toolbar_->addActions({play_, stop_});
+    toolbar_->addActions({play_, stop_, workshop_});
     toolbar_->addSeparator();
     project_label_ = new QLabel(toolbar_);
     toolbar_->addWidget(project_label_);
@@ -371,6 +374,7 @@ class Workbench final : public QMainWindow {
     move_up_->setText(tr("Move Entity Up"));
     move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
+    workshop_->setText(QCoreApplication::translate("WorkshopDialog", "Items and recipes"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
     hierarchy_->setWindowTitle(tr("Scene"));
@@ -756,7 +760,7 @@ class Workbench final : public QMainWindow {
       auto loaded = platform::start_scene(projectPath(), *revision_, true);
       if (loaded.voxel_scene) {
         voxel_scene_ = std::move(loaded.voxel_scene);
-        voxel_view_->setWorld(&voxel_scene_->world, !keep_camera);
+        voxel_view_->setWorld(&*voxel_scene_, !keep_camera);
       } else {
         result =
             QJsonDocument::fromJson(QByteArray::fromStdString(platform::scene_result_json(loaded)))
@@ -1121,6 +1125,22 @@ class Workbench final : public QMainWindow {
                     });
   }
 
+  void openWorkshop() {
+    if (busy_) return;
+    if (voxel_scene_ && voxel_scene_->workshop) {
+      auto& workshop = *voxel_scene_->workshop;
+      if (show_workshop(this, workshop, false,
+                        [&](const items::Action& action) { return workshop.apply(action); }))
+        voxel_dirty_ = true;
+      voxel_view_->setFocus(Qt::OtherFocusReason);
+      updateActions();
+    } else if (session_ && session_->workshop()) {
+      show_workshop(this, *session_->workshop(), true,
+                    [&](const items::Action& action) { return session_->work(action); });
+      viewport_->setFocus(Qt::OtherFocusReason);
+    }
+  }
+
   void play() {
     if (busy_ || dirty_ || !revision_ || !scene_ready_) return;
     auto result = platform::start_scene(projectPath(), static_cast<std::uint64_t>(*revision_));
@@ -1270,6 +1290,8 @@ class Workbench final : public QMainWindow {
     move_down_->setEnabled(structure_editable && index >= 0 && index + 1 < entities_.size());
     play_->setEnabled(scene_ready_ && !busy_ && !session_ && !dirty_ && revision_.has_value());
     stop_->setEnabled(session_.has_value());
+    workshop_->setEnabled(
+        !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
     project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
     const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
     revision_label_->setText(revision + (hasDraft() ? tr(" · Unsaved") : QString{}));
@@ -1329,6 +1351,7 @@ class Workbench final : public QMainWindow {
   QAction* revert_;
   QAction* play_;
   QAction* stop_;
+  QAction* workshop_;
   QAction* add_entity_;
   QAction* copy_entity_;
   QAction* remove_entity_;

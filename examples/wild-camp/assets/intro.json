@@ -1,0 +1,221 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "player",
+      "x": -72,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      },
+      "sprite": "hiker"
+    },
+    {
+      "id": "twigs",
+      "x": -55,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      },
+      "sprite": "stem"
+    },
+    {
+      "id": "stones",
+      "x": -12,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      },
+      "sprite": "rock"
+    },
+    {
+      "id": "berry-bush",
+      "x": 24,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      },
+      "sprite": "berries"
+    },
+    {
+      "id": "exit",
+      "x": 236,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      },
+      "sprite": "trail"
+    }
+  ],
+  "play": {
+    "player": "player",
+    "speed": 8,
+    "walls": [],
+    "goals": [
+      "exit"
+    ],
+    "hazards": []
+  },
+  "workshop": {
+    "version": 1,
+    "bag_slots": 6,
+    "chest_slots": 1,
+    "items": {
+      "twig": {
+        "tags": [
+          "fuel",
+          "wood"
+        ],
+        "limit": 8
+      },
+      "pebble": {
+        "tags": [
+          "masonry"
+        ],
+        "limit": 8
+      },
+      "berry": {
+        "tags": [
+          "forage"
+        ],
+        "limit": 8
+      },
+      "campfire": {
+        "tags": [
+          "facility"
+        ],
+        "limit": 1
+      },
+      "stew": {
+        "tags": [
+          "food"
+        ],
+        "limit": 8
+      },
+      "lantern": {
+        "tags": [
+          "tool"
+        ],
+        "limit": 1
+      }
+    },
+    "recipes": {
+      "build-campfire": {
+        "method": "craft",
+        "output": {
+          "item": "campfire",
+          "count": 1
+        },
+        "ingredients": [
+          {
+            "item": "#wood",
+            "count": 1
+          },
+          {
+            "item": "#masonry",
+            "count": 2
+          }
+        ],
+        "unlocks": "hearth"
+      },
+      "cook-berries": {
+        "method": "cook",
+        "output": {
+          "item": "stew",
+          "count": 1
+        },
+        "ingredients": [
+          {
+            "item": "berry",
+            "count": 2
+          },
+          {
+            "item": "#fuel",
+            "count": 1
+          }
+        ],
+        "station": "hearth",
+        "unlocks": "meal-lesson"
+      },
+      "make-lantern": {
+        "method": "craft",
+        "output": {
+          "item": "lantern",
+          "count": 1
+        },
+        "ingredients": [
+          {
+            "item": "#fuel",
+            "count": 1
+          }
+        ],
+        "station": "meal-lesson"
+      }
+    },
+    "sources": {
+      "twigs": {
+        "yield": {
+          "item": "twig",
+          "count": 2
+        },
+        "uses": 2
+      },
+      "stones": {
+        "yield": {
+          "item": "pebble",
+          "count": 2
+        },
+        "uses": 1
+      },
+      "berry-bush": {
+        "yield": {
+          "item": "berry",
+          "count": 2
+        },
+        "uses": 1
+      }
+    }
+  },
+  "terrain": {
+    "seed": 17417,
+    "day_ticks": 480,
+    "day_start": 240,
+    "tiles": [
+      {
+        "x": -4,
+        "y": 3,
+        "kind": "canopy"
+      },
+      {
+        "x": -3,
+        "y": 3,
+        "kind": "canopy"
+      },
+      {
+        "x": 0,
+        "y": -3,
+        "kind": "canopy"
+      },
+      {
+        "x": 1,
+        "y": -3,
+        "kind": "canopy"
+      },
+      {
+        "x": 5,
+        "y": 2,
+        "kind": "canopy"
+      },
+      {
+        "x": 6,
+        "y": 2,
+        "kind": "canopy"
+      }
+    ]
+  }
+}

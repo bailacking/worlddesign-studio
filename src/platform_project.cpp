@@ -4,6 +4,7 @@
 #include "behavior_document.hpp"
 #include "project_io.hpp"
 #include "project_operations.hpp"
+#include "workshop_document.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -348,7 +349,8 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
                         std::optional<SceneControls>* controls = nullptr,
                         std::optional<behavior::Program>* program = nullptr,
                         std::optional<VelocityBinding>* binding = nullptr,
-                        std::optional<TileWorld>* terrain = nullptr) {
+                        std::optional<TileWorld>* terrain = nullptr,
+                        std::optional<items::Workshop>* workshop = nullptr) {
   // Older projects use an empty object for a new scene.
   if (json.is_object() && json.empty()) return {"ok"};
   if (!json.is_object() || !json.contains("format_version") ||
@@ -356,7 +358,8 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
     return {"invalid_scene", "/format_version"};
   if (json["format_version"] != 1) return {"unsupported_scene_version", "/format_version"};
   if (!json.contains("entities") ||
-      json.size() != 2U + json.count("play") + json.count("behavior") + json.count("terrain"))
+      json.size() != 2U + json.count("play") + json.count("behavior") + json.count("terrain") +
+                         json.count("workshop"))
     return {"invalid_scene", "/"};
   const auto& entities = json["entities"];
   if (!entities.is_array()) return {"invalid_scene", "/entities"};
@@ -409,6 +412,18 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
     auto result = parse_tiles(json["terrain"], output, config, terrain);
     if (result.code != "ok") return result;
   }
+  if (json.contains("workshop")) {
+    if (!config) return {"invalid_workshop", "/play"};
+    auto loaded = items::read_workshop(json["workshop"], false);
+    if (!loaded.workshop) return {"invalid_workshop", loaded.location};
+    for (const auto& entry : loaded.workshop->catalog().sources) {
+      const auto& id = entry.first;
+      const auto entity = std::ranges::find(output, id, &SceneEntity::id);
+      if (entity == output.end() || entity->role != SceneRole::none)
+        return {"invalid_workshop", "/workshop/sources/" + id};
+    }
+    if (workshop) *workshop = std::move(loaded.workshop);
+  }
   if (controls) *controls = std::move(config);
   if (json.contains("behavior"))
     return parse_scene_behavior(json["behavior"], output, program, binding);
@@ -419,9 +434,10 @@ bool is_voxel_scene(const Json& json) {
   return json.is_object() && json.contains("kind") && json["kind"] == "voxel";
 }
 
-FieldResult parse_voxel_scene(const Json& json, voxel::World& world) {
+FieldResult parse_voxel_scene(const Json& json, voxel::World& world,
+                              std::optional<items::Workshop>* workshop = nullptr) {
   if (!json.contains("format_version") || !json.contains("materials") ||
-      json.size() != 3U + json.count("world") + json.count("terrain"))
+      json.size() != 3U + json.count("world") + json.count("terrain") + json.count("workshop"))
     return {"invalid_scene", "/"};
   if (!json["format_version"].is_number_integer() || json["format_version"] != 1)
     return {"unsupported_scene_version", "/format_version"};
@@ -433,6 +449,11 @@ FieldResult parse_voxel_scene(const Json& json, voxel::World& world) {
     const auto seed = integer(terrain["seed"]);
     if (!seed || *seed < 0 || *seed > UINT32_MAX) return {"invalid_voxel_world", "/terrain/seed"};
     world.use_seed(static_cast<std::uint32_t>(*seed));
+  }
+  if (json.contains("workshop")) {
+    auto loaded = items::read_workshop(json["workshop"], true);
+    if (!loaded.workshop) return {"invalid_workshop", loaded.location};
+    if (workshop) *workshop = std::move(loaded.workshop);
   }
   if (!json.contains("world")) return {"ok"};
   if (!json["world"].is_string()) return {"invalid_voxel_world", "/world"};
@@ -777,7 +798,8 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
       if (!allow_voxel)
         return {std::nullopt, "unsupported_scene_kind", "/kind", scene.path, project.revision};
       voxel::World initial;
-      const auto checked = parse_voxel_scene(json, initial);
+      std::optional<items::Workshop> workshop;
+      const auto checked = parse_voxel_scene(json, initial, &workshop);
       if (checked.code != "ok")
         return {std::nullopt, checked.code, checked.location, scene.path, project.revision};
       const auto& id = json["materials"].get_ref<const std::string&>();
@@ -802,11 +824,12 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
               project.revision,
               VoxelScene{std::move(initial),
                          {project.id, scene.id, scene.path, *bytes, {}},
-                         project.revision}};
+                         project.revision,
+                         std::move(workshop)}};
     }
     const auto parsed =
         parse_scene(json, session.state_.entities, &session.controls_, &session.behavior_,
-                    &session.velocity_binding_, &session.terrain_);
+                    &session.velocity_binding_, &session.terrain_, &session.workshop_);
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
     session.state_.interactive = session.controls_.has_value();
@@ -1023,22 +1046,40 @@ FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::str
   return replace_scene_source(root, revision, change);
 }
 
+bool VoxelScene::edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place) {
+  if (!workshop) return world.edit(feet, eye, direction, place);
+  const auto block = place ? world.content().placement : world.cast(eye, direction, 7).block;
+  const auto& sources = workshop->catalog().sources;
+  const auto mapped = sources.find(voxel::block_name(block));
+  if (mapped == sources.end()) return !place && world.edit(feet, eye, direction, false);
+  const auto& yield = mapped->second.yield;
+  if (place ? !workshop->has_item(yield.id, yield.count) : !workshop->can_drop(yield)) return false;
+  if (!world.edit(feet, eye, direction, place)) return false;
+  if (place)
+    workshop->consume(yield.id, yield.count);
+  else
+    workshop->drop(yield);
+  return true;
+}
+
 FieldResult prepare_voxel_save(const VoxelScene& scene) {
   auto change = scene.source;
   auto json = parse_json(change.before);
   if (!is_voxel_scene(json)) return {"unsupported_scene_kind", "/kind"};
   voxel::World original;
-  const auto checked = parse_voxel_scene(json, original);
+  std::optional<items::Workshop> initial_workshop;
+  const auto checked = parse_voxel_scene(json, original, &initial_workshop);
   if (checked.code != "ok") return checked;
   std::ostringstream before, after;
   original.write(before);
   scene.world.write(after);
-  if (after.str() == before.str()) {
-    change.after = change.before;
-  } else {
-    json["world"] = std::move(after).str();
-    change.after = json.dump(2) + "\n";
-  }
+  const bool world_changed = after.str() != before.str();
+  if (scene.workshop.has_value() != initial_workshop.has_value())
+    return {"invalid_workshop", "/workshop"};
+  const bool item_changed = scene.workshop && scene.workshop->state() != initial_workshop->state();
+  if (world_changed) json["world"] = std::move(after).str();
+  if (item_changed) json["workshop"]["progress"] = items::state_json(scene.workshop->state());
+  change.after = world_changed || item_changed ? json.dump(2) + "\n" : change.before;
   return {"ok", "/", scene.revision, {}, {}, change.before != change.after, std::move(change)};
 }
 
@@ -1538,6 +1579,7 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
                 {"scene_id", voxel.source.scene_id}};
     if (const auto& terrain = voxel.world.terrain())
       output["terrain"] = {{"seed", terrain->seed()}, {"loaded_chunks", terrain->loaded()}};
+    if (voxel.workshop) output["workshop"] = items::state_json(voxel.workshop->state());
     return output.dump();
   }
   if (!result.session) {
@@ -1562,6 +1604,10 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
               {"entities", std::move(entities)}};
   if (scene.interactive) output["outcome"] = outcome_name(scene.outcome);
   if (scene.behavior_state) output["behavior_state"] = *scene.behavior_state;
+  if (const auto& workshop = result.session->workshop()) {
+    output["workshop"] = items::state_json(workshop->state());
+    output["workshop"]["gathered"] = workshop->state().gathered;
+  }
   if (const auto& terrain = result.session->terrain()) {
     const auto chunk = terrain->chunk();
     output["terrain"] = {{"seed", terrain->seed()},
@@ -1647,7 +1693,7 @@ Json build_operation_specs() {
         "scene_too_large", "duplicate_entity_id", "invalid_sprite", "invalid_png",
         "image_too_large", "source_too_large", "unsupported_scene_kind", "invalid_behavior",
         "behavior_too_large", "unsupported_behavior", "duplicate_behavior_value",
-        "unknown_behavior_value", "unknown_behavior_state", "invalid_terrain"})
+        "unknown_behavior_value", "unknown_behavior_state", "invalid_terrain", "invalid_workshop"})
     scene_errors.push_back(code);
   add("project.play", "project play DIRECTORY REVISION TICKS", false,
       {{"directory", "path"},

@@ -59,7 +59,7 @@ target_compile_definitions(wds_png PUBLIC
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
   src/asset_import.cpp
-  src/behavior.cpp src/tile_world.cpp src/scene_play.cpp)
+  src/behavior.cpp src/tile_world.cpp src/workshop.cpp src/workshop_document.cpp src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
@@ -132,6 +132,7 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/theme/theme.cpp
     src/studio/viewport.cpp
     src/studio/voxel_viewport.cpp
+    src/studio/workshop_dialog.cpp
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
   target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
@@ -192,6 +193,14 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_executable(wds_workshop_test tests/workshop_projects.cpp)
+target_link_libraries(wds_workshop_test PRIVATE wds_project wds_compile_options)
+add_test(NAME workshop_projects COMMAND "${CMAKE_COMMAND}"
+  -DPROBE=$<TARGET_FILE:wds_workshop_test>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/workshop-projects
+  -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_projects.cmake")
+
 add_executable(wds_w13_probe tests/seeded_worlds.cpp)
 target_link_libraries(wds_w13_probe PRIVATE wds_project wds_compile_options)
 add_test(NAME seeded_worlds COMMAND "${CMAKE_COMMAND}"

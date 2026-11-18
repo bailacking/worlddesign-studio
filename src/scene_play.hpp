@@ -12,6 +12,7 @@
 
 #include "behavior.hpp"
 #include "tile_world.hpp"
+#include "workshop.hpp"
 
 namespace wds::platform {
 
@@ -97,6 +98,8 @@ class SceneSession {
   const std::vector<SceneSprite>& sprites() const { return sprites_; }
   const std::optional<SceneControls>& controls() const { return controls_; }
   const std::optional<TileWorld>& terrain() const { return terrain_; }
+  const std::optional<items::Workshop>& workshop() const { return workshop_; }
+  std::string_view work(const items::Action& action, const std::vector<std::string>& grid = {});
   bool advance(std::uint64_t ticks, const SceneInput& input = {});
   void restart();
 
@@ -113,6 +116,7 @@ class SceneSession {
   std::vector<SceneSprite> sprites_;
   std::optional<behavior::Program> behavior_;
   std::optional<TileWorld> terrain_;
+  std::optional<items::Workshop> workshop_;
   std::optional<VelocityBinding> velocity_binding_;
 };
 

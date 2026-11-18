@@ -4,6 +4,7 @@
   "target": "windows-x64",
   "behavior_format": 1,
   "terrain_format": 1,
+  "workshop_format": 1,
   "minimum_environment": {
     "os": "Windows 10 x64",
     "graphics": "OpenGL 3.3"

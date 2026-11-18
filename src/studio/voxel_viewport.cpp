@@ -9,6 +9,7 @@
 #include <numbers>
 #include <utility>
 
+#include "platform_project.hpp"
 #include "theme/theme.hpp"
 
 namespace wds::studio {
@@ -44,8 +45,9 @@ VoxelViewport::VoxelViewport(std::function<void()> changed, QWidget* parent)
   connect(&timer_, &QTimer::timeout, this, &VoxelViewport::tick);
 }
 
-void VoxelViewport::setWorld(voxel::World* world, bool reset_camera) {
-  world_ = world;
+void VoxelViewport::setWorld(platform::VoxelScene* scene, bool reset_camera) {
+  scene_ = scene;
+  world_ = scene ? &scene->world : nullptr;
   if (reset_camera) player_ = {};
   if (world_) {
     world_->stream(player_.feet);
@@ -110,7 +112,7 @@ void VoxelViewport::mousePressEvent(QMouseEvent* event) {
     return;
   }
   setFocus(Qt::MouseFocusReason);
-  if (world_->edit(player_.feet, player_.eye(), player_.view(),
+  if (scene_->edit(player_.feet, player_.eye(), player_.view(),
                    event->button() == Qt::RightButton)) {
     invalidateFrame();
     changed_();
