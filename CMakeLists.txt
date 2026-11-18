@@ -10,13 +10,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
+option(WDS_BUILD_W15_LAB "Build the W15 loopback server and layer preview" OFF)
 option(WDS_BUILD_RAYLIB_PREVIEW "Build the experimental raylib scene player" OFF)
 option(WDS_BUILD_WINDOWS_PLAYER "Build the statically linked Windows x64 export runtime" OFF)
-if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO)
+if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO AND NOT WDS_BUILD_W15_LAB)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 if(WDS_BUILD_WINDOWS_PLAYER)
-  if(NOT MSVC OR NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64" OR WDS_BUILD_MODERN_STUDIO)
+  if(NOT MSVC OR NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64" OR WDS_BUILD_MODERN_STUDIO OR WDS_BUILD_W15_LAB)
     message(FATAL_ERROR "Build the Windows player in a separate MSVC x64 build with Qt disabled.")
   endif()
   set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
@@ -59,7 +60,8 @@ target_compile_definitions(wds_png PUBLIC
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
   src/asset_import.cpp
-  src/behavior.cpp src/tile_world.cpp src/workshop.cpp src/workshop_document.cpp src/scene_play.cpp)
+  src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/workshop.cpp src/workshop_document.cpp
+  src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
@@ -154,6 +156,23 @@ if(WDS_BUILD_MODERN_STUDIO)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
     set_tests_properties(workbench_smoke workbench_voxel_smoke PROPERTIES
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
+  endif()
+endif()
+
+if(WDS_BUILD_W15_LAB)
+  find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Network)
+  add_executable(wds_w15_server examples/w15-lab/server.cpp examples/w15-lab/campaign.cpp)
+  target_link_libraries(wds_w15_server PRIVATE Qt6::Network wds_project wds_compile_options)
+  target_include_directories(wds_w15_server SYSTEM PRIVATE third_party/nlohmann)
+  qt_add_executable(wds_w15_layers WIN32 examples/w15-lab/layers.cpp)
+  target_link_libraries(wds_w15_layers PRIVATE Qt6::Widgets wds_compile_options)
+  find_package(Python3 3.10 QUIET COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME w15_runtime_lab COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/w15-lab/probe.py"
+      --cli $<TARGET_FILE:wds_cli> --server $<TARGET_FILE:wds_w15_server>
+      --layers $<TARGET_FILE:wds_w15_layers> --output "${CMAKE_CURRENT_BINARY_DIR}/w15-evidence")
+    set_tests_properties(w15_runtime_lab PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
   endif()
 endif()
 

@@ -1046,7 +1046,8 @@ FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::str
   return replace_scene_source(root, revision, change);
 }
 
-bool VoxelScene::edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place) {
+bool edit_voxel(voxel::World& world, items::Workshop* workshop, voxel::Vec3 feet, voxel::Vec3 eye,
+                voxel::Vec3 direction, bool place) {
   if (!workshop) return world.edit(feet, eye, direction, place);
   const auto block = place ? world.content().placement : world.cast(eye, direction, 7).block;
   const auto& sources = workshop->catalog().sources;
@@ -1060,6 +1061,10 @@ bool VoxelScene::edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, 
   else
     workshop->drop(yield);
   return true;
+}
+
+bool VoxelScene::edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place) {
+  return edit_voxel(world, workshop ? &*workshop : nullptr, feet, eye, direction, place);
 }
 
 FieldResult prepare_voxel_save(const VoxelScene& scene) {
@@ -1658,6 +1663,12 @@ Json build_operation_specs() {
   add("project.index", "project index DIRECTORY [REVISION]", false,
       {{"directory", "path"}, {"expected_revision", "optional integer"}}, index_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  add("circuit.replay", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"ticks", "integer 1 through 256"},
+       {"nodes", "signal nodes by ID"},
+       {"events", "lever changes by tick"}},
+      {"invalid_circuit", "invalid_argument"});
   add("behavior.convert", "project request DIRECTORY", false,
       {{"directory", "path"},
        {"from", "code | graph"},

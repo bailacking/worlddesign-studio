@@ -28,6 +28,7 @@
 | 操作发现、CLI 和工作台调用 | `src/cli.cpp`、`project_operations_json()`、`src/studio/bridge.*`。公共入口负责参数与结果，调用方在项目服务中复用业务规则 | [操作与状态](../architecture/commands.md) |
 | 工作台状态、视觉与交互 | `src/studio/main.cpp` 装配窗口；`src/studio/theme/` 管全局主题和通用控件；`scene_tree`、`resource_panel`、`output_panel`、`viewport` 管各自交互；`i18n/` 管语言 | [桌面工作台](../architecture/workbench.md#组件与交互规范) |
 | 运行时与方块样例 | `src/platform_project.*` 装载指定修订，`src/scene_play.*` 推进二维会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 红石逻辑步与局域网前期验证 | `src/signal_circuit.*` 和 `examples/w15-lab/`，复跑信号顺序、服务端提交与分层换装 | [W15 试验](../project/w15-runtime-lab.md) |
 | 物品、容器、配方与掉落 | `src/workshop.*` 执行共用规则，`src/workshop_document.*` 校验目录和进度，二维会话与方块项目提供来源 | [W14 物品与配方](../project/w14-workshop.md) |
 | 种子地形、区块缓存、地块导航 | `src/voxel_terrain.*`、`src/tile_world.*`，由玩家移动和二维会话更新已加载区域 | [W13 双世界](../project/w13-worlds.md) |
 | 代码、节点图和规则执行 | `src/behavior.cpp` 解析与编译，`src/scene_play.*` 在二维步进内派发事件 | [行为语义](../architecture/authoring.md#共同语义基础) |

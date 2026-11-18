@@ -93,6 +93,9 @@ struct TileEdit {
 FieldResult edit_tile(const std::filesystem::path& root, const TileEdit& edit, bool apply,
                       bool capture_change = false);
 
+bool edit_voxel(voxel::World& world, items::Workshop* workshop, voxel::Vec3 feet, voxel::Vec3 eye,
+                voxel::Vec3 direction, bool place);
+
 struct VoxelScene {
   voxel::World world;
   SceneChange source;

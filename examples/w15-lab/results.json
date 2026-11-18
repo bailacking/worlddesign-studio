@@ -1,0 +1,59 @@
+{
+  "circuit": {
+    "lamp_ticks": [
+      [
+        8,
+        15
+      ],
+      [
+        15,
+        0
+      ]
+    ],
+    "cancelled_due_tick": 4,
+    "same_tick_order": [
+      "lever",
+      "wire-left",
+      "wire-right"
+    ],
+    "bad_reference": "/input/nodes/lamp/inputs"
+  },
+  "authority": {
+    "final_revision": 16,
+    "clients_reconnected": 2,
+    "failed_write_unchanged": true,
+    "lost_receipt_replayed": true,
+    "surface_sha256": "053056fdac299a41606a25a9aade0ce87a45d8f1695c10b25d33ab4d9f9112a9",
+    "cavern_sha256": "08e6ac331e55389c11e8c0d339412a29cab71df3e97f6c2f4f09f0a1696cf4bd",
+    "surface_position": [
+      13,
+      17
+    ],
+    "cavern_position": [
+      11,
+      17
+    ],
+    "inventory": {
+      "bag": [
+        {
+          "count": 2,
+          "item": "ore"
+        },
+        {
+          "count": 1,
+          "item": "furnace"
+        }
+      ],
+      "chest": [],
+      "loot": [],
+      "unlocked": [
+        "furnace"
+      ]
+    }
+  },
+  "layers": {
+    "lantern.png": "73149fd0e80287011ada18084b488c505bc54fb076bef51a935dd8ca7b3a85dd",
+    "satchel.png": "9ca66b5ec3422cc31b9af5200b61ba81feba5f32ff603e170acaea90323787b9",
+    "occluded.png": "9a639a57fa1cf1c1bf4ab2a725aa3f6114c006cf6d72b320b46f23e3534d3620"
+  }
+}

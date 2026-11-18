@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "body": "body.png",
+  "foot": [
+    24,
+    36
+  ],
+  "hook": [
+    34,
+    30
+  ],
+  "outfits": [
+    {
+      "name": "提灯",
+      "file": "lantern.png",
+      "anchor": [
+        34,
+        30
+      ]
+    },
+    {
+      "name": "行囊",
+      "file": "satchel.png",
+      "anchor": [
+        7,
+        9
+      ]
+    }
+  ]
+}

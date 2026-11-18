@@ -9,6 +9,7 @@
 #include "platform_project.hpp"
 #include "project_export.hpp"
 #include "project_io.hpp"
+#include "signal_circuit.hpp"
 
 namespace wds::platform {
 namespace {
@@ -89,6 +90,7 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   const auto revision = expected.value_or(0);
   const bool apply = mode == "apply";
   if (id == "project.index") return project_index(directory, expected);
+  if (id == "circuit.replay") return voxel::replay_circuit(input);
   if (id == "behavior.convert") {
     const auto document = input.find("document");
     if (document == input.end()) throw InvalidInput{"/input/document"};
