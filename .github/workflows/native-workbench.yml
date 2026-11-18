@@ -1,0 +1,91 @@
+name: Native workbench preview
+
+on:
+  push:
+    branches: [main, dev/w11-shared-behavior]
+    paths:
+      - '.github/workflows/native-workbench.yml'
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'examples/shared-behavior/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-workbench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.name }} build and render
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            name: Linux x64
+            aqt-host: linux
+            aqt-arch: linux_gcc_64
+          - runner: macos-15
+            name: macOS arm64
+            aqt-host: mac
+            aqt-arch: clang_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ninja-build xvfb xauth libglvnd-dev libegl1 \
+            libfontconfig1 libfreetype6 libsm6 libice6 libx11-xcb1 libxrender1 \
+            libxcb-cursor0 libxcb-glx0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-util1 \
+            libxcb-xfixes0 libxcb-xinerama0 libxcb-xinput0 libxcb-xkb1 libxkbcommon-x11-0
+      - name: Install Qt SDK
+        env:
+          AQT_HOST: ${{ matrix.aqt-host }}
+          AQT_ARCH: ${{ matrix.aqt-arch }}
+        run: |
+          python -m pip install aqtinstall==3.3.0
+          python -m aqt install-qt "$AQT_HOST" desktop 6.8.3 "$AQT_ARCH" -O "$RUNNER_TEMP/Qt"
+      - name: Build native workbench and CLI
+        run: |
+          uname -sm
+          c++ --version
+          cmake --version
+          qt_config=$(find "$RUNNER_TEMP/Qt" -name Qt6Config.cmake -print -quit)
+          test -n "$qt_config"
+          cmake --preset dev -B build/native -DCMAKE_BUILD_TYPE=Release \
+            -DWDS_BUILD_MODERN_STUDIO=ON "-DQt6_DIR=${qt_config%/*}"
+          cmake --build build/native --target wds_studio_modern --parallel 2
+          file build/native/wds_studio_modern build/native/wds_cli
+      - name: Run shared behavior and graphics sample
+        shell: bash
+        run: |
+          command=(ctest --test-dir build/native -R '^(behavior_project|workbench_behavior_smoke)$'
+            --verbose --no-tests=error)
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xcb_plugin=$(find "$RUNNER_TEMP/Qt" -name libqxcb.so -print -quit)
+            test -n "$xcb_plugin"
+            dependencies=$(ldd "$xcb_plugin")
+            if grep 'not found' <<< "$dependencies"; then exit 1; fi
+            QT_QPA_PLATFORM=xcb xvfb-run -a "${command[@]}"
+          else
+            QT_QPA_PLATFORM=cocoa "${command[@]}"
+          fi
+          file build/native/w11-workbench.png
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: w11-frame-${{ matrix.runner }}
+          path: build/native/w11-workbench.png
+          if-no-files-found: error

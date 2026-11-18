@@ -107,6 +107,26 @@
             <translation>入口场景无效</translation>
         </message>
         <message>
+            <source>export_too_large</source>
+            <translation>导出文件或成品超过大小上限</translation>
+        </message>
+        <message>
+            <source>invalid_export_destination</source>
+            <translation>请在项目外选择一个可写的父目录和新文件夹名</translation>
+        </message>
+        <message>
+            <source>invalid_runtime_dependency</source>
+            <translation>Windows 播放器或依赖文件与构建锁不一致</translation>
+        </message>
+        <message>
+            <source>missing_runtime_dependency</source>
+            <translation>缺少 Windows 播放器或许可文件</translation>
+        </message>
+        <message>
+            <source>unsupported_export_target</source>
+            <translation>当前入口只支持在 Windows 上导出 Windows x64</translation>
+        </message>
+        <message>
             <source>invalid_field</source>
             <translation>属性或属性值无效</translation>
         </message>
@@ -173,6 +193,74 @@
         <message>
             <source>scene_content_conflict</source>
             <translation>场景内容已变更，请重新打开项目</translation>
+        </message>
+        <message>
+            <source>import_too_large</source>
+            <translation>导入超出清单或事务大小限制</translation>
+        </message>
+        <message>
+            <source>invalid_content</source>
+            <translation>源文件内容与所选资源类型不匹配</translation>
+        </message>
+        <message>
+            <source>invalid_provenance</source>
+            <translation>导入来源记录无效</translation>
+        </message>
+        <message>
+            <source>invalid_source</source>
+            <translation>找不到可导入的源文件</translation>
+        </message>
+        <message>
+            <source>source_changed</source>
+            <translation>源文件在预览后已变更，请重新预览</translation>
+        </message>
+        <message>
+            <source>source_too_large</source>
+            <translation>源文件超过 1 MiB</translation>
+        </message>
+        <message>
+            <source>target_exists</source>
+            <translation>目标路径上已有项目外的文件</translation>
+        </message>
+        <message>
+            <source>image_too_large</source>
+            <translation>PNG 尺寸超过 2048 × 2048 像素</translation>
+        </message>
+        <message>
+            <source>invalid_png</source>
+            <translation>PNG 图片损坏或格式不符</translation>
+        </message>
+        <message>
+            <source>invalid_sprite</source>
+            <translation>找不到场景声明引用的图片资源</translation>
+        </message>
+        <message>
+            <source>invalid_utf8</source>
+            <translation>源文件需为 UTF-8 纯文本</translation>
+        </message>
+        <message>
+            <source>invalid_voxel_materials</source>
+            <translation>方块材质定义或引用无效</translation>
+        </message>
+        <message>
+            <source>invalid_voxel_world</source>
+            <translation>方块地形存档无效</translation>
+        </message>
+        <message>
+            <source>unsupported_scene_kind</source>
+            <translation>当前操作不支持此场景类型</translation>
+        </message>
+        <message>
+            <source>invalid_mode</source>
+            <translation>此操作不支持所选执行方式</translation>
+        </message>
+        <message>
+            <source>permission_denied</source>
+            <translation>本次操作未获得写入权限</translation>
+        </message>
+        <message>
+            <source>unsupported_operation</source>
+            <translation>未发现该项目操作</translation>
         </message>
     </context>
     <context>
@@ -245,6 +333,34 @@
             <source>None</source>
             <translation>无</translation>
         </message>
+        <message>
+            <source>Import source</source>
+            <translation>导入来源</translation>
+        </message>
+        <message>
+            <source>PNG Image</source>
+            <translation>PNG 图片</translation>
+        </message>
+        <message>
+            <source>UTF-8 Text</source>
+            <translation>UTF-8 文本</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Lines · %1</source>
+            <translation>%1 行</translation>
+        </message>
+        <message>
+            <source>Text Preview</source>
+            <translation>文本预览</translation>
+        </message>
+        <message>
+            <source>Image Preview</source>
+            <translation>图片缩略图</translation>
+        </message>
     </context>
     <context>
         <name>SceneTreePanel</name>
@@ -290,6 +406,42 @@
     </context>
     <context>
         <name>wds::studio::Workbench</name>
+        <message>
+            <source>Voxel Palette…</source>
+            <translation>方块配色…</translation>
+        </message>
+        <message>
+            <source>Voxel Palette</source>
+            <translation>方块配色</translation>
+        </message>
+        <message>
+            <source>Palette Plugin</source>
+            <translation>配色插件</translation>
+        </message>
+        <message>
+            <source>Daylight</source>
+            <translation>日光</translation>
+        </message>
+        <message>
+            <source>Amber Dusk</source>
+            <translation>琥珀暮色</translation>
+        </message>
+        <message>
+            <source>Project Type</source>
+            <translation>工程类型</translation>
+        </message>
+        <message>
+            <source>2D Scene</source>
+            <translation>二维场景</translation>
+        </message>
+        <message>
+            <source>3D Voxel World</source>
+            <translation>三维方块世界</translation>
+        </message>
+        <message>
+            <source>Playing a copy of the world. Select Stop to edit.</source>
+            <translation>正在试玩世界副本。点击停止返回编辑。</translation>
+        </message>
         <message>
             <source>Recover Project…</source>
             <translation>恢复项目…</translation>
@@ -491,6 +643,26 @@
             <translation>正在试玩 · 第 %1 步</translation>
         </message>
         <message>
+            <source>Playing · %1 s remaining</source>
+            <translation>正在试玩 · 剩余 %1 秒</translation>
+        </message>
+        <message>
+            <source>Paused. Click the viewport to resume.</source>
+            <translation>已暂停。点击视口继续。</translation>
+        </message>
+        <message>
+            <source>Delivered! Select Stop to play again.</source>
+            <translation>送达成功！点击停止后可重新试玩。</translation>
+        </message>
+        <message>
+            <source>Delivery failed. Select Stop to play again.</source>
+            <translation>送达失败。点击停止后可重新试玩。</translation>
+        </message>
+        <message>
+            <source>Time is up. Select Stop to play again.</source>
+            <translation>时间到。点击停止后可重新试玩。</translation>
+        </message>
+        <message>
             <source>Playback stopped.</source>
             <translation>已停止试玩。</translation>
         </message>
@@ -577,6 +749,266 @@
         <message>
             <source>Scene change undone.</source>
             <translation>已撤销场景改动。</translation>
+        </message>
+        <message>
+            <source>Import Resource…</source>
+            <translation>导入资源…</translation>
+        </message>
+        <message>
+            <source>Export for Windows x64…</source>
+            <translation>导出 Windows x64…</translation>
+        </message>
+        <message>
+            <source>Export for Windows x64</source>
+            <translation>导出 Windows x64</translation>
+        </message>
+        <message>
+            <source>Choose Export Parent</source>
+            <translation>选择导出父目录</translation>
+        </message>
+        <message>
+            <source>New folder for revision %1</source>
+            <translation>修订 %1 的新文件夹名称</translation>
+        </message>
+        <message>
+            <source>Enter a name for a new export folder.</source>
+            <translation>请输入新导出文件夹的名称。</translation>
+        </message>
+        <message>
+            <source>Exporting revision %1…</source>
+            <translation>正在导出修订 %1…</translation>
+        </message>
+        <message>
+            <source>Exported revision %1 · %2</source>
+            <translation>已导出修订 %1 · %2</translation>
+        </message>
+        <message>
+            <source>Export Complete</source>
+            <translation>导出完成</translation>
+        </message>
+        <message>
+            <source>Open Play.exe from the exported folder to run the game.</source>
+            <translation>打开导出文件夹中的 Play.exe 即可运行游戏。</translation>
+        </message>
+        <message>
+            <source>Open Folder</source>
+            <translation>打开文件夹</translation>
+        </message>
+        <message>
+            <source>Choose Resource File</source>
+            <translation>选择资源文件</translation>
+        </message>
+        <message>
+            <source>Data</source>
+            <translation>数据</translation>
+        </message>
+        <message>
+            <source>Resource Type</source>
+            <translation>资源类型</translation>
+        </message>
+        <message>
+            <source>Target Path</source>
+            <translation>目标路径</translation>
+        </message>
+        <message>
+            <source>Resource %1 is already imported.</source>
+            <translation>资源 %1 已导入。</translation>
+        </message>
+        <message>
+            <source>Import %1 as %2?
+%3 · %4 bytes</source>
+            <translation>将 %1 导入为 %2？
+%3 · %4 字节</translation>
+        </message>
+        <message>
+            <source>Import Preview</source>
+            <translation>导入预览</translation>
+        </message>
+        <message>
+            <source>Import</source>
+            <translation>导入</translation>
+        </message>
+        <message>
+            <source>Imported %1.</source>
+            <translation>已导入 %1。</translation>
+        </message>
+        <message>
+            <source>PNG Image</source>
+            <translation>PNG 图片</translation>
+        </message>
+        <message>
+            <source>UTF-8 Text</source>
+            <translation>UTF-8 文本</translation>
+        </message>
+        <message>
+            <source>%1 × %2 px</source>
+            <translation>%1 × %2 像素</translation>
+        </message>
+        <message>
+            <source>Lines · %1</source>
+            <translation>%1 行</translation>
+        </message>
+        <message>
+            <source>Supported files (*.json *.png *.txt *.md);;All files (*)</source>
+            <translation>支持的文件 (*.json *.png *.txt *.md);;所有文件 (*)</translation>
+        </message>
+        <message>
+            <source>Clear Thumbnail Cache</source>
+            <translation>清理缩略图缓存</translation>
+        </message>
+        <message>
+            <source>Could not clear all thumbnails.</source>
+            <translation>无法清理部分缩略图。</translation>
+        </message>
+        <message>
+            <source>Thumbnail cache cleared.</source>
+            <translation>已清理缩略图缓存。</translation>
+        </message>
+        <message>
+            <source>&amp;Save World</source>
+            <translation>保存方块世界(&amp;S)</translation>
+        </message>
+        <message>
+            <source>Discard World Draft</source>
+            <translation>放弃方块草稿</translation>
+        </message>
+        <message>
+            <source>Unsaved World</source>
+            <translation>方块世界未保存</translation>
+        </message>
+        <message>
+            <source>Discard the unsaved block changes?</source>
+            <translation>放弃未保存的方块改动？</translation>
+        </message>
+        <message>
+            <source>World saved · revision %1</source>
+            <translation>方块世界已保存 · 修订 %1</translation>
+        </message>
+        <message>
+            <source>Available Operations…</source>
+            <translation>可用操作…</translation>
+        </message>
+        <message>
+            <source>Available Operations</source>
+            <translation>可用操作</translation>
+        </message>
+        <message>
+            <source>This window · %1 requests · %2 ms</source>
+            <translation>本窗口 · %1 次请求 · %2 毫秒</translation>
+        </message>
+        <message>
+            <source>Preview cancelled.</source>
+            <translation>已取消预览。</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>关闭</translation>
+        </message>
+    </context>
+    <context>
+        <name>VoxelViewport</name>
+        <message>
+            <source>3D voxel viewport</source>
+            <translation>三维方块视口</translation>
+        </message>
+        <message>
+            <source>Block (%1, %2, %3)</source>
+            <translation>方块 (%1, %2, %3)</translation>
+        </message>
+        <message>
+            <source>No block in reach</source>
+            <translation>射程内无方块</translation>
+        </message>
+        <message>
+            <source>WASD move · Arrows look · Space jump · Left break · Right place</source>
+            <translation>WASD 移动 · 方向键转头 · 空格跳跃 · 左键破坏 · 右键放置</translation>
+        </message>
+    </context>
+    <context>
+        <name>WorkshopDialog</name>
+        <message>
+            <source>Items and recipes</source>
+            <translation>物品与配方</translation>
+        </message>
+        <message>
+            <source>Bag</source>
+            <translation>背包</translation>
+        </message>
+        <message>
+            <source>Chest</source>
+            <translation>箱子</translation>
+        </message>
+        <message>
+            <source>Drops</source>
+            <translation>掉落</translation>
+        </message>
+        <message>
+            <source>Action</source>
+            <translation>操作</translation>
+        </message>
+        <message>
+            <source>Run</source>
+            <translation>执行</translation>
+        </message>
+        <message>
+            <source>Gather %1</source>
+            <translation>采集 %1</translation>
+        </message>
+        <message>
+            <source>Pick up %1</source>
+            <translation>拾取 %1</translation>
+        </message>
+        <message>
+            <source>Store one %1</source>
+            <translation>存入 1 个 %1</translation>
+        </message>
+        <message>
+            <source>Take one %1</source>
+            <translation>取出 1 个 %1</translation>
+        </message>
+        <message>
+            <source>Smelt %1</source>
+            <translation>熔炼 %1</translation>
+        </message>
+        <message>
+            <source>Cook %1</source>
+            <translation>烹饪 %1</translation>
+        </message>
+        <message>
+            <source>Craft %1</source>
+            <translation>合成 %1</translation>
+        </message>
+        <message>
+            <source>Done.</source>
+            <translation>已完成。</translation>
+        </message>
+        <message>
+            <source>Move closer to the source.</source>
+            <translation>请靠近采集点。</translation>
+        </message>
+        <message>
+            <source>Source depleted.</source>
+            <translation>采集点已用尽。</translation>
+        </message>
+        <message>
+            <source>Container full.</source>
+            <translation>容器已满。</translation>
+        </message>
+        <message>
+            <source>Station locked.</source>
+            <translation>工作设施或配方尚未解锁。</translation>
+        </message>
+        <message>
+            <source>Missing ingredients.</source>
+            <translation>材料不足。</translation>
+        </message>
+        <message>
+            <source>%1 → %2 × %3</source>
+            <translation>%1 → %2 × %3</translation>
+        </message>
+        <message>
+            <source>Requires %1</source>
+            <translation>需要 %1</translation>
         </message>
     </context>
 </TS>

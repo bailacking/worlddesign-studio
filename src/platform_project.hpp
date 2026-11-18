@@ -8,6 +8,9 @@
 #include <string_view>
 #include <vector>
 
+#include "scene_play.hpp"
+#include "voxel_world.hpp"
+
 namespace wds::platform {
 
 struct Resource {
@@ -57,20 +60,11 @@ struct FieldResult {
   std::optional<SceneChange> scene_change{};
 };
 
-struct SceneEntity {
-  std::string id;
-  std::int64_t x = 0;
-  std::int64_t y = 0;
-  std::int64_t vx = 0;
-  std::int64_t vy = 0;
-};
-
 struct SceneField {
   std::string_view name;
   std::int64_t SceneEntity::*member;
 };
 
-inline constexpr std::int64_t scene_field_limit = 1'000'000;
 inline constexpr std::array scene_fields{
     SceneField{"x", &SceneEntity::x}, SceneField{"y", &SceneEntity::y},
     SceneField{"vx", &SceneEntity::vx}, SceneField{"vy", &SceneEntity::vy}};
@@ -90,27 +84,26 @@ struct EntityEdit {
   std::size_t index = 0;
 };
 
-struct SceneSnapshot {
-  std::uint64_t revision = 0;
-  std::string scene_id;
-  std::uint64_t ticks = 0;
-  std::vector<SceneEntity> entities;
+struct TileEdit {
+  TilePoint point;
+  std::string kind;
+  std::uint64_t revision;
 };
 
-struct SceneResult;
+FieldResult edit_tile(const std::filesystem::path& root, const TileEdit& edit, bool apply,
+                      bool capture_change = false);
 
-class SceneSession {
- public:
-  static constexpr std::uint64_t max_ticks = 600;
+bool edit_voxel(voxel::World& world, items::Workshop* workshop, voxel::Vec3 feet, voxel::Vec3 eye,
+                voxel::Vec3 direction, bool place);
 
-  const SceneSnapshot& snapshot() const { return state_; }
-  bool advance(std::uint64_t ticks);
+struct VoxelScene {
+  voxel::World world;
+  SceneChange source;
+  std::uint64_t revision;
+  std::optional<items::Workshop> workshop{};
+  std::string palette = "daylight";
 
- private:
-  friend SceneResult start_scene(const std::filesystem::path&, std::uint64_t);
-
-  SceneSession() = default;
-  SceneSnapshot state_;
+  bool edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place);
 };
 
 struct SceneResult {
@@ -119,6 +112,7 @@ struct SceneResult {
   std::string location{};
   std::string resource_path{};
   std::optional<std::uint64_t> revision{};
+  std::optional<VoxelScene> voxel_scene{};
 };
 
 struct ImportRequest {
@@ -127,6 +121,7 @@ struct ImportRequest {
   std::string kind;
   std::string path;
   std::uint64_t revision = 0;
+  std::string expected_digest{};
 };
 
 struct ImportResult {
@@ -140,6 +135,16 @@ struct ImportResult {
   bool changed = false;
   std::string source_name{};
   std::string digest{};
+  unsigned width = 0;
+  unsigned height = 0;
+  std::optional<std::size_t> line_count{};
+  std::string text_preview{};
+};
+
+struct AssetSource {
+  std::string code;
+  std::string location{};
+  std::string bytes{};
 };
 
 struct ImportRecord {
@@ -159,13 +164,20 @@ struct ImportListResult {
 };
 
 ProjectResult open_project(const std::filesystem::path& directory);
-ProjectResult create_project(const std::filesystem::path& directory, std::string_view id);
+ProjectResult create_project(const std::filesystem::path& directory, std::string_view id,
+                             std::string_view kind = "scene");
+FieldResult edit_palette(const std::filesystem::path& root, std::uint64_t revision,
+                         std::string_view provider, bool apply);
 ImportResult import_resource(const std::filesystem::path& directory, const ImportRequest& request,
                              bool apply);
 ImportListResult list_imports(const std::filesystem::path& directory);
+AssetSource read_asset_source(const std::filesystem::path& directory, std::string_view id);
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
-SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
+SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision,
+                        bool allow_voxel = false);
+FieldResult save_voxel_scene(const std::filesystem::path& directory, const VoxelScene& scene);
+FieldResult prepare_voxel_save(const VoxelScene& scene);
 FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply,
                        bool capture_change = false);
 FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply,

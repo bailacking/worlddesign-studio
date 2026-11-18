@@ -1,0 +1,5 @@
+#pragma once
+
+namespace wds::platform::detail {
+inline constexpr auto windows_runtime_spec = R"WDS_RUNTIME(@WDS_WINDOWS_RUNTIME_SPEC@)WDS_RUNTIME";
+}

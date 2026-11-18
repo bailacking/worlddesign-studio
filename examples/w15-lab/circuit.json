@@ -1,0 +1,68 @@
+{
+  "operation": "circuit.replay",
+  "version": 1,
+  "mode": "read",
+  "input": {
+    "ticks": 16,
+    "nodes": {
+      "lever": {
+        "kind": "lever",
+        "inputs": []
+      },
+      "wire-left": {
+        "kind": "wire",
+        "inputs": [
+          "lever"
+        ]
+      },
+      "wire-right": {
+        "kind": "wire",
+        "inputs": [
+          "lever"
+        ]
+      },
+      "merge": {
+        "kind": "wire",
+        "inputs": [
+          "wire-left",
+          "wire-right"
+        ]
+      },
+      "repeat": {
+        "kind": "repeater",
+        "inputs": [
+          "merge"
+        ],
+        "delay": 2
+      },
+      "lamp": {
+        "kind": "lamp",
+        "inputs": [
+          "repeat"
+        ]
+      }
+    },
+    "events": [
+      {
+        "tick": 0,
+        "id": "lever",
+        "level": 15
+      },
+      {
+        "tick": 1,
+        "id": "lever",
+        "level": 0
+      },
+      {
+        "tick": 3,
+        "id": "lever",
+        "level": 15
+      },
+      {
+        "tick": 10,
+        "id": "lever",
+        "level": 0
+      }
+    ]
+  }
+}

@@ -18,7 +18,7 @@ python scripts/check_docs.py
 python scripts/check_workbench_theme.py
 ```
 
-C++ 在同一工作流配置了 Linux 的默认构建、CTest、clang-format 和 clang-tidy 检查。Qt 工作台使用独立的构建配置，已在 Windows x64 实测打开项目、资源筛选、属性保存、试玩与语言切换。运行方法见 [开发指南](development.md#运行现代工作台)。
+C++ 在同一工作流配置了 Linux 的默认构建、CTest、clang-format 和 clang-tidy 检查。Windows 工作台任务使用 MSVC x64 和 Qt 6.8.3 构建，通过 `workbench_smoke` 启动实际工作台，离屏打开入口工程并检查视口。工作台完整的导入、修改、保存重开与导出另在 W8 集中本机验收。 [开发指南](development.md#运行现代工作台) · [W8 验收](../project/w8-acceptance.md)
 
 ## 长期维护
 

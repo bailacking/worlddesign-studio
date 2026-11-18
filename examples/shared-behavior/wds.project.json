@@ -1,0 +1,14 @@
+{
+  "format_version": 1,
+  "project_id": "shared-behavior",
+  "revision": 0,
+  "entry_scene": "glide",
+  "resources": [
+    {
+      "id": "glide",
+      "kind": "scene",
+      "path": "assets/glide.json",
+      "refs": []
+    }
+  ]
+}

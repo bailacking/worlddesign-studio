@@ -1,0 +1,53 @@
+{
+  "format": "wds-content-source-v1",
+  "entries": {
+    "mc-respawn-anchor": {
+      "kind": "block",
+      "reference": "MC-BLOCK-001",
+      "rule": { "property": "charges", "range": [0, 4] }
+    },
+    "mc-wheat": {
+      "kind": "item",
+      "reference": "MC-CRAFT-001",
+      "rule": { "name": "小麦" }
+    },
+    "mc-bread": {
+      "kind": "item",
+      "reference": "MC-CRAFT-001",
+      "rule": { "name": "面包" }
+    },
+    "mc-bread-recipe": {
+      "kind": "recipe",
+      "reference": "MC-CRAFT-001",
+      "rule": {
+        "output": "mc-bread",
+        "ingredients": ["mc-wheat", "mc-wheat", "mc-wheat"],
+        "layout": "row"
+      }
+    },
+    "ds-cactus-flower": {
+      "kind": "item",
+      "reference": "DS-CRAFT-001",
+      "rule": { "name": "仙人掌花" }
+    },
+    "ds-floral-shirt": {
+      "kind": "item",
+      "reference": "DS-CRAFT-001",
+      "rule": { "name": "花衬衫" }
+    },
+    "ds-floral-shirt-recipe": {
+      "kind": "recipe",
+      "reference": "DS-CRAFT-001",
+      "rule": {
+        "output": "ds-floral-shirt",
+        "ingredients": ["ds-cactus-flower"],
+        "layout": "partial"
+      }
+    },
+    "ds-rog-seasons": {
+      "kind": "state",
+      "reference": "DS-ROG-001",
+      "rule": { "enabled": ["spring", "summer"] }
+    }
+  }
+}

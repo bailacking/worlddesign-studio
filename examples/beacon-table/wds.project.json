@@ -1,0 +1,14 @@
+{
+  "format_version": 1,
+  "project_id": "beacon-table",
+  "revision": 0,
+  "entry_scene": "intro",
+  "resources": [
+    {
+      "id": "intro",
+      "kind": "scene",
+      "path": "assets/intro.json",
+      "refs": []
+    }
+  ]
+}

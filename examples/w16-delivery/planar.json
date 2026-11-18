@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "runner",
+      "x": -120,
+      "y": 0,
+      "box": {
+        "half_width": 8,
+        "half_height": 8
+      }
+    },
+    {
+      "id": "barrier",
+      "x": 0,
+      "y": 0,
+      "box": {
+        "half_width": 9,
+        "half_height": 30
+      }
+    },
+    {
+      "id": "exit",
+      "x": 128,
+      "y": 0,
+      "box": {
+        "half_width": 12,
+        "half_height": 12
+      }
+    }
+  ],
+  "play": {
+    "player": "runner",
+    "speed": 6,
+    "walls": [
+      "barrier"
+    ],
+    "goals": [
+      "exit"
+    ],
+    "hazards": []
+  }
+}

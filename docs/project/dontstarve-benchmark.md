@@ -1,6 +1,6 @@
 # 饥荒项目验收基准
 
-[50 周开发计划](50-week-plan.md)要求 **30 分钟内从零资产复刻《饥荒》PC 单机原版、巨人国和海难**截至 **2016 年 12 月 31 日**正式发布的内容。W2 核定合法取得的历史构建和可运行证据。目前已确认 2016 年官方公告覆盖海难内容与跨世界状态同步，历史构建号和逐项行为还需核验。2017 年《Home Sea Home》及之后新增内容、其他 DLC 和联机版属于范围外。 [Klei 游戏与扩展说明](https://www.klei.com/games/dont-starve/) · [2016 年官方更新](https://store.steampowered.com/oldnews/?appgroupname=Don%27t+Starve&appids=219740&enddate=1514793600&feed=steam_community_announcements) · [2017 年更新公告](https://kleiforums.com/forums/topic/84548-shipwrecked-update-home-sea-home/)
+[50 周开发计划](50-week-plan.md)要求 **30 分钟内从零资产复刻《饥荒》PC 单机原版、巨人国和海难**截至 **2016 年 12 月 31 日**正式发布的内容。W2 核实 Klei 公告中的历史构建候选 `198251`，可运行版本与逐项行为仍待补证。2017 年《Home Sea Home》及之后新增内容、其他 DLC 和联机版属于范围外。 [Klei 游戏与扩展说明](https://www.klei.com/games/dont-starve/) · [2016 年官方更新](https://store.steampowered.com/oldnews/?appgroupname=Don%27t+Starve&appids=219740&enddate=1514793600&feed=steam_community_announcements) · [2017 年更新公告](https://kleiforums.com/forums/topic/84548-shipwrecked-update-home-sea-home/)
 
 ## 全量矩阵
 
@@ -16,6 +16,27 @@
 | 表现与交互 | 分层动画、换装、输入、遮挡、菜单、音效、音乐和关键玩法提示 |
 
 每项记录构建号、DLC 开关、初始状态、操作、原版及 WDS 观察和证据。配方、物品及台词等按批比对。季风、火山、永久死亡、洞穴及跨 DLC 同步保留可重放的长路径。对史料冲突保留来源，直至经版本证据或原版复测裁决。缺证属于未通过。
+
+## W2 历史构建取证
+
+Klei 的[海难更新索引](https://kleiforums.com/game-updates/sw/)将 `198251` 标为 2016 年正式发布。[Klei 补丁页](https://kleiforums.com/game-updates/sw/198251-r159/)和 [Steam 公告](https://store.steampowered.com/oldnews/?appgroupname=Don%27t+Starve&appids=219740&enddate=1483257600&feed=steam_community_announcements&headlines=1)的日期写法相差一天，构建号相同且都在截止日前。索引上的下一批正式海难补丁已进入 2017 年。以 `198251` 作为第一候选，较早公告用于定位应验行为。渠道、下载对应关系、Windows 可运行性和三种模式的实际结果仍缺证。构建号是 Klei 游戏版本，Steam 仓库及清单编号单独登记。
+
+补证时记录发行渠道、安装对应的版本日志、可执行文件指纹、语言与 DLC 开关。在隔离存档上依次启动原版、巨人国、海难。逐条核对起始状态和结果，台账保留旧公告证据与新运行证据。遇到不同构建，先判断是否属于同一内容窗口，并保留其适用范围。参考 [Klei 日志说明](https://support.klei.com/hc/en-us/articles/360029557252-Logs-and-Useful-Information-for-Bug-Reports-for-Dont-Starve)。
+
+## W2 逐领域对照
+
+以下是可按步骤执行的首批对照。预期来自所列公告，最终以取得的目标构建为准。全部条目的原版动态实测及 WDS 实际结果均待补，原版侧记为缺证。
+
+| ID 与领域 | 环境与复现步骤 | 公告支持的预期观察 |
+| --- | --- | --- |
+| `DS-WORLD-001` 模式与世界 | 在有两个 DLC 的新存档分别启用海难兼容，创建一次原版世界和一次巨人国世界，保存并重开后记下模式、选项和世界 | 两种原生世界都可启用海难兼容，巨人国开关正确区分模式。[Klei 193934](https://kleiforums.com/game-updates/sw/193934-r134/) |
+| `DS-PROG-001` 角色与进度 | 在角色年龄与世界年龄不同的合并存档中记录两者，让角色永久死亡，截图结算的经验与年龄 | 合并世界里的死亡经验依据角色年龄结算。[Klei 193193](https://kleiforums.com/game-updates/sw/193193-r126/) |
+| `DS-CRAFT-001` 生存与制作 | 巨人国取得花衬衫所需科技及材料，分别测试有、无仙人掌花时的制作资格，记录配方槽与消耗 | 巨人国花衬衫要求仙人掌花，海难兼容开关不改变这个条件。数量与其余用料待目标构建核对。[Klei 193193](https://kleiforums.com/game-updates/sw/193193-r126/) |
+| `DS-ECO-001` 原版生态 | 从原版地表进洞穴，放置可辨识物品并记录季节，返回地表、保存重开再进入同一洞穴 | 观察洞穴身份和物品保持，以及进出时的季节连续性。[Klei 193193](https://kleiforums.com/game-updates/sw/193193-r126/) · [Klei 193934](https://kleiforums.com/game-updates/sw/193934-r134/) |
+| `DS-ROG-001` 巨人国 | 以巨人国默认设置新建世界，记录春、夏设置并存档；推进到后续季节，记录转换 | 默认生成不把春、夏误设为无。具体时序由目标构建实跑补证。[Klei 197843](https://kleiforums.com/game-updates/sw/197843-r154/) |
+| `DS-SW-001` 海难 | 使用有火山入口的海难存档，记录地表入口位置。进入火山后从出口离开，写下两次落点及可否继续移动 | 角色出现在当前一侧对应的火山入口或出口。[Klei 170972](https://kleiforums.com/forums/topic/65693-shipwrecked-build-170972-march-23rd/) |
+| `DS-LINK-001` 跨世界 | 用 Seaworthy 往返连接好的巨人国和海难存档，保留携带物品。在转移前后逐段记下世界时钟、火山状态和猎犬袭击进度的可观察提示 | 迁移保持火山相关状态同步，猎犬袭击进度在世界间共享。物品和时钟的具体结果按记录核查。[Klei 193934](https://kleiforums.com/game-updates/sw/193934-r134/) |
+| `DS-UI-001` 表现与交互 | 准备一段受损墙与墙材，对比空位上放置新墙和指向受损墙进行维修时的提示 | 维修时不显示新墙放置轮廓，区分放置与维修反馈。[Klei 197843](https://kleiforums.com/game-updates/sw/197843-r154/) |
 
 ## 计时及续编
 

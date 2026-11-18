@@ -75,8 +75,8 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | WKB-07 | 实现 | WKB-03 | src/studio/output/ | 分级展示真实诊断，按资源定位，过期会话的输出有明确归属 |
 | WKB-08 | 核心 | WKB-03、SIM-01 | src/studio/viewport/ | 视口与场景选择联动，运行会话进出可控，结束后返回编辑选中态 |
 | WKB-09 | 实现 | WKB-06、WKB-08、CMD-04 | src/studio/gizmos/ | 二维移动工具带吸附和取消，拖动提交合并成一次可撤销操作 |
-| WKB-10 | 实现 | WKB-05、PRD-05 | src/studio/import/ | 拖入一个图像或文本后显示来源和导入结果，选中项可预览 |
-| WKB-11 | 实现 | WKB-03、SHIP-04 | src/studio/export/ | 选择导出目标与目录，可取消并定位失败，成功后打开成品目录 |
+| WKB-10 | 实现 | WKB-05、PRD-05 | src/studio/import/ | W3 从工作台预览并提交场景和数据，选中资源可见来源。W5 接入图像和文本的拖放与预览 |
+| WKB-11 | 实现 | WKB-03、SHIP-04 | src/studio/main.cpp、src/studio/bridge.cpp | W7 支持选择 Windows x64 目标目录、取消选择、定位失败和打开成品目录 |
 | WKB-12 | 实现 | WKB-01、WKB-06、WKB-07 | src/studio/i18n/ | 首批菜单、操作和诊断可切换简体中文与英文，资源 ID 保持稳定 |
 | WKB-13 | 核心 | WKB-02、WKB-04、WKB-05、WKB-06、WKB-07、WKB-08 | src/studio/ | 集成第一条创作路径，真实项目能编辑保存和试玩，缩放与键盘可操作 |
 | WKB-14 | 核心 | WKB-13、SHIP-05 | CMakeLists.txt、docs/engineering/development.md | 现代工作台通过相同操作后成为文档默认入口，原版项目继续可读 |
@@ -90,12 +90,12 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | PRD-03 | 核心 | PRD-02 | src/platform_project.* | 场景层级与父子变换，防环、旧场景保持可读，变更可撤回 |
 | PRD-04 | 核心 | PRJ-05、CMD-02 | src/resources/index/ | 资源移动和删除前显示引用方，改名不改 ID，仍有引用时可取消 |
 | PRD-05 | 核心 | PRJ-06、CMD-02 | src/resources/import/ | 导入接口保存原始资源和来源，重复导入可复用，失败保留旧资产 |
-| PRD-06 | 实现 | PRD-05 | src/resources/importers/image/ | 支持一类图像导入、尺寸和缩略图，错误可定位原文件 |
-| PRD-07 | 实现 | PRD-05 | src/resources/importers/text/ | 识别 UTF-8 文本，输出内容摘要和规范化诊断 |
-| PRD-08 | 核心 | PRD-05、PRD-06、PRD-07 | src/resources/cache/ | 源和派生物分离，按输入指纹增量重建，缓存可清除重建 |
+| PRD-06 | 实现 | PRD-05 | `src/asset_import.*`、`src/studio/asset_preview.*` | PNG 可导入并查看尺寸和缩略图，错误可定位原文件 |
+| PRD-07 | 实现 | PRD-05 | `src/asset_import.*` | UTF-8 文本可导入，输出行数与规范化试读 |
+| PRD-08 | 核心 | PRD-05、PRD-06、PRD-07 | `src/studio/asset_preview.*` | PNG 派生缩略图按输入摘要复用，清理后可重建 |
 | PRD-09 | 核心 | PRJ-03、PRD-01 | src/migrations/ | 旧通用项目、旧方块项目显式迁移或报告不支持项，原目录可重开 |
 | PRD-10 | 核心 | PRD-04、CMD-04 | src/resources/diff/ | 用稳定 ID 比较结构化改动，区分内容冲突和路径冲突 |
-| CMD-01 | 核心 | OPS-01、OPS-03 | src/operations/registry/ | 统一 JSON 请求、结果及字段说明，旧 CLI 参数可用 |
+| CMD-01 | 核心 | OPS-01、OPS-03 | src/project_operations.*、src/cli.cpp | W10 统一清单、JSON 请求、结果与诊断，保留旧 CLI 参数 |
 | CMD-02 | 核心 | CMD-01、PRJ-04 | src/operations/transaction/ | 带预期修订的多文件提交，失败可诊断和恢复 |
 | CMD-03 | 实现 | CMD-01 | src/operations/cli/ | 接入发现、查询和预览，保留退出码和 JSON 兼容性 |
 | CMD-04 | 核心 | CMD-02、OPS-04 | src/operations/history/ | 撤销重做走相同写入路径，重开历史可解释，外部冲突不静默覆盖 |
@@ -106,12 +106,12 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 
 | 任务 | 分工 | 前置 | 交付位置 | 完成标志 |
 | --- | --- | --- | --- | --- |
-| SIM-01 | 核心 | RUN-01 | src/runtime/session/ | 从现有场景运行核心提供开始、步进、快照和停止，交互式预览无需逐帧创建进程，输入适配可后接 |
+| SIM-01 | 核心 | RUN-01 | src/platform_project.cpp、src/scene_play.* | 从保存修订装载并隔离运行状态，提供启动、步进、快照和停止。工作台和 raylib 试验播放器共用会话 |
 | SIM-02 | 核心 | SIM-01、RUN-03 | src/runtime/render/ | 图形后端第一条可替换接口，能显示真实场景、视口与尺寸变化 |
-| SIM-03 | 核心 | SIM-01、RUN-03 | src/runtime/input/ | 动作映射和输入焦点可重绑定，退出试玩归还键鼠，失焦清除按键 |
-| SIM-04 | 核心 | SIM-01、SIM-03 | src/runtime/physics/ | 固定步长、碰撞查询和角色控制，移动、跳跃和地面边界可复现 |
-| SIM-05 | 实现 | SIM-02、PRD-06 | src/runtime/sprites/ | 2D 精灵读取图像、变换和层级，有缺失资产提示 |
-| SIM-06 | 核心 | SIM-02、PRD-03 | src/runtime/scene3d/ | 3D 相机和基础几何共用场景身份，加载与切换生命周期一致 |
+| SIM-03 | 核心 | SIM-01、RUN-03 | src/scene_play.*、src/studio/viewport.* | W6 接通场景键位映射、工作台失焦清键和停止后归还焦点 |
+| SIM-04 | 核心 | SIM-01、SIM-03 | src/scene_play.* | W6 接通二维固定步长、逐轴扫掠碰撞及胜负，跳跃与地面系统留待后续玩法 |
+| SIM-05 | 实现 | SIM-02、PRD-06 | src/platform_project.cpp、src/studio/viewport.cpp、src/player_preview.cpp | W6 按实体位置、尺寸和数组顺序显示 PNG 精灵，缺失引用和坏图有定位 |
+| SIM-06 | 核心 | SIM-02、PRD-03 | src/voxel_world.*、src/studio/voxel_viewport.* | W9 接入方块相机、材质和拾取，共用项目场景身份及工作台切换 |
 | SIM-07 | 核心 | SIM-01、PRD-05 | src/runtime/audio/ | 独立音频后端可加载和播放一类声音，停机释放资源 |
 | SIM-08 | 实现 | SIM-05、SIM-06 | src/runtime/animation/ | 数据驱动的关键帧和播放状态，可用同一时间语义推进 |
 | SIM-09 | 核心 | SIM-01、CMD-02 | src/runtime/save/ | 运行存档分离于项目源，坏档保留并报告，支持显式版本迁移 |
@@ -132,15 +132,15 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | KIT-04 | 实现 | KIT-03、SIM-05、SIM-11 | examples/starter-2d/ | 原创非方块模板包含一条可修改玩法，运行时和工作台能打开 |
 | KIT-05 | 核心 | KIT-02、KIT-03 | src/capabilities/install/ | 能力安装、替换、禁用与回退，依赖变化有诊断 |
 | KIT-06 | 实现 | KIT-01、KIT-02、KIT-05 | docs/engineering/、examples/capability/ | 交付可复制的包开发样例，演示声明、装配及卸载 |
-| AUT-01 | 核心 | CMD-01、KIT-01 | src/automation/discovery/ | 按任务查询相关操作、字段和能力摘要，保持稳定标识 |
-| AUT-02 | 核心 | AUT-01、CMD-04、CMD-05 | src/automation/session/ | 外部 Agent 可查询、预览、应用及回退，权限和修订由宿主核验 |
+| AUT-01 | 核心 | CMD-01、KIT-01 | src/project_operations.*、src/studio/bridge.* | W10 共用操作清单与项目索引，支持按修订读上下文 |
+| AUT-02 | 核心 | AUT-01、CMD-04、CMD-05 | scripts/project_workflow.py、src/project_operations.* | W10 外部 Agent 可查询、预览、取消、提交及回退，记录结果和用量 |
 | AUT-03 | 实现 | AUT-02、KIT-03 | src/automation/handoff/ | 生成最小项目摘要、改动及可复跑入口，人可从同一项目接手 |
 | AUT-04 | 核心 | AUT-02、SIM-01、SHIP-04 | src/automation/validation/ | Agent 可从现有操作完成创建、试玩和导出，失败定位到具体步骤 |
 | AUT-05 | 核心 | AUT-04、WKB-13 | src/studio/agent/ | 工作台可查看、批准和接管操作，实际改动可回溯 |
-| SHIP-01 | 核心 | KIT-02、SIM-01、PRD-08 | src/export/plan/ | 按修订、入口、能力闭包和目标平台生成可核对的构建计划 |
-| SHIP-02 | 实现 | SHIP-01 | src/export/resources/ | 收集资源、保存路径与许可证，编辑器文件不进入游戏成品 |
-| SHIP-03 | 核心 | SIM-02、SIM-09、SHIP-01 | src/player/ | 独立运行程序能在项目目录之外启动；已有存档能力的游戏可保存重开 |
-| SHIP-04 | 核心 | SHIP-02、SHIP-03 | src/export/windows/ | 工作台和 CLI 共享 Windows 导出，外部目录可启动与重开 |
+| SHIP-01 | 核心 | KIT-02、SIM-01、PRD-08 | src/project_export.*、cmake/windows-x64-runtime.json | W7 按修订、入口、资源闭包和 Windows x64 内置插件生成依赖锁 |
+| SHIP-02 | 实现 | SHIP-01 | src/project_export.cpp | W7 收集入口资源闭包和适用许可，保持包内资源相对路径 |
+| SHIP-03 | 核心 | SIM-02、SIM-09、SHIP-01 | src/player_windows.cpp、src/player_preview.cpp | W7 播放器从独立目录加载包内游戏，存档仍由 SIM-09 接入 |
+| SHIP-04 | 核心 | SHIP-02、SHIP-03 | src/project_export.cpp、src/cli.cpp | W7 工作台和 CLI 共享 Windows 导出，W8 在第二台机器验收 |
 | SHIP-05 | 核心 | WKB-01、WKB-13 | src/studio/、构建配置 | 交付独立工作台包及依赖清单，能打开用户已有项目 |
 | SHIP-06 | 实现 | SHIP-04、KIT-05 | src/export/platforms/ | 为已选平台接入发布适配，给出同一项目的启动证据 |
 | SHIP-07 | 核心 | AUT-03、AUT-04、WKB-11、KIT-04、BLK-01 | examples/、交付说明 | 用非方块与已具备最小玩法的方块项目验证同一创建、编辑、试玩与导出流程 |

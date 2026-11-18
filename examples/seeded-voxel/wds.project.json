@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "project_id": "seeded-voxel",
+  "revision": 0,
+  "entry_scene": "valley",
+  "resources": [
+    {"id": "valley", "kind": "scene", "path": "assets/valley.json", "refs": ["slope-colors"]},
+    {"id": "slope-colors", "kind": "text", "path": "assets/slope-colors.txt", "refs": []}
+  ]
+}

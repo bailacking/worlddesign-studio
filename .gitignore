@@ -3,3 +3,6 @@
 
 # 本地个人预设，不进入仓库。
 CMakeUserPresets.json
+
+# Python 辅助工具的字节码。
+__pycache__/

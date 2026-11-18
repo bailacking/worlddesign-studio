@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "project_id": "reef-delivery",
+  "revision": 0,
+  "entry_scene": "reef",
+  "resources": [
+    {
+      "id": "reef",
+      "kind": "scene",
+      "path": "assets/reef.json",
+      "refs": [
+        "courier",
+        "wall",
+        "hazard",
+        "landing"
+      ]
+    },
+    {
+      "id": "courier",
+      "kind": "image",
+      "path": "assets/courier.png",
+      "refs": []
+    },
+    {
+      "id": "wall",
+      "kind": "image",
+      "path": "assets/wall.png",
+      "refs": []
+    },
+    {
+      "id": "hazard",
+      "kind": "image",
+      "path": "assets/hazard.png",
+      "refs": []
+    },
+    {
+      "id": "landing",
+      "kind": "image",
+      "path": "assets/landing.png",
+      "refs": []
+    }
+  ]
+}

@@ -3,8 +3,9 @@
 #include <array>
 #include <cstdint>
 #include <iosfwd>
+#include <optional>
 
-#include "voxel_content.hpp"
+#include "voxel_terrain.hpp"
 
 namespace wds::voxel {
 
@@ -22,6 +23,11 @@ struct Hit {
   int normal = 0;
 };
 
+struct Camera {
+  Vec3 eye, forward, right, up;
+  [[nodiscard]] Vec3 ray(double horizontal, double vertical) const;
+};
+
 class World {
  public:
   static constexpr int width = 24;
@@ -36,11 +42,16 @@ class World {
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }
+  void set_content(Content content) { content_ = content; }
   void set_placement(Block block);
+  void use_seed(std::uint32_t seed);
+  void stream(Vec3 center) const;
+  [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
  private:
   std::array<Block, width * height * depth> blocks_{};
   Content content_;
+  std::optional<SeededTerrain> terrain_;
 };
 
 struct Player {
@@ -54,6 +65,7 @@ struct Player {
             int jump_speed = 6);
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
+  [[nodiscard]] Camera camera() const;
 };
 
 [[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction);

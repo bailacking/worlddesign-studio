@@ -25,7 +25,7 @@ std::size_t index(int x, int y, int z) {
   return static_cast<std::size_t>((y * World::depth + z) * World::width + x);
 }
 
-Block terrain(int x, int y, int z) {
+Block legacy_block(int x, int y, int z) {
   if (y == 0) return Block::dirt;
   if (y == 1) return Block::grass;
   if (y <= 4 && (x == 0 || x == World::width - 1 || z == 0 || z == World::depth - 1)) {
@@ -42,13 +42,26 @@ Block terrain(int x, int y, int z) {
 World::World(Content content) : content_(content) {
   for (int y = 0; y < height; ++y) {
     for (int z = 0; z < depth; ++z) {
-      for (int x = 0; x < width; ++x) blocks_[index(x, y, z)] = terrain(x, y, z);
+      for (int x = 0; x < width; ++x) blocks_[index(x, y, z)] = legacy_block(x, y, z);
     }
   }
 }
 
 Block World::block(int x, int y, int z) const {
+  if (terrain_) return terrain_->block(x, y, z);
   return inside(x, y, z) ? blocks_[index(x, y, z)] : Block::air;
+}
+
+void World::use_seed(std::uint32_t seed) {
+  terrain_.emplace(seed);
+  stream(Player{}.feet);
+}
+
+void World::stream(Vec3 center) const {
+  if (!terrain_ || !std::isfinite(center.x) || !std::isfinite(center.z)) return;
+  constexpr double edge = SeededTerrain::limit;
+  terrain_->stream(cell(std::clamp(center.x, -edge, edge - 1)),
+                   cell(std::clamp(center.z, -edge, edge - 1)));
 }
 
 void World::set_placement(Block block) {
@@ -59,15 +72,18 @@ void World::set_placement(Block block) {
 
 bool World::collides(Vec3 feet) const {
   if (!std::isfinite(feet.x) || !std::isfinite(feet.y) || !std::isfinite(feet.z)) return true;
-  if (feet.x < radius || feet.x > width - radius || feet.z < radius || feet.z > depth - radius ||
-      feet.y < 0) {
+  const int minimum = terrain_ ? -SeededTerrain::limit : 0;
+  const int maximum_x = terrain_ ? SeededTerrain::limit : width;
+  const int maximum_z = terrain_ ? SeededTerrain::limit : depth;
+  if (feet.x < minimum + radius || feet.x > maximum_x - radius || feet.z < minimum + radius ||
+      feet.z > maximum_z - radius || feet.y < 0) {
     return true;
   }
   if (feet.y >= height) return false;
   for (int x = cell(feet.x - radius); x <= cell(feet.x + radius - epsilon); ++x) {
     for (int y = cell(feet.y); y <= cell(feet.y + body_height - epsilon); ++y) {
       for (int z = cell(feet.z - radius); z <= cell(feet.z + radius - epsilon); ++z) {
-        if (block(x, y, z) != Block::air) return true;
+        if ((terrain_ && !terrain_->resident(x, z)) || block(x, y, z) != Block::air) return true;
       }
     }
   }
@@ -77,11 +93,13 @@ bool World::collides(Vec3 feet) const {
 Hit World::cast(Vec3 origin, Vec3 direction, double limit) const {
   const double length = std::hypot(direction.x, direction.y, direction.z);
   if (!(length > 0) || !std::isfinite(length) || !(limit > 0) || !std::isfinite(limit)) return {};
-  // The renderer only casts short rays around this fixed-size world.
   limit = std::min(limit, 64.0);
+  const int minimum = terrain_ ? -SeededTerrain::limit : 0;
+  const int maximum_x = terrain_ ? SeededTerrain::limit : width;
+  const int maximum_z = terrain_ ? SeededTerrain::limit : depth;
   if (!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
-      origin.x < -limit || origin.x > width + limit || origin.y < -limit ||
-      origin.y > height + limit || origin.z < -limit || origin.z > depth + limit) {
+      origin.x < minimum - limit || origin.x > maximum_x + limit || origin.y < -limit ||
+      origin.y > height + limit || origin.z < minimum - limit || origin.z > maximum_z + limit) {
     return {};
   }
   const std::array pos{origin.x, origin.y, origin.z};
@@ -131,24 +149,36 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
     if (hit.normal == 0) return false;
     target[hit.side] += hit.normal;
   }
-  const auto [x, y, z] = target;
-  if (!inside(x, y, z) || y == 0) return false;
-  auto& value = blocks_[index(x, y, z)];
-  if (!place) {
-    if (!content_.style(value).breakable) return false;
-    value = Block::air;
+  const int x = target[0];
+  const int y = target[1];
+  const int z = target[2];
+  if (y <= 0 || y >= height || (!terrain_ && !inside(x, y, z))) return false;
+  const auto set = [this, x, y, z](Block value) {
+    if (terrain_) return terrain_->set(x, y, z, value);
+    blocks_[index(x, y, z)] = value;
     return true;
-  }
-  if (value != Block::air) return false;
-  value = content_.placement;
-  if (collides(feet) || collides(Player{}.feet)) {
-    value = Block::air;
+  };
+  const auto previous = block(x, y, z);
+  if (!place) return content_.style(previous).breakable && set(Block::air);
+  if (previous != Block::air || !set(content_.placement)) return false;
+  const auto spawn = Player{}.feet;
+  const bool spawn_loaded = !terrain_ || terrain_->resident(cell(spawn.x), cell(spawn.z));
+  if (collides(feet) || (spawn_loaded && collides(spawn))) {
+    set(previous);
     return false;
   }
   return true;
 }
 
 bool World::read(std::istream& input) {
+  if (terrain_) {
+    auto candidate = *this;
+    if (!candidate.terrain_->read(input)) return false;
+    candidate.stream(Player{}.feet);
+    if (candidate.collides(Player{}.feet)) return false;
+    *this = std::move(candidate);
+    return true;
+  }
   std::string header;
   if (!std::getline(input, header) || header != "wds-voxel-v1 24 12 24") return false;
   World candidate(content_);
@@ -171,6 +201,10 @@ bool World::read(std::istream& input) {
 }
 
 void World::write(std::ostream& output) const {
+  if (terrain_) {
+    terrain_->write(output);
+    return;
+  }
   output << "wds-voxel-v1 24 12 24\n";
   for (const auto block : blocks_) output.put(static_cast<char>('0' + static_cast<int>(block)));
   output.put('\n');
@@ -187,10 +221,12 @@ void Player::step(const World& world, double forward, double strafe, bool jump, 
   seconds = std::min(seconds, 0.025);
   const double length = std::max(1.0, std::hypot(forward, strafe));
   const double speed = 5.0 * seconds / length;
+  world.stream(feet);
   const double dx = (std::sin(yaw) * forward + std::cos(yaw) * strafe) * speed;
   const double dz = (-std::cos(yaw) * forward + std::sin(yaw) * strafe) * speed;
   if (!world.collides({feet.x + dx, feet.y, feet.z})) feet.x += dx;
   if (!world.collides({feet.x, feet.y, feet.z + dz})) feet.z += dz;
+  world.stream(feet);
 
   if (jump && grounded) fall_speed = jump_speed;
   fall_speed = std::max(-12.0, fall_speed - 18 * seconds);
@@ -220,6 +256,19 @@ Vec3 Player::eye() const { return {feet.x, feet.y + 1.55, feet.z}; }
 
 Vec3 Player::view() const {
   return {std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch)};
+}
+
+Camera Player::camera() const {
+  return {eye(),
+          view(),
+          {std::cos(yaw), 0, std::sin(yaw)},
+          {-std::sin(yaw) * std::sin(pitch), std::cos(pitch), std::cos(yaw) * std::sin(pitch)}};
+}
+
+Vec3 Camera::ray(double horizontal, double vertical) const {
+  return {forward.x + horizontal * right.x + vertical * up.x,
+          forward.y + horizontal * right.y + vertical * up.y,
+          forward.z + horizontal * right.z + vertical * up.z};
 }
 
 std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction) {

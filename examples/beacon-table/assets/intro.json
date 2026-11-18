@@ -1,0 +1,111 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "player",
+      "x": -24,
+      "y": 0,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      }
+    },
+    {
+      "id": "stems",
+      "x": -16,
+      "y": 0,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      }
+    },
+    {
+      "id": "sap",
+      "x": 0,
+      "y": 0,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      }
+    },
+    {
+      "id": "exit",
+      "x": 120,
+      "y": 0,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      }
+    }
+  ],
+  "play": {
+    "player": "player",
+    "speed": 8,
+    "walls": [],
+    "goals": [
+      "exit"
+    ],
+    "hazards": []
+  },
+  "workshop": {
+    "version": 1,
+    "bag_slots": 3,
+    "chest_slots": 1,
+    "items": {
+      "fiber": {
+        "tags": [
+          "parts"
+        ],
+        "limit": 8
+      },
+      "resin": {
+        "tags": [
+          "parts"
+        ],
+        "limit": 8
+      },
+      "beacon": {
+        "tags": [
+          "facility"
+        ],
+        "limit": 1
+      }
+    },
+    "recipes": {
+      "build-beacon": {
+        "method": "craft",
+        "output": {
+          "item": "beacon",
+          "count": 1
+        },
+        "ingredients": [
+          {
+            "item": "#parts",
+            "count": 1
+          },
+          {
+            "item": "fiber",
+            "count": 1
+          }
+        ],
+        "unlocks": "beacon-work"
+      }
+    },
+    "sources": {
+      "stems": {
+        "yield": {
+          "item": "fiber",
+          "count": 1
+        },
+        "uses": 1
+      },
+      "sap": {
+        "yield": {
+          "item": "resin",
+          "count": 1
+        },
+        "uses": 1
+      }
+    }
+  }
+}

@@ -1,10 +1,14 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -15,18 +19,26 @@
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
+#include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <deque>
 #include <optional>
 #include <utility>
 
+#include "asset_preview.hpp"
 #include "bridge.hpp"
 #include "i18n/language.hpp"
 #include "output_panel.hpp"
@@ -35,11 +47,29 @@
 #include "scene_tree.hpp"
 #include "theme/theme.hpp"
 #include "viewport.hpp"
+#include "voxel_viewport.hpp"
+#include "workshop_dialog.hpp"
 
 namespace wds::studio {
 namespace {
 
 QString argument(qint64 number) { return QString::number(number); }
+
+QString file_kind(const QString& path) {
+  const auto extension = QFileInfo(path).suffix().toLower();
+  if (extension == "png") return "image";
+  if (extension == "txt" || extension == "md") return "text";
+  if (extension == "json") return "data";
+  return {};
+}
+
+QString dropped_file(const QMimeData* mime) {
+  if (!mime->hasUrls()) return {};
+  const auto urls = mime->urls();
+  if (urls.size() != 1 || !urls.front().isLocalFile()) return {};
+  const auto path = urls.front().toLocalFile();
+  return file_kind(path).isEmpty() ? QString{} : path;
+}
 
 QString diagnostic(const QJsonObject& result) {
   static constexpr std::array codes{
@@ -52,24 +82,46 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_id"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "duplicate_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "edit_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "export_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "image_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "import_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_argument"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_content"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entity"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_entry_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_export_destination"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_mode"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_runtime_dependency"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_utf8"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_scene"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_materials"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_world"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_runtime_dependency"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "permission_denied"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "recovery_required"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_content_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_changed"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_too_large"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "target_exists"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsafe_path"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_export_target"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_operation"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_kind"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_version"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_version")};
   const auto code = result.value("code").toString();
@@ -122,6 +174,7 @@ class Workbench final : public QMainWindow {
  public:
   explicit Workbench(LanguageSettings& language) : language_(language) {
     setObjectName("workbench");
+    setAcceptDrops(true);
     resize(1360, 840);
     setDockOptions(AllowTabbedDocks | AllowNestedDocks | AnimatedDocks);
 
@@ -133,7 +186,14 @@ class Workbench final : public QMainWindow {
     save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
+    import_ = project_menu_->addAction(QString{}, this, &Workbench::importResource);
+    export_ = project_menu_->addAction(QString{}, this, &Workbench::exportGame);
+#ifndef Q_OS_WIN
+    export_->setVisible(false);
+#endif
+    clear_cache_ = project_menu_->addAction(QString{}, this, &Workbench::clearThumbnailCache);
     recover_ = project_menu_->addAction(QString{}, this, &Workbench::recoverProject);
+    operations_ = project_menu_->addAction(QString{}, this, &Workbench::showOperations);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
     edit_menu_ = menuBar()->addMenu(QString{});
     undo_ = edit_menu_->addAction(QString{}, this, [this] { restoreHistory(false); });
@@ -153,6 +213,9 @@ class Workbench final : public QMainWindow {
     play_->setShortcut(QKeySequence(Qt::Key_F5));
     stop_ = scene_menu_->addAction(QString{}, this, &Workbench::stop);
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
+    workshop_ = scene_menu_->addAction(QString{}, this, &Workbench::openWorkshop);
+    workshop_->setShortcut(QKeySequence(Qt::Key_F6));
+    palette_ = scene_menu_->addAction(QString{}, this, &Workbench::changePalette);
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
     settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
@@ -164,13 +227,22 @@ class Workbench final : public QMainWindow {
     toolbar_->addSeparator();
     toolbar_->addActions({undo_, redo_});
     toolbar_->addSeparator();
-    toolbar_->addActions({play_, stop_});
+    toolbar_->addActions({play_, stop_, workshop_});
     toolbar_->addSeparator();
     project_label_ = new QLabel(toolbar_);
     toolbar_->addWidget(project_label_);
 
     viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
-    setCentralWidget(viewport_);
+    voxel_view_ = new VoxelViewport(
+        [this] {
+          if (!voxel_preview_) voxel_dirty_ = true;
+          updateActions();
+        },
+        this);
+    views_ = new QStackedWidget(this);
+    views_->addWidget(viewport_);
+    views_->addWidget(voxel_view_);
+    setCentralWidget(views_);
     scene_tree_ = new SceneTreePanel([this](const QString& id) { selectEntity(id); }, this);
     hierarchy_ = dock("sceneTree", Qt::LeftDockWidgetArea, scene_tree_);
 
@@ -211,15 +283,9 @@ class Workbench final : public QMainWindow {
     const QSettings settings;
     restoreGeometry(settings.value("workbench/geometry").toByteArray());
     restoreState(settings.value("workbench/layout").toByteArray(), 1);
-    timer_.setInterval(33);
-    connect(&timer_, &QTimer::timeout, this, [this] {
-      if (!session_->advance(1)) {
-        timer_.stop();
-        setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
-        return;
-      }
-      drawSession();
-    });
+    timer_.setInterval(16);
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, &Workbench::advancePlayback);
     retranslate();
   }
 
@@ -231,10 +297,35 @@ class Workbench final : public QMainWindow {
     refresh();
   }
 
+ signals:
+  void inspectionFinished(bool ready);
+
  protected:
+  void dragEnterEvent(QDragEnterEvent* event) override {
+    if (!import_->isEnabled() || !event->possibleActions().testFlag(Qt::CopyAction) ||
+        dropped_file(event->mimeData()).isEmpty())
+      return;
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+  }
+
+  void dropEvent(QDropEvent* event) override {
+    const auto path = dropped_file(event->mimeData());
+    if (!import_->isEnabled() || !event->possibleActions().testFlag(Qt::CopyAction) ||
+        path.isEmpty())
+      return;
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    importFile(path);
+  }
+
   void changeEvent(QEvent* event) override {
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) retranslate();
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow()) {
+      viewport_->clearSceneInput();
+      voxel_view_->clearInput();
+    }
   }
 
   void closeEvent(QCloseEvent* event) override {
@@ -271,7 +362,11 @@ class Workbench final : public QMainWindow {
     create_->setText(tr("&New Project…"));
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
+    import_->setText(tr("Import Resource…"));
+    export_->setText(tr("Export for Windows x64…"));
+    clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
+    operations_->setText(tr("Available Operations…"));
     close_->setText(tr("Close Project"));
     edit_data_->setText(tr("Edit Integer Data Field…"));
     add_entity_->setText(tr("Add Entity…"));
@@ -280,6 +375,8 @@ class Workbench final : public QMainWindow {
     move_up_->setText(tr("Move Entity Up"));
     move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
+    workshop_->setText(QCoreApplication::translate("WorkshopDialog", "Items and recipes"));
+    palette_->setText(tr("Voxel Palette…"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
     hierarchy_->setWindowTitle(tr("Scene"));
@@ -319,6 +416,37 @@ class Workbench final : public QMainWindow {
       QMessageBox::warning(this, tr("Settings"), tr("Could not apply the interface language."));
   }
 
+  void showOperations() {
+    setBusy(true);
+    bridge_.discover([this](const QJsonObject& result) {
+      setBusy(false);
+      if (result.value("code") != "ok" || !result.value("operations").isArray()) {
+        report({nullptr, {}, result});
+        return;
+      }
+      QDialog dialog(this);
+      dialog.setWindowTitle(tr("Available Operations"));
+      dialog.resize(620, 420);
+      QVBoxLayout layout(&dialog);
+      QLabel usage(tr("This window · %1 requests · %2 ms")
+                       .arg(bridge_.requests())
+                       .arg(bridge_.elapsedMs(), 0, 'f', 1),
+                   &dialog);
+      QPlainTextEdit list(&dialog);
+      list.setReadOnly(true);
+      list.setAccessibleName(tr("Available Operations"));
+      list.setPlainText(QString::fromUtf8(
+          QJsonDocument(result.value("operations").toArray()).toJson(QJsonDocument::Indented)));
+      QDialogButtonBox buttons(QDialogButtonBox::Close, &dialog);
+      buttons.button(QDialogButtonBox::Close)->setText(tr("Close"));
+      connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+      layout.addWidget(&usage);
+      layout.addWidget(&list);
+      layout.addWidget(&buttons);
+      dialog.exec();
+    });
+  }
+
   void chooseProject() {
     const auto path = QFileDialog::getExistingDirectory(
         this, tr("Open WDS Project"), root_,
@@ -334,24 +462,206 @@ class Workbench final : public QMainWindow {
     bool accepted = false;
     const auto id = QInputDialog::getText(this, tr("New WDS Project"), tr("Project ID"),
                                           QLineEdit::Normal, "my-game", &accepted);
-    if (!accepted || id.isEmpty() || !canDiscard()) return;
+    if (!accepted || id.isEmpty()) return;
     if (id.contains('/') || id.contains('\\') || id == "." || id == "..") {
       report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}, "warning"});
       return;
     }
+    const QStringList kinds{tr("2D Scene"), tr("3D Voxel World")};
+    const auto type = QInputDialog::getItem(this, tr("New WDS Project"), tr("Project Type"), kinds,
+                                            0, false, &accepted);
+    if (!accepted || !canDiscard()) return;
     const auto path = QDir(parent).filePath(id);
     setBusy(true);
-    bridge_.run({"project", "create", path, id}, [this, path](const QJsonObject& result) {
-      if (result.value("code") != "ok") {
-        report({nullptr, {}, result});
-        setBusy(false);
-        return;
-      }
-      stop();
-      root_ = path;
-      clearProject();
-      refresh();
-    });
+    bridge_.request(path, "project.create", "apply", {},
+                    {{"project_id", id}, {"kind", type == kinds.at(1) ? "voxel" : "scene"}},
+                    [this, path](const QJsonObject& result) {
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      stop();
+                      root_ = path;
+                      clearProject();
+                      refresh();
+                    });
+  }
+
+  void importResource() {
+    if (busy_ || playing() || hasDraft() || !revision_) return;
+    const auto source =
+        QFileDialog::getOpenFileName(this, tr("Choose Resource File"), {},
+                                     tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
+                                     nullptr, QFileDialog::DontUseNativeDialog);
+    if (!source.isEmpty()) importFile(source);
+  }
+
+  void exportGame() {
+    if (busy_ || playing() || hasDraft() || !revision_ || (!scene_ready_ && !voxel_scene_)) return;
+    const auto parent = QFileDialog::getExistingDirectory(
+        this, tr("Choose Export Parent"), QFileInfo(root_).absolutePath(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
+    if (parent.isEmpty()) return;
+
+    bool accepted = false;
+    const auto name =
+        QInputDialog::getText(this, tr("Export for Windows x64"),
+                              tr("New folder for revision %1").arg(*revision_), QLineEdit::Normal,
+                              project_id_ + "-win64-r" + argument(*revision_), &accepted)
+            .trimmed();
+    if (!accepted) return;
+    if (name.isEmpty() || name.contains('/') || name.contains('\\') || name.contains(':') ||
+        name == "." || name == "..") {
+      report({QT_TR_NOOP("Enter a name for a new export folder."), {}, {}, "warning"});
+      return;
+    }
+
+    const auto destination = QDir(parent).filePath(name);
+    setBusy(true);
+    setStatus(QT_TR_NOOP("Exporting revision %1…"), {argument(*revision_)});
+    bridge_.request(
+        root_, "project.export", "apply", revision_,
+        {{"target", "windows-x64"}, {"destination", destination}},
+        [this](const QJsonObject& result) {
+          setBusy(false);
+          if (result.value("code") != "ok") {
+            report({nullptr, {}, result});
+            return;
+          }
+          const auto path = result.value("destination").toString();
+          report({QT_TR_NOOP("Exported revision %1 · %2"),
+                  {argument(result.value("revision").toInteger()), QDir::toNativeSeparators(path)},
+                  {},
+                  "info"});
+          QMessageBox notice(QMessageBox::Information, tr("Export Complete"),
+                             tr("Open Play.exe from the exported folder to run the game."),
+                             QMessageBox::Close, this);
+          auto* show = notice.addButton(tr("Open Folder"), QMessageBox::ActionRole);
+          notice.exec();
+          if (notice.clickedButton() == show) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        });
+  }
+
+  void importFile(const QString& source) {
+    if (busy_ || playing() || hasDraft() || !revision_) return;
+    const auto suggested_kind = file_kind(source);
+    auto suggested_id = QFileInfo(source).completeBaseName().toLower();
+    suggested_id.replace(QRegularExpression("[^a-z0-9]+"), "-");
+    suggested_id.remove(QRegularExpression("^-|-$"));
+    if (suggested_id.isEmpty())
+      suggested_id = suggested_kind == "image" || suggested_kind == "text" ? suggested_kind
+                                                                           : QString("resource");
+    else if (suggested_id.front().isDigit())
+      suggested_id = "resource-" + suggested_id;
+    suggested_id = suggested_id.left(59);
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Import Resource…"));
+    QFormLayout form(&dialog);
+    QLineEdit id(suggested_id, &dialog);
+    QComboBox kind(&dialog);
+    kind.addItem(tr("Data"), "data");
+    kind.addItem(tr("Scene"), "scene");
+    kind.addItem(tr("PNG Image"), "image");
+    kind.addItem(tr("UTF-8 Text"), "text");
+    const int type_index = kind.findData(suggested_kind);
+    if (type_index >= 0) kind.setCurrentIndex(type_index);
+    const auto targetFor = [&kind](const QString& id) {
+      const auto chosen = kind.currentData().toString();
+      const auto suffix = chosen == "image" ? "png" : chosen == "text" ? "txt" : "json";
+      return QString("assets/%1.%2").arg(id, suffix);
+    };
+    QLineEdit target(targetFor(suggested_id), &dialog);
+    target.setPlaceholderText(QStringLiteral("assets/example.json"));
+    const auto update_target = [&id, &target, targetFor] {
+      if (!target.isModified()) target.setText(targetFor(id.text().trimmed()));
+    };
+    connect(&id, &QLineEdit::textEdited, &dialog, update_target);
+    connect(&kind, &QComboBox::currentIndexChanged, &dialog, update_target);
+    form.addRow(tr("Resource ID"), &id);
+    form.addRow(tr("Resource Type"), &kind);
+    form.addRow(tr("Target Path"), &target);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons.button(QDialogButtonBox::Ok)->setText(tr("Preview"));
+    buttons.button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
+    connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form.addRow(&buttons);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const QJsonObject input{{"source", source},
+                            {"resource_id", id.text().trimmed()},
+                            {"kind", kind.currentData().toString()},
+                            {"path", target.text().trimmed()}};
+    setBusy(true);
+    bridge_.request(
+        root_, "resource.import.apply", "preview", revision_, input,
+        [this, input, source](const QJsonObject& preview) {
+          if (preview.value("code") != "ok") {
+            reportImportError(preview, source);
+            setBusy(false);
+            return;
+          }
+          const auto resource = preview.value("resource_id").toString();
+          if (!preview.value("changed").toBool()) {
+            report({QT_TR_NOOP("Resource %1 is already imported."), {resource}, {}});
+            setBusy(false);
+            return;
+          }
+          const auto digest = preview.value("digest").toString();
+          if (digest.isEmpty()) {
+            report({nullptr, {}, {{"code", "cli_invalid_result"}, {"location", "preview-import"}}});
+            setBusy(false);
+            return;
+          }
+          auto details = tr("Import %1 as %2?\n%3 · %4 bytes")
+                             .arg(preview.value("source_name").toString(), resource,
+                                  preview.value("path").toString(),
+                                  argument(preview.value("bytes").toInteger()));
+          if (preview.contains("width"))
+            details += "\n" + tr("%1 × %2 px")
+                                  .arg(preview.value("width").toInt())
+                                  .arg(preview.value("height").toInt());
+          else if (preview.contains("line_count"))
+            details += "\n" + tr("Lines · %1").arg(preview.value("line_count").toInteger());
+          QMessageBox confirm(QMessageBox::Question, tr("Import Preview"), details,
+                              QMessageBox::Yes | QMessageBox::Cancel, this);
+          confirm.setTextFormat(Qt::PlainText);
+          confirm.setDefaultButton(QMessageBox::Cancel);
+          confirm.button(QMessageBox::Yes)->setText(tr("Import"));
+          confirm.button(QMessageBox::Cancel)->setText(tr("Cancel"));
+          if (confirm.exec() != QMessageBox::Yes) {
+            cancelPreview("resource.import.apply", input);
+            return;
+          }
+          auto commit = input;
+          commit["expected_digest"] = digest;
+          bridge_.request(
+              root_, "resource.import.apply", "apply", revision_, commit,
+              [this, source](const QJsonObject& result) {
+                if (result.value("code") != "ok") {
+                  reportImportError(result, source);
+                  setBusy(false);
+                  return;
+                }
+                report({QT_TR_NOOP("Imported %1."), {result.value("resource_id").toString()}, {}});
+                refresh(false);
+              });
+        });
+  }
+
+  void reportImportError(QJsonObject result, const QString& source) {
+    if (result.value("location") == "/source") result.insert("resource_path", source);
+    report({nullptr, {}, std::move(result)});
+  }
+
+  void clearThumbnailCache() {
+    if (!clear_thumbnail_cache()) {
+      report({QT_TR_NOOP("Could not clear all thumbnails."), {}, {}, "warning"});
+      return;
+    }
+    showResource(resources_->selectedId());
+    report({QT_TR_NOOP("Thumbnail cache cleared."), {}, {}});
   }
 
   void recoverProject() {
@@ -361,7 +671,7 @@ class Workbench final : public QMainWindow {
       return;
     }
     setBusy(true);
-    bridge_.run({"project", "recover", root_}, [this](const QJsonObject& result) {
+    bridge_.request(root_, "project.recover", "apply", {}, {}, [this](const QJsonObject& result) {
       if (result.value("code") != "ok") {
         report({nullptr, {}, result});
         setBusy(false);
@@ -373,11 +683,16 @@ class Workbench final : public QMainWindow {
     });
   }
 
+  bool hasDraft() const { return dirty_ || voxel_dirty_; }
+  bool playing() const { return session_.has_value() || voxel_preview_.has_value(); }
+
   bool canDiscard() {
-    return !dirty_ || QMessageBox::question(this, tr("Unsaved Property"),
-                                            tr("Discard the unsaved property change?"),
-                                            QMessageBox::Discard | QMessageBox::Cancel,
-                                            QMessageBox::Cancel) == QMessageBox::Discard;
+    return !hasDraft() ||
+           QMessageBox::question(this, voxel_dirty_ ? tr("Unsaved World") : tr("Unsaved Property"),
+                                 voxel_dirty_ ? tr("Discard the unsaved block changes?")
+                                              : tr("Discard the unsaved property change?"),
+                                 QMessageBox::Discard | QMessageBox::Cancel,
+                                 QMessageBox::Cancel) == QMessageBox::Discard;
   }
 
   void closeProject() {
@@ -389,6 +704,11 @@ class Workbench final : public QMainWindow {
   }
 
   void clearProject() {
+    voxel_view_->setWorld(nullptr);
+    voxel_preview_.reset();
+    voxel_scene_.reset();
+    voxel_dirty_ = false;
+    views_->setCurrentWidget(viewport_);
     messages_.clear();
     updateOutput();
     viewport_->resetView();
@@ -400,6 +720,8 @@ class Workbench final : public QMainWindow {
     field_schema_ = {};
     entities_ = {};
     resources_model_ = {};
+    resources_->setImportRecords({});
+    resources_->setPreview({});
     selected_.clear();
     dirty_ = false;
     resources_->setResources(resources_model_);
@@ -408,41 +730,76 @@ class Workbench final : public QMainWindow {
     updateActions();
   }
 
-  void refresh() {
+  void refresh(bool announce_ready = true) {
     setBusy(true);
-    bridge_.run({"project", "resources", root_}, [this](const QJsonObject& result) {
-      if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
-          !result.value("resources").isArray() || !result.value("project_id").isString()) {
-        report({nullptr, {}, result});
-        setBusy(false);
-        return;
-      }
-      project_id_ = result.value("project_id").toString();
-      revision_ = result.value("revision").toInteger();
-      resources_model_ = result.value("resources").toArray();
-      resources_->setResources(resources_model_);
-      readScene();
-    });
+    bridge_.request(
+        root_, "project.index", "read", {}, {}, [this, announce_ready](const QJsonObject& result) {
+          if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
+              !result.value("resources").isArray() || !result.value("project_id").isString()) {
+            report({nullptr, {}, result});
+            setBusy(false);
+            emit inspectionFinished(false);
+            return;
+          }
+          project_id_ = result.value("project_id").toString();
+          revision_ = result.value("revision").toInteger();
+          resources_model_ = result.value("resources").toArray();
+          resources_->setResources(resources_model_);
+          const auto imports = result.value("imports").toObject();
+          const bool ok = imports.value("code") == "ok";
+          resources_->setImportRecords(imports.value("imports").toArray());
+          if (!ok) report({nullptr, {}, imports});
+          showScene(result.value("scene").toObject(), announce_ready && ok);
+        });
   }
 
   void readScene(bool announce_ready = true) {
     scene_ready_ = false;
-    bridge_.run({"project", "scene", root_, argument(*revision_)},
-                [this, announce_ready](const QJsonObject& result) {
-                  scene_ready_ = result.value("code") == "ok" &&
-                                 result.value("entities").isArray() &&
-                                 result.value("fields").toArray().size() ==
-                                     static_cast<qsizetype>(fields_.size());
-                  entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
-                  field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
-                  populateInspector();
-                  setEntities();
-                  if (scene_ready_ && announce_ready)
-                    report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
-                  else if (!scene_ready_)
-                    report({nullptr, {}, result});
-                  setBusy(false);
-                });
+    bridge_.request(root_, "scene.inspect", "read", revision_, {},
+                    [this, announce_ready](QJsonObject result) {
+                      showScene(std::move(result), announce_ready);
+                    });
+  }
+
+  void showScene(QJsonObject result, bool announce_ready) {
+    const bool keep_camera = voxel_scene_.has_value();
+    voxel_view_->setWorld(nullptr, false);
+    voxel_scene_.reset();
+    if (result.value("code") == "ok" && result.value("kind") == "voxel") {
+      auto loaded = platform::start_scene(projectPath(), *revision_, true);
+      if (loaded.voxel_scene) {
+        voxel_scene_ = std::move(loaded.voxel_scene);
+        voxel_view_->setWorld(&*voxel_scene_, !keep_camera);
+      } else {
+        result =
+            QJsonDocument::fromJson(QByteArray::fromStdString(platform::scene_result_json(loaded)))
+                .object();
+      }
+    }
+    views_->setCurrentWidget(voxel_scene_ ? static_cast<QWidget*>(voxel_view_) : viewport_);
+    scene_ready_ =
+        result.value("code") == "ok" && result.value("entities").isArray() &&
+        result.value("fields").toArray().size() == static_cast<qsizetype>(fields_.size());
+    entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
+    field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
+    populateInspector();
+    setEntities();
+    const bool ready = scene_ready_ || voxel_scene_.has_value();
+    if (ready && announce_ready)
+      report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
+    else if (!ready)
+      report({nullptr, {}, result});
+    setBusy(false);
+    if (voxel_scene_) voxel_view_->setFocus(Qt::OtherFocusReason);
+    emit inspectionFinished(ready);
+  }
+
+  std::filesystem::path projectPath() const {
+#ifdef Q_OS_WIN
+    return std::filesystem::path(root_.toStdWString());
+#else
+    return std::filesystem::path(root_.toStdString());
+#endif
   }
 
   void setEntities() {
@@ -454,7 +811,7 @@ class Workbench final : public QMainWindow {
 
   void selectEntity(const QString& id) {
     if (id == selected_) return;
-    if (busy_ || session_ || !canDiscard()) {
+    if (busy_ || playing() || !canDiscard()) {
       scene_tree_->setSelectedId(selected_);
       return;
     }
@@ -499,21 +856,22 @@ class Workbench final : public QMainWindow {
   void changeEntities(const QString& operation, const QString& id, const QStringList& extra,
                       const QString& selection) {
     if (!scene_ready_ || !revision_ || busy_ || dirty_ || session_) return;
-    QStringList args{"project", "edit-entity", root_, operation, id, argument(*revision_)};
-    args.append(extra);
-    args.append("--capture-change");
+    QJsonObject input{{"operation", operation}, {"entity_id", id}, {"capture_change", true}};
+    if (operation == "move") input["argument"] = extra.value(0).toLongLong();
+    if (operation == "copy") input["argument"] = extra.value(0);
     setBusy(true);
-    bridge_.run(args, [this, selection](const QJsonObject& result) {
-      if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-        report({nullptr, {}, result});
-        setBusy(false);
-        return;
-      }
-      recordHistory(result, selection);
-      revision_ = result.value("revision").toInteger();
-      selected_ = selection;
-      readScene();
-    });
+    bridge_.request(root_, "scene.entity.apply", "apply", revision_, input,
+                    [this, selection](const QJsonObject& result) {
+                      if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      recordHistory(result, selection);
+                      revision_ = result.value("revision").toInteger();
+                      selected_ = selection;
+                      readScene();
+                    });
   }
 
   void recordHistory(const QJsonObject& result, const QString& next_selection) {
@@ -530,7 +888,9 @@ class Workbench final : public QMainWindow {
 
   void restoreHistory(bool redo) {
     auto& source = redo ? redo_history_ : undo_history_;
-    if (!scene_ready_ || !revision_ || busy_ || dirty_ || session_ || source.empty()) return;
+    if (!(scene_ready_ || voxel_scene_) || !revision_ || busy_ || hasDraft() || playing() ||
+        source.empty())
+      return;
     auto request = source.back().change;
     if (!redo) {
       const auto before = request.value("before");
@@ -538,8 +898,8 @@ class Workbench final : public QMainWindow {
       request["after"] = before;
     }
     setBusy(true);
-    bridge_.run(
-        {"project", "restore-scene", root_, argument(*revision_)},
+    bridge_.request(
+        root_, "scene.restore", "apply", revision_, {{"change", request}},
         [this, redo](const QJsonObject& result) {
           if (result.value("code") != "ok" || !result.value("changed").toBool() ||
               !result.value("revision").isDouble()) {
@@ -557,8 +917,7 @@ class Workbench final : public QMainWindow {
                   {},
                   {}});
           readScene(false);
-        },
-        QJsonDocument(request).toJson(QJsonDocument::Compact));
+        });
   }
 
   void populateInspector() {
@@ -584,51 +943,118 @@ class Workbench final : public QMainWindow {
   }
 
   void showResource(const QString& id) {
+    resources_->setPreview({});
     if (id.isEmpty()) return;
     for (const auto item : resources_model_) {
       const auto resource = item.toObject();
-      if (resource.value("id") == id) setStatus(nullptr, {resource.value("path").toString()});
+      if (resource.value("id") != id) continue;
+      const auto path = resource.value("path").toString();
+      setStatus(nullptr, {path});
+      const auto kind = resource.value("kind").toString();
+      if (kind != "image" && kind != "text") return;
+#ifdef Q_OS_WIN
+      const std::filesystem::path directory(root_.toStdWString());
+#else
+      const std::filesystem::path directory(root_.toStdString());
+#endif
+      const auto source = platform::read_asset_source(directory, id.toStdString());
+      if (source.code != "ok") {
+        report({nullptr,
+                {},
+                {{"code", QString::fromStdString(source.code)},
+                 {"location", QString::fromStdString(source.location)}}});
+        return;
+      }
+      auto preview = preview_asset(kind.toStdString(), source.bytes);
+      if (preview.code != "ok") {
+        report({nullptr,
+                {},
+                {{"code", QString::fromLatin1(preview.code.data(),
+                                              static_cast<qsizetype>(preview.code.size()))},
+                 {"location", path}}});
+        return;
+      }
+      resources_->setPreview(std::move(preview));
+      return;
     }
   }
 
   void discardProperty() {
+    if (voxel_scene_) {
+      if (!voxel_dirty_ || busy_) return;
+      voxel_view_->setWorld(nullptr);
+      voxel_scene_.reset();
+      voxel_dirty_ = false;
+      setBusy(true);
+      readScene();
+      return;
+    }
     dirty_ = false;
     populateInspector();
     updateActions();
   }
 
   void saveProperty() {
-    if (!dirty_ || busy_ || !revision_) return;
-    const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
-    const auto value = fields_[editing_]->value();
-    QStringList args{"project",        "preview-scene-field", root_,          selected_,
-                     field.toString(), argument(*revision_),  argument(value)};
-    setBusy(true);
-    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
-      if (preview.value("code") != "ok") {
-        report({nullptr, {}, preview});
+    if (voxel_scene_) {
+      if (!voxel_dirty_ || busy_) return;
+      setBusy(true);
+      const auto prepared = platform::prepare_voxel_save(*voxel_scene_);
+      const auto reply =
+          QJsonDocument::fromJson(QByteArray::fromStdString(platform::field_result_json(prepared)))
+              .object();
+      if (!prepared.scene_change) {
+        report({nullptr, {}, reply});
         setBusy(false);
         return;
       }
-      args[1] = "set-scene-field";
-      args.append("--capture-change");
-      bridge_.run(args, [this](const QJsonObject& result) {
-        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-          report({nullptr, {}, result});
-          setBusy(false);
-          return;
-        }
-        recordHistory(result, selected_);
-        revision_ = result.value("revision").toInteger();
-        dirty_ = false;
-        report(
-            {QT_TR_NOOP("Saved %1 · %2 → %3"),
-             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
-              argument(result.value("new_value").toInteger())},
-             {}});
-        readScene(false);
-      });
-    });
+      bridge_.request(
+          root_, "scene.restore", "apply", revision_, {{"change", reply.value("scene_change")}},
+          [this](const QJsonObject& result) {
+            if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+              report({nullptr, {}, result});
+              setBusy(false);
+              return;
+            }
+            voxel_dirty_ = false;
+            recordHistory(result, {});
+            revision_ = result.value("revision").toInteger();
+            report({QT_TR_NOOP("World saved · revision %1"), {argument(*revision_)}, {}});
+            readScene(false);
+          });
+      return;
+    }
+    if (!dirty_ || busy_ || !revision_) return;
+    const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
+    const auto value = fields_[editing_]->value();
+    const QJsonObject input{
+        {"entity_id", selected_}, {"field", field}, {"value", value}, {"capture_change", true}};
+    setBusy(true);
+    bridge_.request(root_, "scene.field.set", "preview", revision_, input,
+                    [this, input](const QJsonObject& preview) {
+                      if (preview.value("code") != "ok") {
+                        report({nullptr, {}, preview});
+                        setBusy(false);
+                        return;
+                      }
+                      bridge_.request(root_, "scene.field.set", "apply", revision_, input,
+                                      [this](const QJsonObject& result) {
+                                        if (result.value("code") != "ok" ||
+                                            !result.value("revision").isDouble()) {
+                                          report({nullptr, {}, result});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        recordHistory(result, selected_);
+                                        revision_ = result.value("revision").toInteger();
+                                        dirty_ = false;
+                                        report({QT_TR_NOOP("Saved %1 · %2 → %3"),
+                                                {result.value("location").toString(),
+                                                 argument(result.value("old_value").toInteger()),
+                                                 argument(result.value("new_value").toInteger())},
+                                                {}});
+                                        readScene(false);
+                                      });
+                    });
   }
 
   void editDataField() {
@@ -649,72 +1075,164 @@ class Workbench final : public QMainWindow {
     form.addRow(&buttons);
     if (dialog.exec() != QDialog::Accepted) return;
 
-    QStringList args{"project",
-                     "preview-field",
-                     root_,
-                     resource.text(),
-                     field.text(),
-                     argument(*revision_),
-                     value.text().trimmed()};
+    bool is_integer = false;
+    const auto new_integer = value.text().trimmed().toLongLong(&is_integer);
+    if (!is_integer) {
+      report({nullptr, {}, {{"code", "invalid_argument"}, {"location", "/input/value"}}});
+      return;
+    }
+    const QJsonObject input{
+        {"resource_id", resource.text()}, {"field", field.text()}, {"value", new_integer}};
     setBusy(true);
-    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
-      if (preview.value("code") != "ok") {
-        report({nullptr, {}, preview});
-        setBusy(false);
-        return;
-      }
-      const auto old_value = argument(preview.value("old_value").toInteger());
-      const auto new_value = argument(preview.value("new_value").toInteger());
-      if (!preview.value("changed").toBool()) {
-        report({QT_TR_NOOP("The data field already has this value."), {}, {}});
-        setBusy(false);
-        return;
-      }
-      if (QMessageBox::question(
-              this, tr("Preview"),
-              tr("Apply %1 · %2 → %3?")
-                  .arg(preview.value("location").toString(), old_value, new_value),
-              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
-        setBusy(false);
-        return;
-      }
-      args[1] = "set-field";
-      bridge_.run(args, [this](const QJsonObject& result) {
-        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-          report({nullptr, {}, result});
-          setBusy(false);
-          return;
-        }
-        revision_ = result.value("revision").toInteger();
-        report(
-            {QT_TR_NOOP("Saved %1 · %2 → %3"),
-             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
-              argument(result.value("new_value").toInteger())},
-             {}});
-        readScene(false);
-      });
-    });
+    bridge_.request(root_, "resource.field.set", "preview", revision_, input,
+                    [this, input](const QJsonObject& preview) {
+                      if (preview.value("code") != "ok") {
+                        report({nullptr, {}, preview});
+                        setBusy(false);
+                        return;
+                      }
+                      const auto old_value = argument(preview.value("old_value").toInteger());
+                      const auto new_value = argument(preview.value("new_value").toInteger());
+                      if (!preview.value("changed").toBool()) {
+                        report({QT_TR_NOOP("The data field already has this value."), {}, {}});
+                        setBusy(false);
+                        return;
+                      }
+                      if (QMessageBox::question(
+                              this, tr("Preview"),
+                              tr("Apply %1 · %2 → %3?")
+                                  .arg(preview.value("location").toString(), old_value, new_value),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+                        cancelPreview("resource.field.set", input);
+                        return;
+                      }
+                      bridge_.request(root_, "resource.field.set", "apply", revision_, input,
+                                      [this](const QJsonObject& result) {
+                                        if (result.value("code") != "ok" ||
+                                            !result.value("revision").isDouble()) {
+                                          report({nullptr, {}, result});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        revision_ = result.value("revision").toInteger();
+                                        report({QT_TR_NOOP("Saved %1 · %2 → %3"),
+                                                {result.value("location").toString(),
+                                                 argument(result.value("old_value").toInteger()),
+                                                 argument(result.value("new_value").toInteger())},
+                                                {}});
+                                        readScene(false);
+                                      });
+                    });
+  }
+
+  void cancelPreview(const QString& operation, const QJsonObject& input) {
+    bridge_.request(root_, operation, "cancel", revision_, input,
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") == "cancelled")
+                        setStatus(QT_TR_NOOP("Preview cancelled."));
+                      else
+                        report({nullptr, {}, result});
+                      setBusy(false);
+                    });
+  }
+
+  void changePalette() {
+    if (!voxel_scene_ || !revision_ || busy_ || playing() || hasDraft()) return;
+    const QStringList labels{tr("Daylight"), tr("Amber Dusk")};
+    const QStringList ids{"daylight", "amber-dusk"};
+    bool accepted = false;
+    const auto selected = QInputDialog::getItem(
+        this, tr("Voxel Palette"), tr("Palette Plugin"), labels,
+        static_cast<int>(ids.indexOf(QString::fromStdString(voxel_scene_->palette))), false,
+        &accepted);
+    if (!accepted) return;
+    const auto provider = ids.at(labels.indexOf(selected));
+    setBusy(true);
+    bridge_.request(root_, "scene.palette.set", "apply", revision_, {{"provider", provider}},
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      recordHistory(result, {});
+                      revision_ = result.value("revision").toInteger();
+                      readScene();
+                    });
+  }
+
+  void openWorkshop() {
+    if (busy_) return;
+    auto* viewport_scene = voxel_preview_ ? &*voxel_preview_
+                           : voxel_scene_ ? &*voxel_scene_
+                                          : nullptr;
+    if (viewport_scene && viewport_scene->workshop) {
+      auto& workshop = *viewport_scene->workshop;
+      if (show_workshop(this, workshop, false,
+                        [&](const items::Action& action) { return workshop.apply(action); }) &&
+          !voxel_preview_)
+        voxel_dirty_ = true;
+      voxel_view_->setFocus(Qt::OtherFocusReason);
+      updateActions();
+    } else if (session_ && session_->workshop()) {
+      show_workshop(this, *session_->workshop(), true,
+                    [&](const items::Action& action) { return session_->work(action); });
+      viewport_->setFocus(Qt::OtherFocusReason);
+    }
   }
 
   void play() {
-    if (busy_ || dirty_ || !revision_ || !scene_ready_) return;
-#ifdef Q_OS_WIN
-    const std::filesystem::path path(root_.toStdWString());
-#else
-    const std::filesystem::path path(root_.toStdString());
-#endif
-    auto result = platform::start_scene(path, static_cast<std::uint64_t>(*revision_));
+    if (busy_ || playing() || hasDraft() || !revision_) return;
+    if (voxel_scene_) {
+      voxel_preview_ = *voxel_scene_;
+      voxel_view_->setWorld(&*voxel_preview_);
+      voxel_view_->setFocus(Qt::OtherFocusReason);
+      setStatus(QT_TR_NOOP("Playing a copy of the world. Select Stop to edit."));
+      updateActions();
+      return;
+    }
+    if (!scene_ready_) return;
+    auto result = platform::start_scene(projectPath(), static_cast<std::uint64_t>(*revision_));
     if (!result.session) {
       report({nullptr,
               {},
               {{"code", QString::fromStdString(result.code)},
+               {"resource_path", QString::fromStdString(result.resource_path)},
                {"location", QString::fromStdString(result.location)}}});
       return;
     }
     session_ = std::move(result.session);
+    viewport_->beginPlayback(*session_);
+    if (session_->snapshot().interactive) {
+      play_focus_ = focusWidget();
+      viewport_->setFocus(Qt::OtherFocusReason);
+    }
     drawSession();
+    clock_ = {};
+    play_elapsed_.start();
+    last_play_ns_ = 0;
     timer_.start();
     updateActions();
+  }
+
+  void advancePlayback() {
+    const auto now = play_elapsed_.nsecsElapsed();
+    const auto elapsed = std::chrono::nanoseconds(now - last_play_ns_);
+    last_play_ns_ = now;
+    const auto& snapshot = session_->snapshot();
+    if (snapshot.interactive && (!viewport_->hasFocus() || !isActiveWindow())) {
+      setStatus(QT_TR_NOOP("Paused. Click the viewport to resume."));
+      return;
+    }
+    const auto count =
+        std::min(clock_.consume(elapsed), platform::SceneSession::max_ticks - snapshot.ticks);
+    if (count == 0) return;
+    session_->advance(count, viewport_->sceneInput());
+    drawSession();
+    if (snapshot.outcome != platform::SceneOutcome::playing ||
+        snapshot.ticks == platform::SceneSession::max_ticks)
+      timer_.stop();
   }
 
   void drawSession() {
@@ -722,19 +1240,53 @@ class Workbench final : public QMainWindow {
     for (const auto& entity : session_->snapshot().entities) {
       entities.append(QJsonObject{{"id", QString::fromStdString(entity.id)},
                                   {"x", static_cast<qint64>(entity.x)},
-                                  {"y", static_cast<qint64>(entity.y)}});
+                                  {"y", static_cast<qint64>(entity.y)},
+                                  {"half_width", static_cast<qint64>(entity.half_width)},
+                                  {"half_height", static_cast<qint64>(entity.half_height)},
+                                  {"sprite", QString::fromStdString(entity.sprite)},
+                                  {"role", static_cast<int>(entity.role)}});
     }
     viewport_->setScene(std::move(entities), true);
-    setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(session_->snapshot().ticks)});
+    const auto& snapshot = session_->snapshot();
+    switch (snapshot.outcome) {
+      case platform::SceneOutcome::won:
+        setStatus(QT_TR_NOOP("Delivered! Select Stop to play again."));
+        return;
+      case platform::SceneOutcome::lost:
+        setStatus(QT_TR_NOOP("Delivery failed. Select Stop to play again."));
+        return;
+      case platform::SceneOutcome::timed_out:
+        setStatus(QT_TR_NOOP("Time is up. Select Stop to play again."));
+        return;
+      default:
+        break;
+    }
+    if (snapshot.ticks == platform::SceneSession::max_ticks) {
+      setStatus(QT_TR_NOOP("Playback reached its final tick. Select Stop to edit."));
+    } else if (snapshot.interactive) {
+      const auto rate = platform::SceneClock::ticks_per_second;
+      const auto remaining = (platform::SceneSession::max_ticks - snapshot.ticks + rate - 1) / rate;
+      setStatus(QT_TR_NOOP("Playing · %1 s remaining"), {QString::number(remaining)});
+    } else {
+      setStatus(QT_TR_NOOP("Playing · tick %1"), {QString::number(snapshot.ticks)});
+    }
   }
 
   void stop() {
+    if (voxel_preview_) {
+      voxel_view_->setWorld(voxel_scene_ ? &*voxel_scene_ : nullptr);
+      voxel_preview_.reset();
+      updateActions();
+      setStatus(QT_TR_NOOP("Playback stopped."));
+    }
     if (!session_) return;
     timer_.stop();
     session_.reset();
     viewport_->setScene(entities_, false);
-    setStatus(QT_TR_NOOP("Playback stopped."));
     updateActions();
+    if (play_focus_) play_focus_->setFocus(Qt::OtherFocusReason);
+    play_focus_.clear();
+    setStatus(QT_TR_NOOP("Playback stopped."));
   }
 
   void setStatus(const char* pattern, QStringList arguments = {}) {
@@ -766,35 +1318,50 @@ class Workbench final : public QMainWindow {
     const bool editable = scene_ready_ && !selected_.isEmpty() && !busy_ && !session_;
     for (std::size_t index = 0; index < fields_.size(); ++index)
       fields_[index]->setEnabled(editable && (!dirty_ || index == editing_));
-    scene_tree_->setEnabled(!busy_ && !session_);
+    scene_tree_->setEnabled(!busy_ && !session_ && !voxel_scene_);
+    voxel_view_->setEnabled(!busy_);
+    resources_->setEnabled(!busy_);
     open_->setEnabled(!busy_);
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
-    recover_->setEnabled(!busy_ && !session_ && !dirty_ && !root_.isEmpty());
-    edit_data_->setEnabled(!busy_ && !session_ && !dirty_ && revision_.has_value());
-    save_->setEnabled(editable && dirty_);
-    revert_->setEnabled(editable && dirty_);
-    const bool structure_editable = scene_ready_ && !busy_ && !session_ && !dirty_ && revision_;
-    undo_->setEnabled(structure_editable && !undo_history_.empty());
-    redo_->setEnabled(structure_editable && !redo_history_.empty());
+    import_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
+    export_->setEnabled(!busy_ && !playing() && (scene_ready_ || voxel_scene_) && !hasDraft() &&
+                        revision_.has_value());
+    clear_cache_->setEnabled(!busy_ && revision_.has_value());
+    recover_->setEnabled(!busy_ && !playing() && !hasDraft() && !root_.isEmpty());
+    operations_->setEnabled(!busy_);
+    edit_data_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
+    save_->setText(voxel_scene_ ? tr("&Save World") : tr("&Save Property"));
+    revert_->setText(voxel_scene_ ? tr("Discard World Draft") : tr("Discard Property Draft"));
+    save_->setEnabled((editable && dirty_) || (voxel_scene_ && voxel_dirty_ && !busy_));
+    revert_->setEnabled(save_->isEnabled());
+    const bool history_editable =
+        (scene_ready_ || voxel_scene_) && !busy_ && !playing() && !hasDraft() && revision_;
+    undo_->setEnabled(history_editable && !undo_history_.empty());
+    redo_->setEnabled(history_editable && !redo_history_.empty());
+    const bool structure_editable = scene_ready_ && history_editable;
     const auto index = selectedIndex();
     add_entity_->setEnabled(structure_editable);
     copy_entity_->setEnabled(structure_editable && index >= 0);
     remove_entity_->setEnabled(structure_editable && index >= 0);
     move_up_->setEnabled(structure_editable && index > 0);
     move_down_->setEnabled(structure_editable && index >= 0 && index + 1 < entities_.size());
-    play_->setEnabled(scene_ready_ && !busy_ && !session_ && !dirty_ && revision_.has_value());
-    stop_->setEnabled(session_.has_value());
+    play_->setEnabled((scene_ready_ || voxel_scene_) && !busy_ && !playing() && !hasDraft() &&
+                      revision_.has_value());
+    stop_->setEnabled(playing());
+    palette_->setEnabled(voxel_scene_ && !busy_ && !playing() && !hasDraft() && revision_);
+    workshop_->setEnabled(
+        !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
     project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
     const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
-    revision_label_->setText(revision + (dirty_ ? tr(" · Unsaved") : QString{}));
+    revision_label_->setText(revision + (hasDraft() ? tr(" · Unsaved") : QString{}));
     draft_label_->setText(
         dirty_ ? tr("Unsaved · %1 → %2").arg(committed_[editing_]).arg(fields_[editing_]->value())
                : QString{});
     draft_label_->setVisible(dirty_);
     setWindowTitle(project_id_.isEmpty()
                        ? tr("WDS Studio")
-                       : tr("%1%2 — WDS Studio").arg(project_id_, dirty_ ? "*" : ""));
+                       : tr("%1%2 — WDS Studio").arg(project_id_, hasDraft() ? "*" : ""));
   }
 
   LanguageSettings& language_;
@@ -804,7 +1371,13 @@ class Workbench final : public QMainWindow {
   std::deque<HistoryEntry> undo_history_;
   std::deque<HistoryEntry> redo_history_;
   QTimer timer_;
+  QElapsedTimer play_elapsed_;
+  qint64 last_play_ns_ = 0;
+  platform::SceneClock clock_;
+  QPointer<QWidget> play_focus_;
   Viewport* viewport_;
+  VoxelViewport* voxel_view_;
+  QStackedWidget* views_;
   SceneTreePanel* scene_tree_;
   ResourcePanel* resources_;
   OutputPanel* output_;
@@ -826,7 +1399,11 @@ class Workbench final : public QMainWindow {
   QAction* open_;
   QAction* create_;
   QAction* close_;
+  QAction* import_;
+  QAction* export_;
+  QAction* clear_cache_;
   QAction* recover_;
+  QAction* operations_;
   QAction* edit_data_;
   QAction* save_;
   QAction* undo_;
@@ -834,6 +1411,8 @@ class Workbench final : public QMainWindow {
   QAction* revert_;
   QAction* play_;
   QAction* stop_;
+  QAction* workshop_;
+  QAction* palette_;
   QAction* add_entity_;
   QAction* copy_entity_;
   QAction* remove_entity_;
@@ -847,11 +1426,14 @@ class Workbench final : public QMainWindow {
   QString selected_;
   std::optional<qint64> revision_;
   std::optional<platform::SceneSession> session_;
+  std::optional<platform::VoxelScene> voxel_scene_;
+  std::optional<platform::VoxelScene> voxel_preview_;
   QJsonArray entities_;
   QJsonArray resources_model_;
   QJsonArray field_schema_;
   bool busy_ = false;
   bool dirty_ = false;
+  bool voxel_dirty_ = false;
   bool scene_ready_ = false;
   std::size_t editing_ = 0;
 };
@@ -863,12 +1445,24 @@ class Workbench final : public QMainWindow {
 
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
+  const auto arguments = app.arguments();
+  const bool smoke =
+      (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName("WDS Studio");
+  QCoreApplication::setApplicationName(smoke ? "WDS Studio Smoke" : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
   window.show();
-  if (app.arguments().size() == 2) window.openProject(app.arguments().at(1));
+  if (smoke) {
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      const auto frame = ready ? window.centralWidget()->grab() : QPixmap{};
+      app.exit(!frame.isNull() && (arguments.size() == 3 || frame.save(arguments.at(3))) ? 0 : 1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
+  } else if (arguments.size() == 2) {
+    window.openProject(arguments.at(1));
+  }
   return app.exec();
 }

@@ -35,14 +35,17 @@ GUI、CLI 和 AI 适配入口共享查询与修改语义。界面负责收集输
 
 OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成同一请求，项目服务负责验证与执行。首轮覆盖 `project.create`、`project.open`、`project.validate`、`project.resources`，下一步由 OPS-02 接入资源字段修改。操作发现应返回 ID、版本、输入定义、错误码及是否写入项目。
 
-当前可用 `wds_cli --project-operations` 查询十七项能力的 JSON 说明，包括项目恢复、资源导入预览与提交、导入来源查询、数据编辑、场景属性读取和修改、场景试玩。发现命令无需项目目录。
+`wds_cli --project-operations` 返回十九项能力的 ID、版本、命令、字段、错误码和可用模式。工作台 **项目 → 可用操作** 读取同一清单。发现命令无需项目目录。
 
-请求包含 `operation`、`version` 和 `input`。打开已有项目的调用另带由宿主解析的项目上下文。对已有项目的写入还须带整数 `expected_revision` 和 `mode`（`preview` 或 `apply`）。权限来自宿主上下文，用户输入里的同名字段不能授予权限。创建新项目使用目录不存在作为前置条件。
+`wds_cli project request DIRECTORY` 从标准输入接收一份 UTF-8 JSON。工作台用这一入口，已有位置参数命令映射到同一个操作调度器。请求包含 `operation`、`version`、`mode` 和可选 `input`。按操作清单在顶层传 `expected_revision`。同一请求可带 `request_id`（最多 64 个英文字母、数字、横线或下划线），回执原样返回。
+
+目录及写入范围由宿主传入。默认可以读取或预览，提交项目修改须带 `--allow-project-write`，导出须带 `--allow-destination-write`。外部进程的文件权限由操作系统管理。新建项目以目录不存在为前置条件，恢复使用磁盘上的事务记录。
 
 | 行为 | 约定 |
 | --- | --- |
 | 查询 | 返回实际读到的修订、结果或诊断，不改项目 |
 | 预览 | 使用与提交相同的校验，返回将改变的资源、字段和值，不写文件也不更新修订 |
+| 取消 | 用 `mode: "cancel"` 取消预览，返回 `cancelled`。取消在提交前受理 |
 | 提交 | 在项目写入范围内再次校验修订与权限，成功一次递增修订。无变化保留原修订 |
 | 失败 | 返回稳定 `code` 和可定位的 `location`。过期修订附实际值，失败状态和恢复依据可核对 |
 
@@ -52,15 +55,21 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
   "version": 1,
   "expected_revision": 3,
   "mode": "preview",
-  "input": {"resource_id": "rules", "field": "/jump_speed", "value": 8}
+  "input": {"resource_id": "rules", "field": "jump_speed", "value": 8}
 }
 ```
 
-`resource.field.set` 已支持替换已有数据资源的顶层整数。CLI 与工作台使用共享 C++ 服务。统一 JSON 请求的传输入口与领域元信息仍待实现。[首批字段写入](project-format.md#首批字段写入)
+`resource.field.set` 已支持替换已有数据资源的顶层整数。场景字段、实体和导入的提交操作都支持 `preview`、`apply`、`cancel`。原有预览 ID 仍可查询。 [首批字段写入](project-format.md#首批字段写入)
 
-`project.play` 接收目录、预期修订号和运行步数（0 到 600），读取入口场景并返回修订、场景 ID、步数和实体状态。修订冲突返回当前修订号，场景诊断带资源相对路径及字段位置。该操作只读取源项目。[场景与试玩会话](runtime.md#场景与试玩会话-v1)
+`project.index` 回传实际修订、项目及入口 ID、资源引用、场景快照、导入记录或各自的诊断。可提供期望修订，查询结束时也会复核修订。JSON 回执的 `usage` 记录请求次数和服务用时。相同 ID 用于关联记录，重复提交仍按当前修订校验。
 
-`scene.inspect` 对应 `project scene DIRECTORY REVISION`，返回入口实体的初始值及字段类型、默认值与范围。用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。按稳定实体 ID 选中实体，支持 `x`、`y`、`vx`、`vy`；修改曾省略的字段时从默认值计算差异。保存复用字段编辑事务，场景事务使用版本 2，恢复也兼容现有版本 1。
+`project.play` 接收目录、预期修订号和运行步数（0 到 600），读取入口场景并返回修订、场景 ID、步数和实体状态。交互场景按空输入步进并额外返回 `outcome`，提前结束时报告实际执行步数。修订冲突返回当前修订号，场景和精灵诊断带资源相对路径及字段位置。该操作只读取源项目。 [场景与试玩会话](runtime.md#场景与试玩会话-v1)
+
+`project.export` 接收项目目录、预期修订、`windows-x64` 和新成品目录。成功返回实际修订、绝对目标路径以及收录的资源数。操作声明 `writes_project: false`、`writes_destination: true`。缺少本机运行套件或其中的文件时返回 `missing_runtime_dependency` 和缺件路径，文件与套件锁不一致返回 `invalid_runtime_dependency`，目标已存在返回 `target_exists`。 [Windows x64 发布包](platforms.md#windows-x64-发布包)
+
+`scene.inspect` 对应 `project scene DIRECTORY REVISION`。二维项目返回入口实体的初始值、字段类型、默认值与范围。3D 方块项目返回 `kind: "voxel"`、入口场景 ID 和修订，并检查地形及材质。`project play` 与 `project export` 用于二维工程，遇到 3D 场景返回 `unsupported_scene_kind`。
+
+用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览二维属性改动，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。字段为 `x`、`y`、`vx`、`vy`，省略值从默认值计算差异。工作台保存 3D 方块使用现有版本 4 场景事务。 [3D 场景格式](runtime.md#通用工程的-3d-方块场景)
 
 `scene.entity.preview` 与 `scene.entity.apply` 支持以下入口场景操作。将命令中的 `edit-entity` 换成 `preview-entity` 即可检查参数、修订与写入限制，预览会返回 `changed` 和定位路径。
 
@@ -73,7 +82,7 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 新建与复制追加到场景末尾。实际编辑提交后修订加一，相同位置的移动不产生新修订。结构编辑使用事务记录版本 3，恢复时重放该操作并核对新旧场景内容，兼容旧事务。当前以本机单写入者为使用边界。
 
-`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data` 或 `scene` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。导入使用事务记录版本 5。[资源导入](project-format.md#资源导入)
+`resource.import.preview` 与 `resource.import.apply` 把外部文件导入为 `data`、`scene`、PNG `image` 或 UTF-8 `text` 资源，源文件按原字节保存。用 `project preview-import DIRECTORY SOURCE ID KIND PATH REVISION` 检查身份、目标位置与字节数，用 `project import` 提交，可附 `--expect-digest DIGEST` 约定预览的源文件字节。用 `project imports DIRECTORY` 读取来源记录。同 ID、同路径且字节一致返回 `changed=false`；字节或路径冲突分别返回 `duplicate_id`、`duplicate_path`，已有内容保持不变。PNG 使用二进制事务记录版本 6，其他三类继续使用版本 5。[资源导入](project-format.md#资源导入)
 
 提出请求 → 校验参数和权限 → 检查项目修订 → 解析能力实现 → 准备变更 → 应用与持久化 → 更新或失效相关索引 → 返回变更及诊断 → 运行验证。
 
@@ -90,6 +99,8 @@ CLI 的 `set-scene-field` 与 `edit-entity` 可在参数末尾追加 `--capture-
 能保证原子性的范围需明确。对不能原子完成的多步骤任务，记录已完成步骤及补偿方式。撤销恢复的是所声明范围内的项目状态；网络请求、已启动的外部进程或对外发布可能无法简单逆转，必须分别表达结果。
 
 取消应定义何时可受理、何时已越过提交点，以及已提交部分如何处理。任务失败、取消、拒绝、冲突和需重启是不同结果，不压缩成一个模糊的“失败”。
+
+W10 的可重放示例覆盖预览、取消、提交、旧修订重试、无效字段与失败后的场景回退。回退读取先前回执的 `scene_change`，交换新旧字节并提交到当前修订。计划逐步提交，遇到意外结果停在该步并保留已执行的回执。 [复跑指南](../engineering/development.md#复跑共享操作)
 
 ## 记录与观察
 

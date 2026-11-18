@@ -4,17 +4,17 @@
 
 WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。项目以可组合的插件体系为基础，将图形界面、命令行、代码与可视化编辑连接到统一的项目模型和操作能力。
 
-> **当前进度：Windows 工作台支持场景编辑、撤销重做和试玩，CLI 支持资源导入与恢复。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文。
+> **Windows 工作台支持二维和三维方块项目的编辑、试玩和独立导出。** 工作台默认使用简体中文，可从 **设置 → 界面语言** 即时切换英文。
 
 ## 体验现代工作台
 
 在 Windows x64 使用 MSVC 和 Qt 6.8 以上版本从源码构建。打开「四方汇流」示例的副本，在场景树选中 `drifter`，修改 **X 速度**，保存后用新修订试玩。[示例](examples/scene-editing/README.md) · [构建与运行](docs/engineering/development.md#运行现代工作台)
 
-- **项目与资源**：新建或打开项目，按 ID、路径及类型筛选资源，查看直接引用与反向引用。
-- **场景编辑**：在可平移缩放的二维视口选中实体，修改位置或速度；支持实体新建、复制、删除、排序和当前会话内撤销重做。
-- **AI 与命令行**：按修订读取、预览和提交项目改动。CLI 支持导入场景和数据文件、查询来源、恢复中断写入，并可生成 Markdown 项目交接摘要。[资源导入](docs/engineering/development.md#导入外部资源)
+- **项目与资源**：新建或打开项目，按 ID、路径及类型筛选资源，查看引用，预览导入场景、数据、PNG 和 UTF-8 文本，重开后可查来源和图文预览。
+- **场景编辑**可在二维视口编辑实体与属性，也可在三维方块视口搭建地形、替换配色并撤销。
+- **AI 与命令行**可按修订读取、预览和提交项目改动。离线样例支持逐次确认、预算、暂停、撤权和人工接手。内容工具可展开规则、校验引用和按 ID 修补生成结果。 [受控 AI 样例](examples/w16-delivery/README.md#单独试用配色和-ai) · [内容生成](docs/engineering/development.md#生成与修补内容)
 
-当前提供源码构建。工作台内导入、图片与文本适配、独立导出和完整 3D 编辑仍在开发计划中，暂无正式发行包。
+当前提供源码构建。从「风标接力」和「坡地营地」的示例命令可生成两个可续编工程和 Windows x64 独立游戏包。 [双类型样品](examples/w16-delivery/README.md) · [Windows 导出说明](docs/engineering/development.md#导出-windows-x64-游戏)
 
 ## 产品方向
 
@@ -43,7 +43,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 项目在 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 维护。构建、测试及运行样例见 [开发指南](docs/engineering/development.md#运行-m0-样例)。
 
-现代工作台已在 Windows x64 实测。默认构建的 Linux CI 覆盖核心和 CLI。现有样例及其验证范围见 [前期原型与验证](docs/project/prototype-baseline.md)。
+周交付记录已更新至 W16。Windows 本机已验收二维与三维方块项目从创建到独立导出和续编的流程。Linux x64 与 macOS arm64 已有 W11 原生工作台验证。W8 的第二台 Windows 机器与创作者签收、W12–W16 的发起人亲手验收仍待完成。 [周交付记录](docs/project/roadmap.md#周交付记录) · [W16 验收](docs/project/w16-shared-delivery.md)
 
 ## 开源与协作
 

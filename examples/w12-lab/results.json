@@ -1,0 +1,371 @@
+{
+  "format": "wds-w12-study-v1",
+  "machine_started_at": "2026-11-18T14:21:57.782738+08:00",
+  "authoring_started_at": "2026-11-18T14:17:11.922677+08:00",
+  "environment": {
+    "platform": "Windows-11-10.0.22631-SP0",
+    "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "python": "3.14.6"
+  },
+  "tools_sha256": {
+    "wds_cli.exe": "3888295d254feeb20f3a4bdd50ccc64bfb8be8775c13dd5ce3fa508535b12402",
+    "wds_studio_modern.exe": "ba755093633084aaaeaa47b93d1479e9829b1801c504d3f2eaa291c3ee5e1d75",
+    "wds_w12_probe.exe": "905b08ebcd4e1d0a70f1524ca8e23819bf3a421912300230167127efbdbada09",
+    "Play.exe": "f06d11344dc23270e31c1edb67936d6fbb05dab366ce9b73e7fdf230a4b7eda0",
+    "content_bundle.py": "21f6b102014eac180c094c1f8844b29502063baca8f10fcf2d8e147984e7012c",
+    "generate.py": "8e6cca37f66de57d7477347e70b9c88ca9a50c1edd57a05e70f5e0d9c5bfea02",
+    "run.py": "d4515e8dc12fd70b639738ea3a18c5701bbe3eced9597af2b25642c76797909d",
+    "probe.cpp": "7fce89ad01b68241fa73b0c596c4b6db452026c2745f7f74fba27950060eee84",
+    "brief.md": "7363ca428ba5df776071a341924d1e42e86bd9765599ab1c5c14183dc73a47b9"
+  },
+  "samples": {
+    "crystal-yard": {
+      "phase_s": {
+        "expand_repair_validate": 0.8657,
+        "assets": 0.0021,
+        "assemble_rules_and_project": 0.0027,
+        "interaction": 0.0951,
+        "desktop": 0.4041
+      },
+      "commands": [
+        {
+          "step": "expand-ordinary",
+          "exit": 0,
+          "elapsed_s": 0.2236,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 8,
+            "updated": [
+              "stratum-01",
+              "stratum-02",
+              "stratum-03",
+              "stratum-04",
+              "stratum-05",
+              "stratum-06",
+              "stratum-07",
+              "stratum-08"
+            ]
+          }
+        },
+        {
+          "step": "inject-exception",
+          "exit": 1,
+          "elapsed_s": 0.2113,
+          "injected_failure_expected": true,
+          "result": {
+            "code": "invalid_content",
+            "errors": [
+              {
+                "code": "invalid_rule",
+                "location": "/entries/crystal-lock/rule/enabled",
+                "message": "State IDs must be unique"
+              }
+            ]
+          }
+        },
+        {
+          "step": "repair-exception",
+          "exit": 0,
+          "elapsed_s": 0.212,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 9,
+            "updated": [
+              "crystal-lock"
+            ]
+          }
+        },
+        {
+          "step": "validate-complete-catalog",
+          "exit": 0,
+          "elapsed_s": 0.2108,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 9
+          }
+        },
+        {
+          "step": "play",
+          "exit": 0,
+          "elapsed_s": 0.0951,
+          "injected_failure_expected": false,
+          "result": {
+            "palette_loaded": true,
+            "protected_face": true,
+            "break_place": true,
+            "reopened_revision": 1
+          }
+        },
+        {
+          "step": "open-workbench",
+          "exit": 0,
+          "elapsed_s": 0.4041,
+          "injected_failure_expected": false,
+          "stdout": ""
+        }
+      ],
+      "complete": true,
+      "content": {
+        "validated_ordinary_records": 8,
+        "validated_exception_records": 1,
+        "expanded_block_states": 128,
+        "exception_ids": [
+          "crystal-lock"
+        ],
+        "human_entered_records": 0
+      },
+      "runtime": {
+        "palette_loaded": true,
+        "protected_face": true,
+        "break_place": true,
+        "reopened_revision": 1
+      },
+      "runtime_assets": [
+        "palette.txt"
+      ],
+      "handoff": "editable revision 1, opens in Qt workbench",
+      "machine_s": 1.371,
+      "command_count": 6,
+      "rejected_count": 1,
+      "injected_count": 1,
+      "unexpected_failure_count": 0
+    },
+    "wind-delivery": {
+      "phase_s": {
+        "expand_repair_validate": 0.8834,
+        "assets": 0.0031,
+        "assemble_rules_and_project": 0.0011,
+        "interaction": 0.05,
+        "desktop": 0.3472,
+        "export_and_check": 0.1783
+      },
+      "commands": [
+        {
+          "step": "expand-ordinary",
+          "exit": 0,
+          "elapsed_s": 0.2301,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 96,
+            "updated": [
+              "fiber-01",
+              "parcel-01",
+              "wrap-01",
+              "fiber-02",
+              "parcel-02",
+              "wrap-02",
+              "fiber-03",
+              "parcel-03",
+              "wrap-03",
+              "fiber-04",
+              "parcel-04",
+              "wrap-04",
+              "fiber-05",
+              "parcel-05",
+              "wrap-05",
+              "fiber-06",
+              "parcel-06",
+              "wrap-06",
+              "fiber-07",
+              "parcel-07",
+              "wrap-07",
+              "fiber-08",
+              "parcel-08",
+              "wrap-08",
+              "fiber-09",
+              "parcel-09",
+              "wrap-09",
+              "fiber-10",
+              "parcel-10",
+              "wrap-10",
+              "fiber-11",
+              "parcel-11",
+              "wrap-11",
+              "fiber-12",
+              "parcel-12",
+              "wrap-12",
+              "fiber-13",
+              "parcel-13",
+              "wrap-13",
+              "fiber-14",
+              "parcel-14",
+              "wrap-14",
+              "fiber-15",
+              "parcel-15",
+              "wrap-15",
+              "fiber-16",
+              "parcel-16",
+              "wrap-16",
+              "fiber-17",
+              "parcel-17",
+              "wrap-17",
+              "fiber-18",
+              "parcel-18",
+              "wrap-18",
+              "fiber-19",
+              "parcel-19",
+              "wrap-19",
+              "fiber-20",
+              "parcel-20",
+              "wrap-20",
+              "fiber-21",
+              "parcel-21",
+              "wrap-21",
+              "fiber-22",
+              "parcel-22",
+              "wrap-22",
+              "fiber-23",
+              "parcel-23",
+              "wrap-23",
+              "fiber-24",
+              "parcel-24",
+              "wrap-24",
+              "fiber-25",
+              "parcel-25",
+              "wrap-25",
+              "fiber-26",
+              "parcel-26",
+              "wrap-26",
+              "fiber-27",
+              "parcel-27",
+              "wrap-27",
+              "fiber-28",
+              "parcel-28",
+              "wrap-28",
+              "fiber-29",
+              "parcel-29",
+              "wrap-29",
+              "fiber-30",
+              "parcel-30",
+              "wrap-30",
+              "fiber-31",
+              "parcel-31",
+              "wrap-31",
+              "fiber-32",
+              "parcel-32",
+              "wrap-32"
+            ]
+          }
+        },
+        {
+          "step": "inject-exception",
+          "exit": 1,
+          "elapsed_s": 0.2162,
+          "injected_failure_expected": true,
+          "result": {
+            "code": "invalid_content",
+            "errors": [
+              {
+                "code": "invalid_rule",
+                "location": "/entries/slotted-parcel/rule/layout",
+                "message": "Use row, shapeless, or partial"
+              }
+            ]
+          }
+        },
+        {
+          "step": "repair-exception",
+          "exit": 0,
+          "elapsed_s": 0.2133,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 98,
+            "updated": [
+              "slotted-parcel",
+              "reinforced-parcel"
+            ]
+          }
+        },
+        {
+          "step": "validate-complete-catalog",
+          "exit": 0,
+          "elapsed_s": 0.2151,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "records": 98
+          }
+        },
+        {
+          "step": "play",
+          "exit": 0,
+          "elapsed_s": 0.05,
+          "injected_failure_expected": false,
+          "result": {
+            "sprites_loaded": 4,
+            "behavior_state_after_five": 4,
+            "wall_stop_x": -17,
+            "detour": "won",
+            "downburst": "lost"
+          }
+        },
+        {
+          "step": "open-workbench",
+          "exit": 0,
+          "elapsed_s": 0.3472,
+          "injected_failure_expected": false,
+          "stdout": ""
+        },
+        {
+          "step": "export",
+          "exit": 0,
+          "elapsed_s": 0.0604,
+          "injected_failure_expected": false,
+          "result": {
+            "code": "ok",
+            "destination": "D:/project/WDS/build/w12-delivery/wind-delivery/windows-x64",
+            "resources": 6,
+            "revision": 0
+          }
+        },
+        {
+          "step": "standalone-check",
+          "exit": 0,
+          "elapsed_s": 0.1174,
+          "injected_failure_expected": false,
+          "stdout": ""
+        }
+      ],
+      "complete": true,
+      "content": {
+        "validated_ordinary_records": 96,
+        "validated_exception_records": 2,
+        "expanded_block_states": 0,
+        "exception_ids": [
+          "slotted-parcel",
+          "reinforced-parcel"
+        ],
+        "human_entered_records": 0
+      },
+      "runtime": {
+        "sprites_loaded": 4,
+        "behavior_state_after_five": 4,
+        "wall_stop_x": -17,
+        "detour": "won",
+        "downburst": "lost"
+      },
+      "runtime_assets": [
+        "kite.png",
+        "beacon.png",
+        "hazard.png",
+        "wall.png"
+      ],
+      "handoff": "editable project and independently checked Windows x64 package",
+      "machine_s": 1.4649,
+      "command_count": 8,
+      "rejected_count": 1,
+      "injected_count": 1,
+      "unexpected_failure_count": 0
+    }
+  },
+  "external_model_tokens": null,
+  "code": "ok",
+  "sealed_at": "2026-11-18T14:22:00.808415+08:00",
+  "machine_total_s": 3.0249,
+  "production_wall_s": 288.886
+}

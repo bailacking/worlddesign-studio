@@ -27,7 +27,11 @@
 | 项目、路径、资源、修订、写入与恢复 | `src/platform_project.hpp/.cpp`。GUI 和 CLI 共用项目服务，旧工具的存储另见 `src/project_store.*` | [项目格式](../architecture/project-format.md) |
 | 操作发现、CLI 和工作台调用 | `src/cli.cpp`、`project_operations_json()`、`src/studio/bridge.*`。公共入口负责参数与结果，调用方在项目服务中复用业务规则 | [操作与状态](../architecture/commands.md) |
 | 工作台状态、视觉与交互 | `src/studio/main.cpp` 装配窗口；`src/studio/theme/` 管全局主题和通用控件；`scene_tree`、`resource_panel`、`output_panel`、`viewport` 管各自交互；`i18n/` 管语言 | [桌面工作台](../architecture/workbench.md#组件与交互规范) |
-| 运行时与方块样例 | `src/platform_project.*` 的场景会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 运行时与方块样例 | `src/platform_project.*` 装载指定修订，`src/scene_play.*` 推进二维会话；`src/voxel_world.*` 与 `src/sandbox_rules.*`、`src/voxel_content.*` 管早期方块样例 | [游戏运行时](../architecture/runtime.md) |
+| 红石逻辑步与局域网前期验证 | `src/signal_circuit.*` 和 `examples/w15-lab/`，复跑信号顺序、服务端提交与分层换装 | [W15 试验](../project/w15-runtime-lab.md) |
+| 物品、容器、配方与掉落 | `src/workshop.*` 执行共用规则，`src/workshop_document.*` 校验目录和进度，二维会话与方块项目提供来源 | [W14 物品与配方](../project/w14-workshop.md) |
+| 种子地形、区块缓存、地块导航 | `src/voxel_terrain.*`、`src/tile_world.*`，由玩家移动和二维会话更新已加载区域 | [W13 双世界](../project/w13-worlds.md) |
+| 代码、节点图和规则执行 | `src/behavior.cpp` 解析与编译，`src/scene_play.*` 在二维步进内派发事件 | [行为语义](../architecture/authoring.md#共同语义基础) |
 | 插件生命周期与能力边界 | `src/plugin_host.*` 是现有宿主入口，新能力包跟随对应契约 | [插件与组合](../architecture/plugins.md) |
 | 构建、依赖与覆盖范围 | `CMakeLists.txt`、`CMakePresets.json`、`.github/workflows/quality.yml`、`tests/` | [质量与验证](quality.md) |
 
@@ -115,7 +119,13 @@ Copy-Item -Recurse tests/fixtures/project-v1/valid-with-refs build/field-demo
 
 ### 导入外部资源
 
-外部文件可导入为 `data` 或 `scene` 资源，源文件按原字节保存。先预览，再提交。
+外部文件可导入为 `data`、`scene`、PNG `image` 或 UTF-8 `text` 资源，源文件按原字节保存。
+
+在工作台打开项目副本，选择 **项目 → 导入资源**。选源文件，检查资源 ID、类型和 `assets/` 下的目标路径，点击 **预览**。核对确认框的文件名、目标与大小后点击 **导入**。在资源面板选中新资源可见 **导入来源**。重新打开项目后仍可查看，同一资源重复导入时修订和数量保持原值。已有入口场景由项目清单决定。
+
+可以把单个 PNG、TXT、MD 或 JSON 文件拖到工作台，类型和目标扩展名会预填。选中图片查看缩略图，选中文本查看行数与纯文本试读。**项目 → 清理缩略图缓存** 清理本机工作台的缩略图，当前选中的图片立即重建。旧场景工程无需迁移即可执行这些操作。
+
+命令行复用相同项目服务。
 
 ```powershell
 Copy-Item -Recurse examples/scene-editing build/import-demo
@@ -127,6 +137,26 @@ Copy-Item -Recurse examples/scene-editing build/import-demo
 
 预览不落盘，项目文件字节保持不变。提交后修订加一，`project resources` 与重开都能读回新资源。再执行一次同样的导入返回 `changed=false`，修订保持不变。换内容占同一 ID 返回 `duplicate_id`，目标路径已属于其他资源返回 `duplicate_path`，两者都保留已有资源。源文件上限 1 MiB。中断后若提示 `recovery_required`，用 `project recover DIRECTORY` 回到原修订或保留已提交结果。[资源导入](../architecture/project-format.md#资源导入)
 
+### 生成与修补内容
+
+[样例源文件](../../examples/content-generation/entries.json)来自 [W2 参考用例](../project/w2-references.md)，包含重生锚状态范围、小麦与面包、花衬衫的已知用料、巨人国默认季节。样例保留来源 ID。《饥荒》配方的 `layout: "partial"` 只表达已知材料要求，历史原版行为仍待核对。
+
+```powershell
+python scripts/content_bundle.py expand examples/content-generation/entries.json build/content-demo/bundle.json
+python scripts/content_bundle.py validate build/content-demo/bundle.json
+Copy-Item examples/content-generation/entries.json build/content-demo/edited.json
+```
+
+用文本编辑器在 `edited.json` 修改 `mc-bread` 的名称，按 ID 生成一份修补后的数据包。
+
+```powershell
+python scripts/content_bundle.py repair build/content-demo/edited.json build/content-demo/bundle.json build/content-demo/repaired.json mc-bread
+```
+
+源文件的 `entries` 按稳定 ID 列出 `kind`、参考用例 `reference` 和 `rule`。方块规则把整数范围展开为状态，物品提供名称，配方引用物品 ID，状态规则把启用项展开为记录。校验核对字段、整数区间、重复状态、引用对象和展开结果。把重生锚范围改成 `[4, 0]`，或把配方用料改成缺失的 ID，可看到带字段位置的 `invalid_rule` 和 `missing_reference`。
+
+修补以现有包为输入，仅从源文件替换指定条目，再校验整个结果。所有命令返回 JSON 诊断，校验失败保留已有文件。有效结果可作为数据资源导入项目。运行中消费这些规则由后续运行时与玩法任务接入。
+
 ### 试玩通用场景
 
 在仓库根执行以下命令，按入口场景的修订 0 运行 30 步。输出中的 `marker` 位于 `(-230, -25)`。传入 0 步可查看初始状态。
@@ -136,6 +166,40 @@ Copy-Item -Recurse examples/scene-editing build/import-demo
 ```
 
 在现代工作台打开同一项目，点击 **试玩** 和 **停止**。视口显示静止的原点和移动的标记。重新试玩从源位置开始。CLI 与工作台都使用同一个会话核心。 [场景格式与限制](../architecture/runtime.md#场景与试玩会话-v1)
+
+### 试玩礁灯投递
+
+用 [现代工作台](#运行现代工作台)打开 `examples/reef-delivery`，按 **F5** 开始，使用 **WASD** 或 **方向键**移动，将信送到绿色信站。**Shift+F5** 停止试玩。可以先复制样例再编辑。试玩只读取保存后的修订，停止后会丢弃运行位置和胜负状态。
+
+在仓库根可选构建 raylib 5.5 试验播放器。配置时下载锁定的 5.5 源码，也可用 `FETCHCONTENT_SOURCE_DIR_RAYLIB` 指向已有的同版本源码。
+
+```powershell
+cmake --preset dev -B build/scene-preview -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_RAYLIB_PREVIEW=ON
+cmake --build build/scene-preview --target wds_player_preview
+./build/scene-preview/wds_player_preview.exe examples/reef-delivery
+```
+
+试验播放器直接读取项目文件夹，**Esc** 退出。可用正式导出入口把当前修订封装成独立游戏。 [示例操作](../../examples/reef-delivery/README.md)
+
+### 导出 Windows x64 游戏
+
+在 MSVC x64 开发环境中配置单独的播放器构建目录。Qt 工作台和独立播放器分别构建。播放器套件会在链接后生成，包含实际二进制、系统依赖、插件版本和许可。
+
+```powershell
+cmake --preset dev -B build/windows-player -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_WINDOWS_PLAYER=ON
+cmake --build build/windows-player --target wds_player wds_cli
+./build/windows-player/wds_cli.exe project export examples/reef-delivery 0 windows-x64 build/reef-release
+```
+
+在 [工作台构建目录](#运行现代工作台)装上同一套件，再通过 **项目 → 导出 Windows x64** 选择项目外的父目录和新文件夹名。导出菜单在保存属性或放弃草稿、停止试玩后可用。目标文件夹已存在时会提示改名。
+
+```powershell
+cmake --install build/windows-player --prefix build/studio --component WindowsRuntime
+```
+
+二维与三维方块项目走同一导出入口。方块工程可以用 `wds_cli project create DIRECTORY ID --kind voxel` 创建，再用声明 `voxel_format: 1` 的运行套件发布。 [双类型样品](../../examples/w16-delivery/README.md)
+
+复制完整导出文件夹即可转移。双击 **Play.exe** 开始，**Esc** 退出。脚本可运行 `Play.exe --check` 检查发布锁和场景装载，成功返回 0。游戏所需环境和锁内字段见 [Windows x64 发布包](../architecture/platforms.md#windows-x64-发布包)。
 
 ### 运行现代工作台
 
@@ -154,6 +218,12 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
+本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_(voxel_)?smoke$' --output-on-failure`。检查离屏启动工作台，分别打开「礁灯投递」和「方块工坊」并绘制当前视口。
+
+### 编辑方块工坊
+
+复制 `examples/voxel-workshop` 到可写目录，在同一个工作台打开。用 WASD 移动、方向键转头，准星指向方块后左键破坏、右键放置。按 Ctrl+S 再重开工程可检查保存结果。工作台使用当前工程的材质资源。 [试用操作](../../examples/voxel-workshop/README.md)
+
 用 **场景 → 新建实体** 添加零位置、零速度的实体。选中实体后可复制、删除或调整它在场景树中的顺序。结构修改在操作完成时保存，属性草稿需先保存或放弃。工作台与 CLI 共用场景编辑操作。[CLI 用法](../architecture/commands.md)
 
 用 **编辑 → 撤销场景改动** 或 **重做场景改动** 恢复本次打开项目后的编辑，操作会保存为新的修订。重新打开项目会清空界面历史。[CLI 恢复接口](../architecture/commands.md#事务撤销与外部副作用)
@@ -165,6 +235,19 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 ```powershell
 python scripts/project_handoff.py --cli ./build/studio/wds_cli.exe --project ./examples/scene-editing
 ```
+
+### 复跑共享操作
+
+在仓库根使用带 W10 的 `wds_cli` 和未改动的「运动场景」副本。先读取公共操作清单，再运行示例计划。
+
+```powershell
+$trial = Join-Path (Get-Location) ('build/w10-replay-' + [guid]::NewGuid().ToString('N'))
+Copy-Item examples/scene-motion $trial -Recurse
+./build/studio/wds_cli.exe --project-operations
+python scripts/project_workflow.py --cli ./build/studio/wds_cli.exe --project $trial --plan "$trial/w10-replay.json" --allow-project-write
+```
+
+计划先预览并取消，再提交属性修改，验证重试旧修订及无效字段的结果，最后通过保存回执回退。完成时项目到修订 2，场景内容与初始相同。工作台的 **项目 → 可用操作** 显示公共清单与本窗口请求用量。 [JSON 请求与诊断](../architecture/commands.md#平台操作接口-v1)
 
 ## 运行方块沙盒
 
