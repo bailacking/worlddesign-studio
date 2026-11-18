@@ -1361,7 +1361,8 @@ class Workbench final : public QMainWindow {
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
   const auto arguments = app.arguments();
-  const bool smoke = arguments.size() == 3 && arguments.at(1) == "--smoke";
+  const bool smoke =
+      (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
   QCoreApplication::setOrganizationName("WDS");
   QCoreApplication::setApplicationName(smoke ? "WDS Studio Smoke" : "WDS Studio");
   wds::studio::theme::apply(app);
@@ -1370,7 +1371,8 @@ int main(int argc, char** argv) {
   window.show();
   if (smoke) {
     QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
-      app.exit(ready && !window.centralWidget()->grab().isNull() ? 0 : 1);
+      const auto frame = ready ? window.centralWidget()->grab() : QPixmap{};
+      app.exit(!frame.isNull() && (arguments.size() == 3 || frame.save(arguments.at(3))) ? 0 : 1);
     });
     QTimer::singleShot(20000, &app, [&] { app.exit(2); });
     window.openProject(arguments.at(2));

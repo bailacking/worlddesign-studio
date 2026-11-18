@@ -119,10 +119,24 @@ std::uint64_t SceneClock::consume(std::chrono::nanoseconds elapsed) {
 bool SceneSession::advance(std::uint64_t ticks, const SceneInput& input) {
   if (ticks > max_ticks - state_.ticks) return false;
   if (controls_) {
-    for (std::uint64_t index = 0; index < ticks && state_.outcome == SceneOutcome::playing; ++index)
+    for (std::uint64_t index = 0; index < ticks && state_.outcome == SceneOutcome::playing;
+         ++index) {
+      dispatch_behavior(behavior::Event::tick);
       step(input);
+    }
     if (state_.ticks == max_ticks && state_.outcome == SceneOutcome::playing)
       state_.outcome = SceneOutcome::timed_out;
+    return true;
+  }
+  if (behavior_) {
+    for (std::uint64_t index = 0; index < ticks; ++index) {
+      dispatch_behavior(behavior::Event::tick);
+      for (auto& entity : state_.entities) {
+        entity.x += entity.vx;
+        entity.y += entity.vy;
+      }
+    }
+    state_.ticks += ticks;
     return true;
   }
   const auto steps = static_cast<std::int64_t>(ticks);
@@ -138,6 +152,20 @@ void SceneSession::restart() {
   state_.entities = initial_entities_;
   state_.ticks = 0;
   state_.outcome = SceneOutcome::playing;
+  if (behavior_) {
+    state_.behavior_state = behavior_->initial_state;
+    dispatch_behavior(behavior::Event::start);
+  }
+}
+
+void SceneSession::dispatch_behavior(behavior::Event event) {
+  if (!behavior_) return;
+  auto& values = *state_.behavior_state;
+  behavior_->dispatch(event, values);
+  if (!velocity_binding_) return;
+  const auto& [entity, state] = *velocity_binding_;
+  state_.entities[entity].vx =
+      std::clamp<std::int64_t>(values.at(state), -scene_field_limit, scene_field_limit);
 }
 
 void SceneSession::step(const SceneInput& input) {

@@ -10,7 +10,16 @@
 #include <string_view>
 #include <vector>
 
+#include "behavior.hpp"
+
 namespace wds::platform {
+
+inline constexpr std::int64_t scene_field_limit = 1'000'000;
+
+struct VelocityBinding {
+  std::size_t entity;
+  std::string state;
+};
 
 enum class SceneRole { none, player, wall, goal, hazard };
 enum class SceneOutcome { playing, won, lost, timed_out };
@@ -54,6 +63,7 @@ struct SceneSnapshot {
   bool interactive = false;
   SceneOutcome outcome = SceneOutcome::playing;
   std::string project_id{};
+  std::optional<behavior::Values> behavior_state{};
 };
 
 struct SceneBounds {
@@ -93,11 +103,14 @@ class SceneSession {
 
   SceneSession() = default;
   void step(const SceneInput& input);
+  void dispatch_behavior(behavior::Event event);
 
   SceneSnapshot state_;
   std::vector<SceneEntity> initial_entities_;
   std::optional<SceneControls> controls_;
   std::vector<SceneSprite> sprites_;
+  std::optional<behavior::Program> behavior_;
+  std::optional<VelocityBinding> velocity_binding_;
 };
 
 }  // namespace wds::platform

@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "entities": [
+    {
+      "id": "origin"
+    },
+    {
+      "id": "glider",
+      "x": -100,
+      "y": 28
+    }
+  ],
+  "behavior": {
+    "format": "code",
+    "document": "# 每个步进增加速度，巡航后维持速度。\nparam step 2\nparam cruise 8\nstate speed 0\non start set speed step\non tick if speed < cruise add speed step\n",
+    "bind_vx": {
+      "entity": "glider",
+      "state": "speed"
+    }
+  }
+}

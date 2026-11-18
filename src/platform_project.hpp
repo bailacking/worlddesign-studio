@@ -65,7 +65,6 @@ struct SceneField {
   std::int64_t SceneEntity::*member;
 };
 
-inline constexpr std::int64_t scene_field_limit = 1'000'000;
 inline constexpr std::array scene_fields{
     SceneField{"x", &SceneEntity::x}, SceneField{"y", &SceneEntity::y},
     SceneField{"vx", &SceneEntity::vx}, SceneField{"vy", &SceneEntity::vy}};

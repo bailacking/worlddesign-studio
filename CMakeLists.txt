@@ -59,7 +59,7 @@ target_compile_definitions(wds_png PUBLIC
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
   src/asset_import.cpp
-  src/scene_play.cpp)
+  src/behavior.cpp src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
@@ -142,6 +142,10 @@ if(WDS_BUILD_MODERN_STUDIO)
     SOURCE_TARGETS wds_studio_modern
     TS_FILES src/studio/i18n/workbench_zh_CN.ts
     RESOURCE_PREFIX "/studio/i18n")
+  add_test(NAME workbench_behavior_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/shared-behavior"
+    "${CMAKE_CURRENT_BINARY_DIR}/w11-workbench.png")
+  set_tests_properties(workbench_behavior_smoke PROPERTIES TIMEOUT 25)
   if(WIN32)
     add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
@@ -209,6 +213,11 @@ add_test(
           -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
 )
+add_test(NAME behavior_project COMMAND "${CMAKE_COMMAND}"
+  -DCLI=$<TARGET_FILE:wds_cli>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/behavior-projects
+  -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/shared-behavior
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior_project.cmake")
 add_test(NAME project_request COMMAND "${CMAKE_COMMAND}"
   -DCLI=$<TARGET_FILE:wds_cli>
   -DROOT=${CMAKE_CURRENT_BINARY_DIR}/project-requests

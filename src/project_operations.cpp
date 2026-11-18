@@ -5,6 +5,7 @@
 #include <chrono>
 #include <stdexcept>
 
+#include "behavior_document.hpp"
 #include "platform_project.hpp"
 #include "project_export.hpp"
 #include "project_io.hpp"
@@ -88,6 +89,11 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   const auto revision = expected.value_or(0);
   const bool apply = mode == "apply";
   if (id == "project.index") return project_index(directory, expected);
+  if (id == "behavior.convert") {
+    const auto document = input.find("document");
+    if (document == input.end()) throw InvalidInput{"/input/document"};
+    return behavior::convert_document(text(input, "from"), text(input, "to"), *document);
+  }
   if (id == "project.open" || id == "project.validate")
     return Json::parse(project_result_json(open_project(directory)));
   if (id == "project.resources")

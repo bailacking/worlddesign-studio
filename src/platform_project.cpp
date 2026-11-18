@@ -1,6 +1,7 @@
 #include "platform_project.hpp"
 
 #include "asset_import.hpp"
+#include "behavior_document.hpp"
 #include "project_io.hpp"
 #include "project_operations.hpp"
 
@@ -263,16 +264,46 @@ FieldResult parse_controls(const Json& rules, std::vector<SceneEntity>& entities
   return {"ok"};
 }
 
+FieldResult parse_scene_behavior(const Json& value, const std::vector<SceneEntity>& entities,
+                                 std::optional<behavior::Program>* program,
+                                 std::optional<VelocityBinding>* binding) {
+  if ((!has_fields(value, {"format", "document"}) &&
+       !has_fields(value, {"format", "document", "bind_vx"})) ||
+      !value["format"].is_string())
+    return {"invalid_behavior", "/behavior"};
+  auto loaded =
+      behavior::load_document(value["format"].get_ref<const std::string&>(), value["document"]);
+  if (!loaded.program) return {loaded.code, "/behavior" + loaded.location};
+  if (value.contains("bind_vx")) {
+    const auto& target = value["bind_vx"];
+    if (!has_fields(target, {"entity", "state"}) || !target["entity"].is_string() ||
+        !target["state"].is_string())
+      return {"invalid_behavior", "/behavior/bind_vx"};
+    const auto& id = target["entity"].get_ref<const std::string&>();
+    const auto entity = std::ranges::find(entities, id, &SceneEntity::id);
+    if (entity == entities.end() || entity->role != SceneRole::none)
+      return {"invalid_behavior", "/behavior/bind_vx/entity"};
+    const auto& state = target["state"].get_ref<const std::string&>();
+    if (!loaded.program->initial_state.contains(state))
+      return {"unknown_behavior_state", "/behavior/bind_vx/state"};
+    if (binding)
+      *binding = VelocityBinding{static_cast<std::size_t>(entity - entities.begin()), state};
+  }
+  if (program) *program = std::move(loaded.program);
+  return {"ok"};
+}
+
 FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
-                        std::optional<SceneControls>* controls = nullptr) {
+                        std::optional<SceneControls>* controls = nullptr,
+                        std::optional<behavior::Program>* program = nullptr,
+                        std::optional<VelocityBinding>* binding = nullptr) {
   // Older projects use an empty object for a new scene.
   if (json.is_object() && json.empty()) return {"ok"};
   if (!json.is_object() || !json.contains("format_version") ||
       !json["format_version"].is_number_integer())
     return {"invalid_scene", "/format_version"};
   if (json["format_version"] != 1) return {"unsupported_scene_version", "/format_version"};
-  if (!has_fields(json, {"format_version", "entities"}) &&
-      !has_fields(json, {"format_version", "entities", "play"}))
+  if (!json.contains("entities") || json.size() != 2U + json.count("play") + json.count("behavior"))
     return {"invalid_scene", "/"};
   const auto& entities = json["entities"];
   if (!entities.is_array()) return {"invalid_scene", "/entities"};
@@ -316,7 +347,13 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
     if (!entity.sprite.empty() && entity.half_width == 0) return {"invalid_scene", where + "/box"};
     output.push_back(std::move(entity));
   }
-  return json.contains("play") ? parse_controls(json["play"], output, controls) : FieldResult{"ok"};
+  if (json.contains("play")) {
+    auto result = parse_controls(json["play"], output, controls);
+    if (result.code != "ok") return result;
+  }
+  if (json.contains("behavior"))
+    return parse_scene_behavior(json["behavior"], output, program, binding);
+  return {"ok"};
 }
 
 bool is_voxel_scene(const Json& json) {
@@ -455,7 +492,7 @@ FieldResult edit_scene_file(const fs::path& root, std::uint64_t expected, const 
     auto result = change(scene);
     result.revision = revision;
     if (result.code != "ok" || !result.changed) return result;
-    if (scene.contains("play") && !restore) {
+    if ((scene.contains("play") || scene.contains("behavior")) && !restore) {
       std::vector<SceneEntity> entities;
       auto checked = parse_scene(scene, entities);
       if (checked.code != "ok") {
@@ -701,12 +738,14 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
                          {project.id, scene.id, scene.path, *bytes, {}},
                          project.revision}};
     }
-    const auto parsed = parse_scene(json, session.state_.entities, &session.controls_);
+    const auto parsed = parse_scene(json, session.state_.entities, &session.controls_,
+                                    &session.behavior_, &session.velocity_binding_);
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
     session.state_.interactive = session.controls_.has_value();
     session.state_.project_id = project.id;
     session.initial_entities_ = session.state_.entities;
+    session.restart();
 
     constexpr std::size_t max_sprite_bytes = 32 * 1024 * 1024;
     std::size_t decoded = 0;
@@ -1260,7 +1299,7 @@ ProjectResult recover_project(const fs::path& root) {
            old_project.project->revision, operation["target"].get<std::string>(),
            operation["index"].get<std::size_t>()});
       if (change.code != "ok" || !change.changed) return blocked();
-      if (new_data.contains("play")) {
+      if (new_data.contains("play") || new_data.contains("behavior")) {
         std::vector<SceneEntity> entities;
         if (parse_scene(new_data, entities).code != "ok") return blocked();
       }
@@ -1424,6 +1463,7 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
               {"ticks", scene.ticks},
               {"entities", std::move(entities)}};
   if (scene.interactive) output["outcome"] = outcome_name(scene.outcome);
+  if (scene.behavior_state) output["behavior_state"] = *scene.behavior_state;
   if (include_fields) {
     auto fields = Json::array();
     for (const auto& field : scene_fields) {
@@ -1467,6 +1507,12 @@ Json build_operation_specs() {
   add("project.index", "project index DIRECTORY [REVISION]", false,
       {{"directory", "path"}, {"expected_revision", "optional integer"}}, index_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  add("behavior.convert", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"from", "code | graph"},
+       {"to", "code | graph"},
+       {"document", "code string or graph object"}},
+      {"invalid_argument", "invalid_behavior", "behavior_too_large"});
   auto import_errors = read_errors;
   for (const auto* code : {"invalid_argument", "invalid_path", "invalid_source", "source_too_large",
                            "invalid_content", "duplicate_id", "duplicate_path", "target_exists",
@@ -1494,7 +1540,9 @@ Json build_operation_specs() {
   for (const auto* code :
        {"invalid_argument", "revision_conflict", "invalid_scene", "unsupported_scene_version",
         "scene_too_large", "duplicate_entity_id", "invalid_sprite", "invalid_png",
-        "image_too_large", "source_too_large", "unsupported_scene_kind"})
+        "image_too_large", "source_too_large", "unsupported_scene_kind", "invalid_behavior",
+        "behavior_too_large", "unsupported_behavior", "duplicate_behavior_value",
+        "unknown_behavior_value", "unknown_behavior_state"})
     scene_errors.push_back(code);
   add("project.play", "project play DIRECTORY REVISION TICKS", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"ticks", "integer 0 through 600"}},
