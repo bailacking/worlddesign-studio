@@ -104,7 +104,8 @@ bool valid_runtime(const Json& metadata) {
   static const auto spec = parse_json(windows_runtime_spec);
   for (const auto& [name, value] : spec.items()) {
     // Earlier players can export scenes that use only the capabilities they advertise.
-    if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format") &&
+    if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format" ||
+         name == "voxel_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -282,17 +283,22 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
       copy_notice(path + ".license.txt", "licenses/assets/" + id + "/notice.txt");
     }
     save("game/wds.project.json", projected.dump(2) + "\n");
-    auto scene = start_scene(stage / "game", revision);
-    if (!scene.session)
+    auto scene = start_scene(stage / "game", revision, true);
+    if (!scene.session && !scene.voxel_scene)
       return {scene.code,
               scene.resource_path.empty() ? scene.location : scene.resource_path + scene.location,
               revision};
 
-    if (scene.session->snapshot().behavior_state && !metadata.contains("behavior_format"))
+    if (scene.voxel_scene && !metadata.contains("voxel_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_format");
+    if (scene.session && scene.session->snapshot().behavior_state &&
+        !metadata.contains("behavior_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/behavior_format");
-    if (scene.session->terrain() && !metadata.contains("terrain_format"))
+    if (scene.session && scene.session->terrain() && !metadata.contains("terrain_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/terrain_format");
-    if (scene.session->workshop() && !metadata.contains("workshop_format"))
+    if (((scene.session && scene.session->workshop()) ||
+         (scene.voxel_scene && scene.voxel_scene->workshop)) &&
+        !metadata.contains("workshop_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/workshop_format");
 
     // Recheck the source snapshot before publishing. The staged files are the ones we validated.

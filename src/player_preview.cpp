@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <map>
+#include <numbers>
 
 #include "platform_project.hpp"
 #include "player_view.hpp"
@@ -159,16 +161,17 @@ struct WorkshopPanel {
   std::size_t selected = 0;
   std::string result;
 
-  void step(SceneSession& session) {
-    const auto options = session.workshop()->actions(true);
+  template <typename Apply>
+  void step(const items::Workshop& workshop, bool gathering, Apply apply) {
+    const auto options = workshop.actions(gathering);
     if (options.empty()) return;
     selected = std::min(selected, options.size() - 1);
     if (IsKeyPressed(KEY_UP) && selected > 0) --selected;
     if (IsKeyPressed(KEY_DOWN) && selected + 1 < options.size()) ++selected;
-    if (IsKeyPressed(KEY_ENTER)) result = workshop_feedback(session.work(options[selected]));
+    if (IsKeyPressed(KEY_ENTER)) result = workshop_feedback(apply(options[selected]));
   }
 
-  void paint(const items::Workshop& workshop) const {
+  void paint(const items::Workshop& workshop, bool gathering = true) const {
     const auto left = 24;
     const auto top = 46;
     const auto width = GetScreenWidth() - 48;
@@ -193,7 +196,7 @@ struct WorkshopPanel {
     inventory("Bag", state.bag, left + 12);
     inventory("Chest", state.chest, left + width / 3);
     inventory("Drops", state.loot, left + 2 * width / 3);
-    const auto options = workshop.actions(true);
+    const auto options = workshop.actions(gathering);
     if (!options.empty()) {
       const auto current = std::min(selected, options.size() - 1);
       const auto& action = options[current];
@@ -299,7 +302,8 @@ bool play_scene(SceneSession& session, const char* title) {
             blocked = keys;
           }
           if (workshop.open) {
-            workshop.step(session);
+            workshop.step(*session.workshop(), true,
+                          [&](const items::Action& action) { return session.work(action); });
           } else if (had_focus) {
             const auto input = keys & ~blocked;
             const bool terminal = snapshot.outcome != SceneOutcome::playing ||
@@ -333,6 +337,100 @@ bool play_scene(SceneSession& session, const char* title) {
   return ready;
 }
 
+bool play_voxel(VoxelScene& scene, const char* title) {
+  const auto caption = title ? std::string(title) : game_title(scene.source.project_id);
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+  InitWindow(900, 570, caption.c_str());
+  if (!IsWindowReady()) return false;
+  SetWindowMinSize(360, 260);
+  SetTargetFPS(30);
+  constexpr int frame_width = 320;
+  constexpr int frame_height = 200;
+  std::vector<Color> pixels(frame_width * frame_height);
+  const Image image{pixels.data(), frame_width, frame_height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+  const auto texture = LoadTextureFromImage(image);
+  const bool ready = IsTextureValid(texture);
+  if (ready) {
+    voxel::Player player;
+    WorkshopPanel workshop;
+    SceneInput blocked;
+    bool needs_frame = true;
+    bool had_focus = false;
+    while (!WindowShouldClose()) {
+      const bool focused = IsWindowFocused();
+      if (focused) {
+        const auto keys = read_keys();
+        blocked = had_focus ? blocked & keys : keys;
+        if (scene.workshop && IsKeyPressed(KEY_TAB)) {
+          workshop.open = !workshop.open;
+          blocked = keys;
+        }
+        if (workshop.open) {
+          workshop.step(*scene.workshop, false,
+                        [&](const items::Action& action) { return scene.workshop->apply(action); });
+        } else if (had_focus) {
+          const auto before = player;
+          const auto input = keys & ~blocked;
+          const auto axis = [&](SceneKey positive, SceneKey negative) {
+            return static_cast<int>(input.test(static_cast<std::size_t>(positive))) -
+                   static_cast<int>(input.test(static_cast<std::size_t>(negative)));
+          };
+          const auto key = [](std::string_view name) { return *scene_key(name); };
+          const auto dt = std::min(static_cast<double>(GetFrameTime()), 0.05);
+          player.yaw = std::remainder(player.yaw + axis(SceneKey::right, SceneKey::left) * dt * 1.8,
+                                      2 * std::numbers::pi);
+          player.pitch =
+              std::clamp(player.pitch + axis(SceneKey::up, SceneKey::down) * dt * 1.4, -1.3, 1.3);
+          for (int step = 0; step < 2; ++step)
+            player.step(scene.world, axis(key("W"), key("S")), axis(key("D"), key("A")),
+                        step == 0 && IsKeyPressed(KEY_SPACE), dt * .5);
+          if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+            needs_frame = scene.edit(player.feet, player.eye(), player.view(),
+                                     IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) ||
+                          needs_frame;
+          needs_frame = needs_frame || before.yaw != player.yaw || before.pitch != player.pitch ||
+                        before.feet.x != player.feet.x || before.feet.y != player.feet.y ||
+                        before.feet.z != player.feet.z;
+        }
+      }
+      had_focus = focused;
+      if (needs_frame) {
+        const auto camera = player.camera();
+        for (int y = 0; y < frame_height; ++y) {
+          for (int x = 0; x < frame_width; ++x) {
+            const auto ray =
+                camera.ray(1.5 * (x + .5) / frame_width - .75, .47 - .94 * (y + .5) / frame_height);
+            const auto rgb = voxel::pixel(scene.world, camera.eye, ray);
+            pixels[static_cast<std::size_t>(y * frame_width + x)] = {
+                static_cast<unsigned char>((rgb >> 16) & 255),
+                static_cast<unsigned char>((rgb >> 8) & 255), static_cast<unsigned char>(rgb & 255),
+                255};
+          }
+        }
+        UpdateTexture(texture, pixels.data());
+        needs_frame = false;
+      }
+      BeginDrawing();
+      const int width = GetScreenWidth();
+      const int height = GetScreenHeight();
+      DrawTexturePro(texture, {0, 0, frame_width, frame_height},
+                     {0, 0, static_cast<float>(width), static_cast<float>(height)}, {}, 0, WHITE);
+      DrawLine(width / 2 - 8, height / 2, width / 2 + 8, height / 2, WHITE);
+      DrawLine(width / 2, height / 2 - 8, width / 2, height / 2 + 8, WHITE);
+      DrawRectangle(0, height - 34, width, 34, {16, 21, 31, 200});
+      DrawText("WASD move   Arrows look   Space jump", 12, height - 29, 13, RAYWHITE);
+      DrawText(scene.workshop ? "Left break   Right place   Tab items   Esc quit"
+                              : "Left break   Right place   Esc quit",
+               12, height - 15, 13, RAYWHITE);
+      if (workshop.open) workshop.paint(*scene.workshop, false);
+      EndDrawing();
+    }
+    UnloadTexture(texture);
+  }
+  CloseWindow();
+  return ready;
+}
+
 }  // namespace wds::player
 
 #ifndef WDS_PACKAGED_PLAYER
@@ -352,11 +450,13 @@ int main(int argc, char** argv) {
     std::cerr << project_result_json(opened) << '\n';
     return 1;
   }
-  auto result = start_scene(path, opened.project->revision);
-  if (!result.session) {
+  auto result = start_scene(path, opened.project->revision, true);
+  if (!result.session && !result.voxel_scene) {
     std::cerr << scene_result_json(result) << '\n';
     return 1;
   }
+  if (result.voxel_scene)
+    return wds::player::play_voxel(*result.voxel_scene, "WDS Voxel Preview") ? 0 : 1;
   if (wds::player::play_scene(*result.session, "WDS Scene Preview")) return 0;
   std::cerr << "Unable to prepare graphics for playback.\n";
   return 1;

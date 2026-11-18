@@ -60,11 +60,12 @@ target_compile_definitions(wds_png PUBLIC
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
   src/asset_import.cpp
-  src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/workshop.cpp src/workshop_document.cpp
+  src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/voxel_palette.cpp
+  src/workshop.cpp src/workshop_document.cpp
   src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
-target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
+target_link_libraries(wds_project PRIVATE wds_compile_options wds_png wds_m0)
 target_link_libraries(wds_cli PRIVATE wds_project)
 target_include_directories(wds_cli SYSTEM PRIVATE third_party/nlohmann)
 if(WIN32)

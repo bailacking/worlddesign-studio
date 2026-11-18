@@ -215,6 +215,7 @@ class Workbench final : public QMainWindow {
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     workshop_ = scene_menu_->addAction(QString{}, this, &Workbench::openWorkshop);
     workshop_->setShortcut(QKeySequence(Qt::Key_F6));
+    palette_ = scene_menu_->addAction(QString{}, this, &Workbench::changePalette);
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
     settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
@@ -234,7 +235,7 @@ class Workbench final : public QMainWindow {
     viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
     voxel_view_ = new VoxelViewport(
         [this] {
-          voxel_dirty_ = true;
+          if (!voxel_preview_) voxel_dirty_ = true;
           updateActions();
         },
         this);
@@ -375,6 +376,7 @@ class Workbench final : public QMainWindow {
     move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
     workshop_->setText(QCoreApplication::translate("WorkshopDialog", "Items and recipes"));
+    palette_->setText(tr("Voxel Palette…"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
     hierarchy_->setWindowTitle(tr("Scene"));
@@ -460,14 +462,19 @@ class Workbench final : public QMainWindow {
     bool accepted = false;
     const auto id = QInputDialog::getText(this, tr("New WDS Project"), tr("Project ID"),
                                           QLineEdit::Normal, "my-game", &accepted);
-    if (!accepted || id.isEmpty() || !canDiscard()) return;
+    if (!accepted || id.isEmpty()) return;
     if (id.contains('/') || id.contains('\\') || id == "." || id == "..") {
       report({QT_TR_NOOP("Use a project ID, such as my-game."), {}, {}, "warning"});
       return;
     }
+    const QStringList kinds{tr("2D Scene"), tr("3D Voxel World")};
+    const auto type = QInputDialog::getItem(this, tr("New WDS Project"), tr("Project Type"), kinds,
+                                            0, false, &accepted);
+    if (!accepted || !canDiscard()) return;
     const auto path = QDir(parent).filePath(id);
     setBusy(true);
-    bridge_.request(path, "project.create", "apply", {}, {{"project_id", id}},
+    bridge_.request(path, "project.create", "apply", {},
+                    {{"project_id", id}, {"kind", type == kinds.at(1) ? "voxel" : "scene"}},
                     [this, path](const QJsonObject& result) {
                       if (result.value("code") != "ok") {
                         report({nullptr, {}, result});
@@ -482,7 +489,7 @@ class Workbench final : public QMainWindow {
   }
 
   void importResource() {
-    if (busy_ || session_ || hasDraft() || !revision_) return;
+    if (busy_ || playing() || hasDraft() || !revision_) return;
     const auto source =
         QFileDialog::getOpenFileName(this, tr("Choose Resource File"), {},
                                      tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
@@ -491,7 +498,7 @@ class Workbench final : public QMainWindow {
   }
 
   void exportGame() {
-    if (busy_ || session_ || voxel_scene_ || hasDraft() || !revision_) return;
+    if (busy_ || playing() || hasDraft() || !revision_ || (!scene_ready_ && !voxel_scene_)) return;
     const auto parent = QFileDialog::getExistingDirectory(
         this, tr("Choose Export Parent"), QFileInfo(root_).absolutePath(),
         QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
@@ -537,7 +544,7 @@ class Workbench final : public QMainWindow {
   }
 
   void importFile(const QString& source) {
-    if (busy_ || session_ || hasDraft() || !revision_) return;
+    if (busy_ || playing() || hasDraft() || !revision_) return;
     const auto suggested_kind = file_kind(source);
     auto suggested_id = QFileInfo(source).completeBaseName().toLower();
     suggested_id.replace(QRegularExpression("[^a-z0-9]+"), "-");
@@ -677,6 +684,7 @@ class Workbench final : public QMainWindow {
   }
 
   bool hasDraft() const { return dirty_ || voxel_dirty_; }
+  bool playing() const { return session_.has_value() || voxel_preview_.has_value(); }
 
   bool canDiscard() {
     return !hasDraft() ||
@@ -697,6 +705,7 @@ class Workbench final : public QMainWindow {
 
   void clearProject() {
     voxel_view_->setWorld(nullptr);
+    voxel_preview_.reset();
     voxel_scene_.reset();
     voxel_dirty_ = false;
     views_->setCurrentWidget(viewport_);
@@ -802,7 +811,7 @@ class Workbench final : public QMainWindow {
 
   void selectEntity(const QString& id) {
     if (id == selected_) return;
-    if (busy_ || session_ || !canDiscard()) {
+    if (busy_ || playing() || !canDiscard()) {
       scene_tree_->setSelectedId(selected_);
       return;
     }
@@ -879,7 +888,9 @@ class Workbench final : public QMainWindow {
 
   void restoreHistory(bool redo) {
     auto& source = redo ? redo_history_ : undo_history_;
-    if (!scene_ready_ || !revision_ || busy_ || dirty_ || session_ || source.empty()) return;
+    if (!(scene_ready_ || voxel_scene_) || !revision_ || busy_ || hasDraft() || playing() ||
+        source.empty())
+      return;
     auto request = source.back().change;
     if (!redo) {
       const auto before = request.value("before");
@@ -1005,6 +1016,7 @@ class Workbench final : public QMainWindow {
               return;
             }
             voxel_dirty_ = false;
+            recordHistory(result, {});
             revision_ = result.value("revision").toInteger();
             report({QT_TR_NOOP("World saved · revision %1"), {argument(*revision_)}, {}});
             readScene(false);
@@ -1125,12 +1137,41 @@ class Workbench final : public QMainWindow {
                     });
   }
 
+  void changePalette() {
+    if (!voxel_scene_ || !revision_ || busy_ || playing() || hasDraft()) return;
+    const QStringList labels{tr("Daylight"), tr("Amber Dusk")};
+    const QStringList ids{"daylight", "amber-dusk"};
+    bool accepted = false;
+    const auto selected = QInputDialog::getItem(
+        this, tr("Voxel Palette"), tr("Palette Plugin"), labels,
+        static_cast<int>(ids.indexOf(QString::fromStdString(voxel_scene_->palette))), false,
+        &accepted);
+    if (!accepted) return;
+    const auto provider = ids.at(labels.indexOf(selected));
+    setBusy(true);
+    bridge_.request(root_, "scene.palette.set", "apply", revision_, {{"provider", provider}},
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      recordHistory(result, {});
+                      revision_ = result.value("revision").toInteger();
+                      readScene();
+                    });
+  }
+
   void openWorkshop() {
     if (busy_) return;
-    if (voxel_scene_ && voxel_scene_->workshop) {
-      auto& workshop = *voxel_scene_->workshop;
+    auto* viewport_scene = voxel_preview_ ? &*voxel_preview_
+                           : voxel_scene_ ? &*voxel_scene_
+                                          : nullptr;
+    if (viewport_scene && viewport_scene->workshop) {
+      auto& workshop = *viewport_scene->workshop;
       if (show_workshop(this, workshop, false,
-                        [&](const items::Action& action) { return workshop.apply(action); }))
+                        [&](const items::Action& action) { return workshop.apply(action); }) &&
+          !voxel_preview_)
         voxel_dirty_ = true;
       voxel_view_->setFocus(Qt::OtherFocusReason);
       updateActions();
@@ -1142,7 +1183,16 @@ class Workbench final : public QMainWindow {
   }
 
   void play() {
-    if (busy_ || dirty_ || !revision_ || !scene_ready_) return;
+    if (busy_ || playing() || hasDraft() || !revision_) return;
+    if (voxel_scene_) {
+      voxel_preview_ = *voxel_scene_;
+      voxel_view_->setWorld(&*voxel_preview_);
+      voxel_view_->setFocus(Qt::OtherFocusReason);
+      setStatus(QT_TR_NOOP("Playing a copy of the world. Select Stop to edit."));
+      updateActions();
+      return;
+    }
+    if (!scene_ready_) return;
     auto result = platform::start_scene(projectPath(), static_cast<std::uint64_t>(*revision_));
     if (!result.session) {
       report({nullptr,
@@ -1223,6 +1273,12 @@ class Workbench final : public QMainWindow {
   }
 
   void stop() {
+    if (voxel_preview_) {
+      voxel_view_->setWorld(voxel_scene_ ? &*voxel_scene_ : nullptr);
+      voxel_preview_.reset();
+      updateActions();
+      setStatus(QT_TR_NOOP("Playback stopped."));
+    }
     if (!session_) return;
     timer_.stop();
     session_.reset();
@@ -1268,28 +1324,32 @@ class Workbench final : public QMainWindow {
     open_->setEnabled(!busy_);
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
-    import_->setEnabled(!busy_ && !session_ && !hasDraft() && revision_.has_value());
-    export_->setEnabled(!busy_ && !session_ && !voxel_scene_ && !hasDraft() &&
+    import_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
+    export_->setEnabled(!busy_ && !playing() && (scene_ready_ || voxel_scene_) && !hasDraft() &&
                         revision_.has_value());
     clear_cache_->setEnabled(!busy_ && revision_.has_value());
-    recover_->setEnabled(!busy_ && !session_ && !hasDraft() && !root_.isEmpty());
+    recover_->setEnabled(!busy_ && !playing() && !hasDraft() && !root_.isEmpty());
     operations_->setEnabled(!busy_);
-    edit_data_->setEnabled(!busy_ && !session_ && !hasDraft() && revision_.has_value());
+    edit_data_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
     save_->setText(voxel_scene_ ? tr("&Save World") : tr("&Save Property"));
     revert_->setText(voxel_scene_ ? tr("Discard World Draft") : tr("Discard Property Draft"));
     save_->setEnabled((editable && dirty_) || (voxel_scene_ && voxel_dirty_ && !busy_));
     revert_->setEnabled(save_->isEnabled());
-    const bool structure_editable = scene_ready_ && !busy_ && !session_ && !dirty_ && revision_;
-    undo_->setEnabled(structure_editable && !undo_history_.empty());
-    redo_->setEnabled(structure_editable && !redo_history_.empty());
+    const bool history_editable =
+        (scene_ready_ || voxel_scene_) && !busy_ && !playing() && !hasDraft() && revision_;
+    undo_->setEnabled(history_editable && !undo_history_.empty());
+    redo_->setEnabled(history_editable && !redo_history_.empty());
+    const bool structure_editable = scene_ready_ && history_editable;
     const auto index = selectedIndex();
     add_entity_->setEnabled(structure_editable);
     copy_entity_->setEnabled(structure_editable && index >= 0);
     remove_entity_->setEnabled(structure_editable && index >= 0);
     move_up_->setEnabled(structure_editable && index > 0);
     move_down_->setEnabled(structure_editable && index >= 0 && index + 1 < entities_.size());
-    play_->setEnabled(scene_ready_ && !busy_ && !session_ && !dirty_ && revision_.has_value());
-    stop_->setEnabled(session_.has_value());
+    play_->setEnabled((scene_ready_ || voxel_scene_) && !busy_ && !playing() && !hasDraft() &&
+                      revision_.has_value());
+    stop_->setEnabled(playing());
+    palette_->setEnabled(voxel_scene_ && !busy_ && !playing() && !hasDraft() && revision_);
     workshop_->setEnabled(
         !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
     project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
@@ -1352,6 +1412,7 @@ class Workbench final : public QMainWindow {
   QAction* play_;
   QAction* stop_;
   QAction* workshop_;
+  QAction* palette_;
   QAction* add_entity_;
   QAction* copy_entity_;
   QAction* remove_entity_;
@@ -1366,6 +1427,7 @@ class Workbench final : public QMainWindow {
   std::optional<qint64> revision_;
   std::optional<platform::SceneSession> session_;
   std::optional<platform::VoxelScene> voxel_scene_;
+  std::optional<platform::VoxelScene> voxel_preview_;
   QJsonArray entities_;
   QJsonArray resources_model_;
   QJsonArray field_schema_;

@@ -197,6 +197,8 @@ cmake --build build/windows-player --target wds_player wds_cli
 cmake --install build/windows-player --prefix build/studio --component WindowsRuntime
 ```
 
+二维与三维方块项目走同一导出入口。方块工程可以用 `wds_cli project create DIRECTORY ID --kind voxel` 创建，再用声明 `voxel_format: 1` 的运行套件发布。 [双类型样品](../../examples/w16-delivery/README.md)
+
 复制完整导出文件夹即可转移。双击 **Play.exe** 开始，**Esc** 退出。脚本可运行 `Play.exe --check` 检查发布锁和场景装载，成功返回 0。游戏所需环境和锁内字段见 [Windows x64 发布包](../architecture/platforms.md#windows-x64-发布包)。
 
 ### 运行现代工作台

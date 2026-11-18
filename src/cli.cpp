@@ -239,8 +239,11 @@ int project_command(int argc, char** argv) {
     return execute(apply ? "resource.import.apply" : "resource.import.preview",
                    apply ? "apply" : "preview", revision, input);
   }
-  if (action == "create" && argc == 5)
-    return execute("project.create", "apply", std::nullopt, {{"project_id", argv[4]}});
+  if (action == "create" && (argc == 5 || (argc == 7 && std::string_view(argv[5]) == "--kind"))) {
+    json input{{"project_id", argv[4]}};
+    if (argc == 7) input["kind"] = argv[6];
+    return execute("project.create", "apply", std::nullopt, input);
+  }
   if (argc == 4) {
     if (action == "recover") return execute("project.recover", "apply");
     if (action == "open" || action == "validate" || action == "resources" || action == "imports")

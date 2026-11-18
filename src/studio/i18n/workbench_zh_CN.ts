@@ -407,6 +407,42 @@
     <context>
         <name>wds::studio::Workbench</name>
         <message>
+            <source>Voxel Palette…</source>
+            <translation>方块配色…</translation>
+        </message>
+        <message>
+            <source>Voxel Palette</source>
+            <translation>方块配色</translation>
+        </message>
+        <message>
+            <source>Palette Plugin</source>
+            <translation>配色插件</translation>
+        </message>
+        <message>
+            <source>Daylight</source>
+            <translation>日光</translation>
+        </message>
+        <message>
+            <source>Amber Dusk</source>
+            <translation>琥珀暮色</translation>
+        </message>
+        <message>
+            <source>Project Type</source>
+            <translation>工程类型</translation>
+        </message>
+        <message>
+            <source>2D Scene</source>
+            <translation>二维场景</translation>
+        </message>
+        <message>
+            <source>3D Voxel World</source>
+            <translation>三维方块世界</translation>
+        </message>
+        <message>
+            <source>Playing a copy of the world. Select Stop to edit.</source>
+            <translation>正在试玩世界副本。点击停止返回编辑。</translation>
+        </message>
+        <message>
             <source>Recover Project…</source>
             <translation>恢复项目…</translation>
         </message>

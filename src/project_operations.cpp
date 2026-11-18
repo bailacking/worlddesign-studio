@@ -102,8 +102,14 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     return Json::parse(project_resources_json(open_project(directory)));
   if (id == "project.imports") return Json::parse(import_list_json(list_imports(directory)));
   if (id == "project.recover") return Json::parse(project_result_json(recover_project(directory)));
-  if (id == "project.create")
-    return Json::parse(project_result_json(create_project(directory, text(input, "project_id"))));
+  if (id == "project.create") {
+    const auto kind = input.contains("kind") ? text(input, "kind") : "scene";
+    return Json::parse(
+        project_result_json(create_project(directory, text(input, "project_id"), kind)));
+  }
+  if (id == "scene.palette.set")
+    return Json::parse(
+        field_result_json(edit_palette(directory, revision, text(input, "provider"), apply)));
   if (id == "project.export")
     return Json::parse(export_result_json(
         export_project(directory, revision, text(input, "target"), path(input, "destination"))));
@@ -133,7 +139,7 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     const bool inspect = id == "scene.inspect";
     const auto ticks = inspect ? 0 : number<std::uint64_t>(input, "ticks");
     if (ticks > SceneSession::max_ticks) return fail("invalid_argument", "/ticks");
-    auto loaded = start_scene(directory, revision, inspect);
+    auto loaded = start_scene(directory, revision, true);
     SceneInput keys;
     if (const auto given = input.find("keys"); given != input.end()) {
       if (!given->is_array() || given->size() > keys.size()) throw InvalidInput{"/input/keys"};
@@ -145,7 +151,20 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
       }
     }
     if (loaded.session && ticks) loaded.session->advance(ticks, keys);
-    return Json::parse(scene_result_json(loaded, inspect));
+    auto result = Json::parse(scene_result_json(loaded, inspect));
+    if (!inspect && loaded.voxel_scene) {
+      voxel::Player player;
+      const auto direction = [&](std::string_view positive, std::string_view negative) {
+        return static_cast<int>(keys.test(static_cast<std::size_t>(*scene_key(positive)))) -
+               static_cast<int>(keys.test(static_cast<std::size_t>(*scene_key(negative))));
+      };
+      for (std::uint64_t i = 0; i < 2 * ticks; ++i)
+        player.step(loaded.voxel_scene->world, direction("W", "S"), direction("D", "A"), false,
+                    1.0 / 60.0);
+      result["ticks"] = ticks;
+      result["position"] = {player.feet.x, player.feet.y, player.feet.z};
+    }
+    return result;
   }
   if (id.starts_with("resource.field.")) {
     const FieldEdit edit{text(input, "resource_id"), text(input, "field"), revision,

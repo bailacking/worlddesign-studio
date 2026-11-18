@@ -101,6 +101,7 @@ struct VoxelScene {
   SceneChange source;
   std::uint64_t revision;
   std::optional<items::Workshop> workshop{};
+  std::string palette = "daylight";
 
   bool edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place);
 };
@@ -163,7 +164,10 @@ struct ImportListResult {
 };
 
 ProjectResult open_project(const std::filesystem::path& directory);
-ProjectResult create_project(const std::filesystem::path& directory, std::string_view id);
+ProjectResult create_project(const std::filesystem::path& directory, std::string_view id,
+                             std::string_view kind = "scene");
+FieldResult edit_palette(const std::filesystem::path& root, std::uint64_t revision,
+                         std::string_view provider, bool apply);
 ImportResult import_resource(const std::filesystem::path& directory, const ImportRequest& request,
                              bool apply);
 ImportListResult list_imports(const std::filesystem::path& directory);
