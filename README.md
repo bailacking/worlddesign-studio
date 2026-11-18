@@ -14,7 +14,7 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 - **场景编辑**：在可平移缩放的二维视口选中实体，修改位置或速度；支持实体新建、复制、删除、排序和当前会话内撤销重做。
 - **AI 与命令行**支持按修订读取、预览和提交项目改动、恢复中断写入和生成 Markdown 交接摘要。内容工具可展开规则、校验引用和按 ID 修补生成结果。[资源导入](docs/engineering/development.md#导入外部资源) · [内容生成](docs/engineering/development.md#生成与修补内容)
 
-当前提供源码构建。工作台支持图文导入、拖放、缩略图、交互式二维试玩和 Windows x64 独立导出。打开「礁灯投递」体验精灵、碰撞和胜负，导出后双击 `Play.exe` 运行。 [试玩步骤](examples/reef-delivery/README.md) · [导出步骤](docs/engineering/development.md#导出-windows-x64-游戏)
+当前提供源码构建。工作台支持图文导入、2D 试玩、3D 方块编辑和 Windows x64 版 2D 游戏导出。打开「礁灯投递」体验二维玩法，打开「方块工坊」体验第一人称编辑。 [礁灯投递](examples/reef-delivery/README.md) · [方块工坊](examples/voxel-workshop/README.md)
 
 ## 产品方向
 

@@ -1,0 +1,7 @@
+string(RANDOM LENGTH 12 nonce)
+set(project "${ROOT}/${nonce}")
+file(COPY "${EXAMPLE}/" DESTINATION "${project}")
+execute_process(COMMAND "${TEST}" WORKING_DIRECTORY "${project}" RESULT_VARIABLE tested)
+if(NOT tested STREQUAL "0")
+  message(FATAL_ERROR "Voxel project checks failed: ${tested}")
+endif()

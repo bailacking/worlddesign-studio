@@ -238,6 +238,18 @@
             <source>invalid_utf8</source>
             <translation>源文件需为 UTF-8 纯文本</translation>
         </message>
+        <message>
+            <source>invalid_voxel_materials</source>
+            <translation>方块材质定义或引用无效</translation>
+        </message>
+        <message>
+            <source>invalid_voxel_world</source>
+            <translation>方块地形存档无效</translation>
+        </message>
+        <message>
+            <source>unsupported_scene_kind</source>
+            <translation>当前操作不支持此场景类型</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -803,6 +815,45 @@
         <message>
             <source>Thumbnail cache cleared.</source>
             <translation>已清理缩略图缓存。</translation>
+        </message>
+        <message>
+            <source>&amp;Save World</source>
+            <translation>保存方块世界(&amp;S)</translation>
+        </message>
+        <message>
+            <source>Discard World Draft</source>
+            <translation>放弃方块草稿</translation>
+        </message>
+        <message>
+            <source>Unsaved World</source>
+            <translation>方块世界未保存</translation>
+        </message>
+        <message>
+            <source>Discard the unsaved block changes?</source>
+            <translation>放弃未保存的方块改动？</translation>
+        </message>
+        <message>
+            <source>World saved · revision %1</source>
+            <translation>方块世界已保存 · 修订 %1</translation>
+        </message>
+    </context>
+    <context>
+        <name>VoxelViewport</name>
+        <message>
+            <source>3D voxel viewport</source>
+            <translation>三维方块视口</translation>
+        </message>
+        <message>
+            <source>Block (%1, %2, %3)</source>
+            <translation>方块 (%1, %2, %3)</translation>
+        </message>
+        <message>
+            <source>No block in reach</source>
+            <translation>射程内无方块</translation>
+        </message>
+        <message>
+            <source>WASD move · Arrows look · Space jump · Left break · Right place</source>
+            <translation>WASD 移动 · 方向键转头 · 空格跳跃 · 左键破坏 · 右键放置</translation>
         </message>
     </context>
 </TS>

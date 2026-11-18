@@ -94,4 +94,4 @@ jobs:
           $env:PATH = "$qt/bin;$env:PATH"
           cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DCMAKE_PREFIX_PATH=$qt"
           cmake --build build/studio --target wds_studio_modern
-          ctest --test-dir build/studio -R '^workbench_smoke$' --output-on-failure --no-tests=error
+          ctest --test-dir build/studio -R '^workbench_(voxel_)?smoke$' --output-on-failure --no-tests=error

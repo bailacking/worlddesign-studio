@@ -129,6 +129,7 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/scene_tree.cpp
     src/studio/theme/theme.cpp
     src/studio/viewport.cpp
+    src/studio/voxel_viewport.cpp
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
   target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
@@ -142,15 +143,17 @@ if(WDS_BUILD_MODERN_STUDIO)
   if(WIN32)
     add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
-    set_tests_properties(workbench_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-      TIMEOUT 25)
+    add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
+    set_tests_properties(workbench_smoke workbench_voxel_smoke PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
   endif()
 endif()
 
 add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
-target_link_libraries(wds_cli PRIVATE wds_voxel)
+target_link_libraries(wds_project PRIVATE wds_voxel)
 
 if(WIN32)
   if(MINGW)
@@ -183,6 +186,13 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_executable(wds_voxel_project_test tests/voxel_project.cpp)
+target_link_libraries(wds_voxel_project_test PRIVATE wds_project wds_compile_options)
+add_test(NAME voxel_project COMMAND "${CMAKE_COMMAND}"
+  -DTEST=$<TARGET_FILE:wds_voxel_project_test>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/voxel-projects
+  -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_project.cmake")
 add_test(
   NAME platform_project
   COMMAND ${CMAKE_COMMAND} -DCLI=$<TARGET_FILE:wds_cli>

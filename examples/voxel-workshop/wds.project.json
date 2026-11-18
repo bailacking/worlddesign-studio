@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "project_id": "voxel-workshop",
+  "revision": 0,
+  "entry_scene": "quarry",
+  "resources": [
+    {"id": "quarry", "kind": "scene", "path": "assets/quarry.json", "refs": ["stone-colors"]},
+    {"id": "stone-colors", "kind": "text", "path": "assets/stone-colors.txt", "refs": []}
+  ]
+}

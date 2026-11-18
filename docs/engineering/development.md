@@ -212,7 +212,11 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
-本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_smoke$' --output-on-failure`。此检查离屏启动工作台，打开「礁灯投递」并确认视口已绘制。
+本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_(voxel_)?smoke$' --output-on-failure`。检查离屏启动工作台，分别打开「礁灯投递」和「方块工坊」并绘制当前视口。
+
+### 编辑方块工坊
+
+复制 `examples/voxel-workshop` 到可写目录，在同一个工作台打开。用 WASD 移动、方向键转头，准星指向方块后左键破坏、右键放置。按 Ctrl+S 再重开工程可检查保存结果。工作台使用当前工程的材质资源。 [试用操作](../../examples/voxel-workshop/README.md)
 
 用 **场景 → 新建实体** 添加零位置、零速度的实体。选中实体后可复制、删除或调整它在场景树中的顺序。结构修改在操作完成时保存，属性草稿需先保存或放弃。工作台与 CLI 共用场景编辑操作。[CLI 用法](../architecture/commands.md)
 

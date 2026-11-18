@@ -19,7 +19,6 @@
 namespace {
 
 using wds::voxel::Player;
-using wds::voxel::Vec3;
 using wds::voxel::World;
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
@@ -180,20 +179,14 @@ void paint(HWND window, Sandbox& app) {
   GetClientRect(window, &rect);
   const int width = rect.right - rect.left;
   const int height = rect.bottom - rect.top;
-  const auto forward = app.player.view();
-  const auto eye = app.player.eye();
-  const Vec3 right{std::cos(app.player.yaw), 0, std::sin(app.player.yaw)};
-  const Vec3 up{-std::sin(app.player.yaw) * std::sin(app.player.pitch), std::cos(app.player.pitch),
-                std::cos(app.player.yaw) * std::sin(app.player.pitch)};
+  const auto camera = app.player.camera();
 
   for (int y = 0; y < image_height; ++y) {
     const double vertical = (1 - 2 * (y + 0.5) / image_height) * 0.58;
     for (int x = 0; x < image_width; ++x) {
       const double horizontal = (2 * (x + 0.5) / image_width - 1) * 0.97;
-      app.pixels[static_cast<std::size_t>(y * image_width + x)] = wds::voxel::pixel(
-          app.world, eye,
-          {forward.x + horizontal * right.x + vertical * up.x, forward.y + vertical * up.y,
-           forward.z + horizontal * right.z + vertical * up.z});
+      app.pixels[static_cast<std::size_t>(y * image_width + x)] =
+          wds::voxel::pixel(app.world, camera.eye, camera.ray(horizontal, vertical));
     }
   }
   BITMAPINFO bitmap{};
@@ -208,7 +201,7 @@ void paint(HWND window, Sandbox& app) {
 
   const int cx = width / 2;
   const int cy = height / 2;
-  const auto target = app.world.cast(eye, forward, 7);
+  const auto target = app.world.cast(camera.eye, camera.forward, 7);
   const auto feedback = Clock::now() < app.edit_feedback;
   const auto pen =
       CreatePen(PS_SOLID, 2,

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "scene_play.hpp"
+#include "voxel_world.hpp"
 
 namespace wds::platform {
 
@@ -84,12 +85,19 @@ struct EntityEdit {
   std::size_t index = 0;
 };
 
+struct VoxelScene {
+  voxel::World world;
+  SceneChange source;
+  std::uint64_t revision;
+};
+
 struct SceneResult {
   std::optional<SceneSession> session;
   std::string code;
   std::string location{};
   std::string resource_path{};
   std::optional<std::uint64_t> revision{};
+  std::optional<VoxelScene> voxel_scene{};
 };
 
 struct ImportRequest {
@@ -148,7 +156,9 @@ ImportListResult list_imports(const std::filesystem::path& directory);
 AssetSource read_asset_source(const std::filesystem::path& directory, std::string_view id);
 FieldResult edit_field(const std::filesystem::path& directory, const FieldEdit& edit, bool apply);
 ProjectResult recover_project(const std::filesystem::path& directory);
-SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision);
+SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision,
+                        bool allow_voxel = false);
+FieldResult save_voxel_scene(const std::filesystem::path& directory, const VoxelScene& scene);
 FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply,
                        bool capture_change = false);
 FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply,

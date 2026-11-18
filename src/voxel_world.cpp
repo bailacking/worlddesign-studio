@@ -222,6 +222,19 @@ Vec3 Player::view() const {
   return {std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch)};
 }
 
+Camera Player::camera() const {
+  return {eye(),
+          view(),
+          {std::cos(yaw), 0, std::sin(yaw)},
+          {-std::sin(yaw) * std::sin(pitch), std::cos(pitch), std::cos(yaw) * std::sin(pitch)}};
+}
+
+Vec3 Camera::ray(double horizontal, double vertical) const {
+  return {forward.x + horizontal * right.x + vertical * up.x,
+          forward.y + horizontal * right.y + vertical * up.y,
+          forward.z + horizontal * right.z + vertical * up.z};
+}
+
 std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction) {
   const auto hit = world.cast(origin, direction, 36);
   if (hit.block == Block::air) return world.content().sky;

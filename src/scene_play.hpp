@@ -89,7 +89,7 @@ class SceneSession {
   void restart();
 
  private:
-  friend SceneResult start_scene(const std::filesystem::path&, std::uint64_t);
+  friend SceneResult start_scene(const std::filesystem::path&, std::uint64_t, bool);
 
   SceneSession() = default;
   void step(const SceneInput& input);

@@ -22,6 +22,11 @@ struct Hit {
   int normal = 0;
 };
 
+struct Camera {
+  Vec3 eye, forward, right, up;
+  [[nodiscard]] Vec3 ray(double horizontal, double vertical) const;
+};
+
 class World {
  public:
   static constexpr int width = 24;
@@ -36,6 +41,7 @@ class World {
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }
+  void set_content(Content content) { content_ = content; }
   void set_placement(Block block);
 
  private:
@@ -54,6 +60,7 @@ struct Player {
             int jump_speed = 6);
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
+  [[nodiscard]] Camera camera() const;
 };
 
 [[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction);

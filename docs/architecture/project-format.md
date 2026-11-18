@@ -60,7 +60,7 @@ PRD-05 让外部文件成为项目资源。工作台与 CLI 共用校验和写�
 - 同一个资源 ID、同一目标路径且类型和字节完全一致时返回 `ok` 与 `changed=false`，修订保持不变，重复导入可判定为无变化。
 - 已有 ID 换成不同字节返回 `duplicate_id`；目标路径已被其他资源占用返回 `duplicate_path`；目标位置存在不属于本项目的文件返回 `target_exists`。三者都不改动已有内容。
 - 源文件上限 1 MiB，超过返回 `source_too_large`。目标路径沿用 v1 规则：`assets/` 开头、路径段合法、拒绝大小写不符与歧义项、拒绝符号链接与重解析点。
-- `scene` 须能被试玩读取（场景 v1），`data` 须是 JSON 对象且数值可精确交换，失败返回 `invalid_content`。
+- 导入的 `scene` 使用二维场景 v1，`data` 须是 JSON 对象且数值可精确交换，失败返回 `invalid_content`。用 [方块工坊模板](../../examples/voxel-workshop/README.md)打开和编辑通用 3D 工程。
 - `image` 支持 PNG，每边最多 2048 像素。预览返回 `width` 与 `height`，失败分别报告 `invalid_png` 或 `image_too_large`。使用随仓库固定的 [LodePNG 解码器](../../third_party/lodepng/README.md)。
 - `text` 支持 UTF-8 纯文本及可选 BOM，拒绝无效编码和除制表、换行外的 ASCII 控制字符。预览输出 `line_count` 及最多 4096 字节的 `text_preview`。仅预览去 BOM、将 CRLF 或 CR 统一为 LF，并保持字符边界。失败返回 `invalid_utf8`。
 

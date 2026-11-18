@@ -62,7 +62,9 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 `project.export` 接收项目目录、预期修订、`windows-x64` 和新成品目录。成功返回实际修订、绝对目标路径以及收录的资源数。操作声明 `writes_project: false`、`writes_destination: true`。缺少本机运行套件或其中的文件时返回 `missing_runtime_dependency` 和缺件路径，文件与套件锁不一致返回 `invalid_runtime_dependency`，目标已存在返回 `target_exists`。 [Windows x64 发布包](platforms.md#windows-x64-发布包)
 
-`scene.inspect` 对应 `project scene DIRECTORY REVISION`，返回入口实体的初始值及字段类型、默认值与范围。用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。按稳定实体 ID 选中实体，支持 `x`、`y`、`vx`、`vy`；修改曾省略的字段时从默认值计算差异。保存复用字段编辑事务，场景事务使用版本 2，恢复也兼容现有版本 1。
+`scene.inspect` 对应 `project scene DIRECTORY REVISION`。二维项目返回入口实体的初始值、字段类型、默认值与范围。3D 方块项目返回 `kind: "voxel"`、入口场景 ID 和修订，并检查地形及材质。`project play` 与 `project export` 用于二维工程，遇到 3D 场景返回 `unsupported_scene_kind`。
+
+用 `project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 预览二维属性改动，用 `project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE` 保存。字段为 `x`、`y`、`vx`、`vy`，省略值从默认值计算差异。工作台保存 3D 方块使用现有版本 4 场景事务。 [3D 场景格式](runtime.md#通用工程的-3d-方块场景)
 
 `scene.entity.preview` 与 `scene.entity.apply` 支持以下入口场景操作。将命令中的 `edit-entity` 换成 `preview-entity` 即可检查参数、修订与写入限制，预览会返回 `changed` 和定位路径。
 

@@ -111,7 +111,7 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | SIM-03 | 核心 | SIM-01、RUN-03 | src/scene_play.*、src/studio/viewport.* | W6 接通场景键位映射、工作台失焦清键和停止后归还焦点 |
 | SIM-04 | 核心 | SIM-01、SIM-03 | src/scene_play.* | W6 接通二维固定步长、逐轴扫掠碰撞及胜负，跳跃与地面系统留待后续玩法 |
 | SIM-05 | 实现 | SIM-02、PRD-06 | src/platform_project.cpp、src/studio/viewport.cpp、src/player_preview.cpp | W6 按实体位置、尺寸和数组顺序显示 PNG 精灵，缺失引用和坏图有定位 |
-| SIM-06 | 核心 | SIM-02、PRD-03 | src/runtime/scene3d/ | 3D 相机和基础几何共用场景身份，加载与切换生命周期一致 |
+| SIM-06 | 核心 | SIM-02、PRD-03 | src/voxel_world.*、src/studio/voxel_viewport.* | W9 接入方块相机、材质和拾取，共用项目场景身份及工作台切换 |
 | SIM-07 | 核心 | SIM-01、PRD-05 | src/runtime/audio/ | 独立音频后端可加载和播放一类声音，停机释放资源 |
 | SIM-08 | 实现 | SIM-05、SIM-06 | src/runtime/animation/ | 数据驱动的关键帧和播放状态，可用同一时间语义推进 |
 | SIM-09 | 核心 | SIM-01、CMD-02 | src/runtime/save/ | 运行存档分离于项目源，坏档保留并报告，支持显式版本迁移 |

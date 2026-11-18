@@ -15,6 +15,7 @@
 #include <map>
 #include <ranges>
 #include <set>
+#include <sstream>
 
 namespace wds::platform {
 namespace {
@@ -315,6 +316,39 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
     output.push_back(std::move(entity));
   }
   return json.contains("play") ? parse_controls(json["play"], output, controls) : FieldResult{"ok"};
+}
+
+bool is_voxel_scene(const Json& json) {
+  return json.is_object() && json.contains("kind") && json["kind"] == "voxel";
+}
+
+FieldResult parse_voxel_scene(const Json& json, voxel::World& world) {
+  if (!has_fields(json, {"format_version", "kind", "materials"}) &&
+      !has_fields(json, {"format_version", "kind", "materials", "world"}))
+    return {"invalid_scene", "/"};
+  if (!json["format_version"].is_number_integer() || json["format_version"] != 1)
+    return {"unsupported_scene_version", "/format_version"};
+  if (!json["materials"].is_string() || !valid_id(json["materials"].get_ref<const std::string&>()))
+    return {"invalid_voxel_materials", "/materials"};
+  if (!json.contains("world")) return {"ok"};
+  if (!json["world"].is_string()) return {"invalid_voxel_world", "/world"};
+  std::istringstream input(json["world"].get<std::string>());
+  return world.read(input) ? FieldResult{"ok"} : FieldResult{"invalid_voxel_world", "/world"};
+}
+
+FieldResult validate_scene_replacement(const Json& before, const Json& after) {
+  const bool voxel = is_voxel_scene(before);
+  if (voxel != is_voxel_scene(after)) return {"unsupported_scene_kind", "/kind"};
+  const auto validate = [voxel](const Json& scene) {
+    if (voxel) {
+      wds::voxel::World world;
+      return parse_voxel_scene(scene, world);
+    }
+    std::vector<SceneEntity> entities;
+    return parse_scene(scene, entities);
+  };
+  const auto checked = validate(before);
+  return checked.code == "ok" ? validate(after) : checked;
 }
 
 FieldResult change_scene(Json& json, const SceneEdit& edit) {
@@ -618,7 +652,8 @@ ProjectResult open_project(const fs::path& directory) {
   }
 }
 
-SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revision) {
+SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revision,
+                        bool allow_voxel) {
   if (expected_revision > max_revision) return {std::nullopt, "invalid_argument", "/revision"};
   const auto opened = open_project(directory);
   if (!opened.project) return {std::nullopt, opened.code, opened.location};
@@ -633,8 +668,39 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
   try {
     const auto bytes = read_bytes(directory / scene.path, max_edit_bytes);
     if (!bytes) return {std::nullopt, "scene_too_large", "/", scene.path, project.revision};
-    const auto parsed =
-        parse_scene(parse_json(*bytes), session.state_.entities, &session.controls_);
+    const auto json = parse_json(*bytes);
+    if (is_voxel_scene(json)) {
+      if (!allow_voxel)
+        return {std::nullopt, "unsupported_scene_kind", "/kind", scene.path, project.revision};
+      voxel::World initial;
+      const auto checked = parse_voxel_scene(json, initial);
+      if (checked.code != "ok")
+        return {std::nullopt, checked.code, checked.location, scene.path, project.revision};
+      const auto& id = json["materials"].get_ref<const std::string&>();
+      const auto material = std::ranges::find(project.resources, id, &Resource::id);
+      if (material == project.resources.end() || material->kind != "text" ||
+          std::ranges::find(scene.refs, id) == scene.refs.end())
+        return {std::nullopt, "invalid_voxel_materials", "/materials", scene.path,
+                project.revision};
+      const auto source = read_bytes(directory / material->path, max_edit_bytes);
+      if (!source)
+        return {std::nullopt, "source_too_large", "/materials", material->path, project.revision};
+      std::istringstream input(*source);
+      const auto content = voxel::read_content(input);
+      if (!content)
+        return {std::nullopt, "invalid_voxel_materials", "/materials", material->path,
+                project.revision};
+      initial.set_content(*content);
+      return {std::nullopt,
+              "ok",
+              {},
+              {},
+              project.revision,
+              VoxelScene{std::move(initial),
+                         {project.id, scene.id, scene.path, *bytes, {}},
+                         project.revision}};
+    }
+    const auto parsed = parse_scene(json, session.state_.entities, &session.controls_);
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
     session.state_.interactive = session.controls_.has_value();
@@ -804,12 +870,34 @@ FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::str
   return edit_scene_file(
       root, revision, {{"version", 4}}, true, false,
       [&](Json& current) -> FieldResult {
-        std::vector<SceneEntity> entities;
-        if (auto result = parse_scene(current, entities); result.code != "ok") return result;
-        entities.clear();
-        if (auto result = parse_scene(parse_json(change.after), entities); result.code != "ok")
+        if (auto result = validate_scene_replacement(current, parse_json(change.after));
+            result.code != "ok")
           return result;
         return {"ok", "/", revision, {}, {}, change.before != change.after};
+      },
+      &change);
+}
+
+FieldResult save_voxel_scene(const fs::path& root, const VoxelScene& scene) {
+  auto change = scene.source;
+  auto json = parse_json(change.before);
+  if (!is_voxel_scene(json)) return {"unsupported_scene_kind", "/kind"};
+  voxel::World original;
+  const auto checked = parse_voxel_scene(json, original);
+  if (checked.code != "ok") return checked;
+  std::ostringstream before, after;
+  original.write(before);
+  scene.world.write(after);
+  if (after.str() == before.str()) {
+    change.after = change.before;
+  } else {
+    json["world"] = std::move(after).str();
+    change.after = json.dump(2) + "\n";
+  }
+  return edit_scene_file(
+      root, scene.revision, {{"version", 4}}, true, false,
+      [&](Json&) -> FieldResult {
+        return {"ok", "/", scene.revision, {}, {}, change.before != change.after};
       },
       &change);
 }
@@ -1146,11 +1234,8 @@ ProjectResult recover_project(const fs::path& root) {
     auto old_data = parse_json(before_data);
     const auto new_data = parse_json(after_data);
     if (scene_restore) {
-      std::vector<SceneEntity> entities;
-      if (before_data == after_data || parse_scene(old_data, entities).code != "ok")
+      if (before_data == after_data || validate_scene_replacement(old_data, new_data).code != "ok")
         return blocked();
-      entities.clear();
-      if (parse_scene(new_data, entities).code != "ok") return blocked();
     } else if (entity_edit) {
       const auto& operation = journal["edit"];
       if (!has_fields(operation, {"operation", "entity", "target", "index"}) ||
@@ -1299,6 +1384,14 @@ std::string project_resources_json(const ProjectResult& result) {
 }
 
 std::string scene_result_json(const SceneResult& result, bool include_fields) {
+  if (result.voxel_scene) {
+    const auto& voxel = *result.voxel_scene;
+    return Json{{"code", "ok"},
+                {"kind", "voxel"},
+                {"revision", voxel.revision},
+                {"scene_id", voxel.source.scene_id}}
+        .dump();
+  }
   if (!result.session) {
     Json json{{"code", result.code}, {"location", result.location}};
     if (!result.resource_path.empty()) json["resource_path"] = result.resource_path;
@@ -1381,9 +1474,10 @@ std::string project_operations_json() {
   provenance_errors.push_back("invalid_provenance");
   add("project.imports", "project imports DIRECTORY", false, path_input, provenance_errors);
   auto scene_errors = read_errors;
-  for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_scene",
-                           "unsupported_scene_version", "scene_too_large", "duplicate_entity_id",
-                           "invalid_sprite", "invalid_png", "image_too_large", "source_too_large"})
+  for (const auto* code :
+       {"invalid_argument", "revision_conflict", "invalid_scene", "unsupported_scene_version",
+        "scene_too_large", "duplicate_entity_id", "invalid_sprite", "invalid_png",
+        "image_too_large", "source_too_large", "unsupported_scene_kind"})
     scene_errors.push_back(code);
   add("project.play", "project play DIRECTORY REVISION TICKS", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"ticks", "integer 0 through 600"}},
@@ -1415,6 +1509,8 @@ std::string project_operations_json() {
       edit_input, edit_errors);
   add("scene.inspect", "project scene DIRECTORY REVISION", false,
       {{"directory", "path"}, {"expected_revision", "integer"}}, scene_errors);
+  operations.back()["errors"].push_back("invalid_voxel_materials");
+  operations.back()["errors"].push_back("invalid_voxel_world");
   for (const auto* code :
        {"invalid_entity", "invalid_field", "edit_too_large", "revision_exhausted"})
     scene_errors.push_back(code);

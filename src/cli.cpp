@@ -136,14 +136,14 @@ int run(int argc, char** argv) {
       if (parse_integer(argv[4], revision)) {
         if (inspect_scene ||
             (parse_integer(argv[5], ticks) && ticks <= wds::platform::SceneSession::max_ticks)) {
-          result = wds::platform::start_scene(directory, revision);
+          result = wds::platform::start_scene(directory, revision, inspect_scene);
           if (result.session) result.session->advance(ticks);
         } else {
           result.location = "/ticks";
         }
       }
       std::cout << wds::platform::scene_result_json(result, inspect_scene) << '\n';
-      return result.session ? 0 : 1;
+      return result.session || result.voxel_scene ? 0 : 1;
     }
     if (action == "restore-scene") {
       wds::platform::FieldResult result{"invalid_argument", "/input"};
