@@ -102,8 +102,11 @@ bool valid_runtime(const Json& metadata) {
       metadata.value("msvc", "").empty())
     return false;
   static const auto spec = parse_json(windows_runtime_spec);
-  for (const auto& [name, value] : spec.items())
+  for (const auto& [name, value] : spec.items()) {
+    // The W7–W10 kit omits behavior support and remains usable for existing scenes.
+    if (name == "behavior_format" && !metadata.contains(name)) continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
+  }
   return true;
 }
 
@@ -282,6 +285,9 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
       return {scene.code,
               scene.resource_path.empty() ? scene.location : scene.resource_path + scene.location,
               revision};
+
+    if (scene.session->snapshot().behavior_state && !metadata.contains("behavior_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/behavior_format");
 
     // Recheck the source snapshot before publishing. The staged files are the ones we validated.
     const auto current = open_project(project);

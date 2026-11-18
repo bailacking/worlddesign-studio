@@ -33,6 +33,7 @@ W7 的首个发行目标为 Windows 10 或更新的 x64 桌面环境，显卡驱
 - `Play.exe` 从所在文件夹读取发布锁，校验内容后启动。运行只用包内游戏数据和系统图形组件。
 - `game/wds.project.json` 记录指定的保存修订。资源从入口场景沿清单的 `refs` 递归收集，循环引用只复制一次。包内资源路径相对 `game`。
 - `wds.release.json` 记录目标、项目 ID、修订、入口、内置插件版本、静态依赖、系统 DLL、构建工具链及文件大小和 SHA-256。SHA-256 用于检查内容一致性。每个被锁定的文件在启动时核对。
+- 带 W11 行为的场景需要声明 `behavior_format: 1` 的 Windows 运行包。旧运行包仍可导出原有场景。
 - `licenses` 保留运行时许可和适用的项目素材许可。源项目根目录的可选 `LICENSE` 收录为 `licenses/project.txt`。可为单项资源添加 `<资源文件>.license.txt`，例如 `assets/courier.png.license.txt`。发布时随该资源收录到 `licenses/assets/<资源 ID>/notice.txt`。
 
 导出只读源项目，用临时同级目录准备和校验，成功后一次性公布为新文件夹。单个文件上限 64 MiB，锁清单上限 16 MiB，锁定文件合计上限 256 MiB。导出动作保留已有文件夹。 [构建与运行](../engineering/development.md#导出-windows-x64-游戏)
