@@ -1,0 +1,6 @@
+{
+  "format_version": 1,
+  "kind": "voxel",
+  "materials": "slope-colors",
+  "terrain": {"seed": 73021}
+}

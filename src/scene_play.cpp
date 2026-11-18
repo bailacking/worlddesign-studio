@@ -20,23 +20,39 @@ bool overlaps(Interval first, Interval second) {
 }
 
 std::int64_t move_axis(const SceneSnapshot& state, SceneEntity& player, std::int64_t delta,
-                       bool horizontal) {
+                       bool horizontal, const TileWorld* terrain) {
   if (delta == 0) return 0;
   auto& position = horizontal ? player.x : player.y;
   const auto primary = bounds(position, horizontal ? player.half_width : player.half_height);
   const auto cross =
       horizontal ? bounds(player.y, player.half_height) : bounds(player.x, player.half_width);
+  const auto avoid = [&](Interval obstacle) {
+    if (delta > 0 && primary.max <= obstacle.min)
+      delta = std::min(delta, obstacle.min - primary.max);
+    else if (delta < 0 && primary.min >= obstacle.max)
+      delta = std::max(delta, obstacle.max - primary.min);
+  };
+  if (terrain) {
+    const auto low = primary.min + std::min<std::int64_t>(delta, 0);
+    const auto high = primary.max - 1 + std::max<std::int64_t>(delta, 0);
+    const auto first =
+        horizontal ? TileWorld::cell(low, cross.min) : TileWorld::cell(cross.min, low);
+    const auto last =
+        horizontal ? TileWorld::cell(high, cross.max - 1) : TileWorld::cell(cross.max - 1, high);
+    for (int y = first.y; y <= last.y; ++y) {
+      for (int x = first.x; x <= last.x; ++x) {
+        if (!terrain->solid({x, y})) continue;
+        const auto start = (horizontal ? x : y) * TileWorld::tile_size;
+        avoid({start, start + TileWorld::tile_size});
+      }
+    }
+  }
   for (const auto& wall : state.entities) {
     if (wall.role != SceneRole::wall ||
         !overlaps(cross,
                   horizontal ? bounds(wall.y, wall.half_height) : bounds(wall.x, wall.half_width)))
       continue;
-    const auto obstacle =
-        horizontal ? bounds(wall.x, wall.half_width) : bounds(wall.y, wall.half_height);
-    if (delta > 0 && primary.max <= obstacle.min)
-      delta = std::min(delta, obstacle.min - primary.max);
-    else if (delta < 0 && primary.min >= obstacle.max)
-      delta = std::max(delta, obstacle.max - primary.min);
+    avoid(horizontal ? bounds(wall.x, wall.half_width) : bounds(wall.y, wall.half_height));
   }
   position += delta;
   return delta;
@@ -152,6 +168,10 @@ void SceneSession::restart() {
   state_.entities = initial_entities_;
   state_.ticks = 0;
   state_.outcome = SceneOutcome::playing;
+  if (terrain_) {
+    const auto& player = state_.entities[controls_->player];
+    terrain_->stream(TileWorld::cell(player.x, player.y));
+  }
   if (behavior_) {
     state_.behavior_state = behavior_->initial_state;
     dispatch_behavior(behavior::Event::start);
@@ -175,8 +195,10 @@ void SceneSession::step(const SceneInput& input) {
            static_cast<int>((input & controls.keys[negative]).any());
   };
   auto& player = state_.entities[controls.player];
-  const auto x = move_axis(state_, player, controls.speed * direction(1, 0), true);
-  const auto y = move_axis(state_, player, controls.speed * direction(2, 3), false);
+  const auto* terrain = terrain_ ? &*terrain_ : nullptr;
+  const auto x = move_axis(state_, player, controls.speed * direction(1, 0), true, terrain);
+  const auto y = move_axis(state_, player, controls.speed * direction(2, 3), false, terrain);
+  if (terrain_) terrain_->stream(TileWorld::cell(player.x, player.y));
   for (auto& entity : state_.entities) {
     if (entity.role != SceneRole::none) continue;
     entity.x += entity.vx;

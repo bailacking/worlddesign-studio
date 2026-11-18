@@ -3,8 +3,9 @@
 #include <array>
 #include <cstdint>
 #include <iosfwd>
+#include <optional>
 
-#include "voxel_content.hpp"
+#include "voxel_terrain.hpp"
 
 namespace wds::voxel {
 
@@ -43,10 +44,14 @@ class World {
   [[nodiscard]] const Content& content() const { return content_; }
   void set_content(Content content) { content_ = content; }
   void set_placement(Block block);
+  void use_seed(std::uint32_t seed);
+  void stream(Vec3 center) const;
+  [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
  private:
   std::array<Block, width * height * depth> blocks_{};
   Content content_;
+  std::optional<SeededTerrain> terrain_;
 };
 
 struct Player {

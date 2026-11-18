@@ -1,0 +1,169 @@
+{
+  "format_version": 1,
+  "terrain": {
+    "seed": 16431,
+    "day_ticks": 240,
+    "day_start": 120,
+    "tiles": [
+      {
+        "x": 0,
+        "y": 0,
+        "kind": "rock"
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "kind": "canopy"
+      },
+      {
+        "x": -6,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": -5,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": -6,
+        "y": 6,
+        "kind": "canopy"
+      },
+      {
+        "x": -5,
+        "y": 6,
+        "kind": "canopy"
+      },
+      {
+        "x": 9,
+        "y": -3,
+        "kind": "canopy"
+      },
+      {
+        "x": 10,
+        "y": -3,
+        "kind": "canopy"
+      },
+      {
+        "x": 9,
+        "y": -4,
+        "kind": "canopy"
+      },
+      {
+        "x": 10,
+        "y": -4,
+        "kind": "canopy"
+      },
+      {
+        "x": 15,
+        "y": 4,
+        "kind": "canopy"
+      },
+      {
+        "x": 16,
+        "y": 4,
+        "kind": "canopy"
+      },
+      {
+        "x": 15,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": 16,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": 28,
+        "y": 4,
+        "kind": "canopy"
+      },
+      {
+        "x": 29,
+        "y": 4,
+        "kind": "canopy"
+      },
+      {
+        "x": 28,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": 29,
+        "y": 5,
+        "kind": "canopy"
+      },
+      {
+        "x": 1,
+        "y": -4,
+        "kind": "rock"
+      },
+      {
+        "x": 1,
+        "y": -5,
+        "kind": "rock"
+      },
+      {
+        "x": 2,
+        "y": -5,
+        "kind": "rock"
+      },
+      {
+        "x": 10,
+        "y": 6,
+        "kind": "rock"
+      },
+      {
+        "x": 11,
+        "y": 6,
+        "kind": "rock"
+      },
+      {
+        "x": 19,
+        "y": -4,
+        "kind": "rock"
+      },
+      {
+        "x": 20,
+        "y": -4,
+        "kind": "rock"
+      },
+      {
+        "x": 19,
+        "y": -5,
+        "kind": "rock"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "hiker",
+      "x": -8,
+      "y": 8,
+      "box": {
+        "half_width": 6,
+        "half_height": 6
+      }
+    },
+    {
+      "id": "trailhead",
+      "x": 488,
+      "y": 8,
+      "box": {
+        "half_width": 7,
+        "half_height": 7
+      }
+    }
+  ],
+  "play": {
+    "player": "hiker",
+    "speed": 8,
+    "walls": [],
+    "goals": [
+      "trailhead"
+    ],
+    "hazards": []
+  }
+}

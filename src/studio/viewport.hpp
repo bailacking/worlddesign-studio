@@ -34,13 +34,15 @@ class Viewport final : public QWidget {
   void wheelEvent(QWheelEvent* event) override;
 
  private:
-  QPointF screenPosition(const QJsonObject& entity) const;
+  QPointF screenPosition(double x, double y) const;
+  void drawTiles(QPainter& painter, bool canopy) const;
   double viewScale() const;
   bool setSceneKey(QKeyEvent* event, bool down);
 
   QJsonArray entities_;
   bool running_ = false;
   bool interactive_ = false;
+  const platform::SceneSession* playback_ = nullptr;
   platform::SceneInput input_;
   QHash<QString, QImage> sprites_;
   QRectF play_bounds_;

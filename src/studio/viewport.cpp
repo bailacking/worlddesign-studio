@@ -47,6 +47,7 @@ void Viewport::setScene(QJsonArray entities, bool running) {
     unsetCursor();
   } else {
     interactive_ = false;
+    playback_ = nullptr;
     input_.reset();
     sprites_.clear();
     setFocusPolicy(Qt::NoFocus);
@@ -55,6 +56,7 @@ void Viewport::setScene(QJsonArray entities, bool running) {
 }
 
 void Viewport::beginPlayback(const platform::SceneSession& session) {
+  playback_ = &session;
   for (const auto& sprite : session.sprites()) {
     const QImage image(sprite.rgba.data(), static_cast<int>(sprite.width),
                        static_cast<int>(sprite.height), QImage::Format_RGBA8888);
@@ -127,38 +129,73 @@ void Viewport::resetView() {
 }
 
 double Viewport::viewScale() const {
+  if (playback_ && playback_->terrain()) return std::max({1.0, width() / 420.0, height() / 350.0});
   if (!interactive_) return scale_;
   return std::min(
       {2.0, width() / (play_bounds_.width() + 56.0), height() / (play_bounds_.height() + 56.0)});
 }
 
-QPointF Viewport::screenPosition(const QJsonObject& entity) const {
-  const auto center = interactive_ ? play_bounds_.center() : QPointF{};
+QPointF Viewport::screenPosition(double x, double y) const {
+  auto center = interactive_ ? play_bounds_.center() : QPointF{};
+  if (playback_ && playback_->terrain()) {
+    const auto& player = playback_->snapshot().entities[playback_->controls()->player];
+    center = {static_cast<double>(player.x), static_cast<double>(player.y)};
+  }
   const auto offset = interactive_ ? QPointF{} : offset_;
-  return QPointF(
-      width() * 0.5 + offset.x() + viewScale() * (entity.value("x").toDouble() - center.x()),
-      height() * 0.5 + offset.y() - viewScale() * (entity.value("y").toDouble() - center.y()));
+  return {width() * 0.5 + offset.x() + viewScale() * (x - center.x()),
+          height() * 0.5 + offset.y() - viewScale() * (y - center.y())};
+}
+
+void Viewport::drawTiles(QPainter& painter, bool canopy) const {
+  const auto& terrain = *playback_->terrain();
+  const auto corner = terrain.corner();
+  const auto units = platform::TileWorld::tile_size;
+  constexpr auto side = platform::TileWorld::side;
+  QImage layer(side, side, QImage::Format_ARGB32);
+  layer.fill(Qt::transparent);
+  for (int row = 0; row < side; ++row) {
+    auto* pixels = reinterpret_cast<QRgb*>(layer.scanLine(row));
+    const auto y = corner.y + side - 1 - row;
+    for (int column = 0; column < side; ++column) {
+      const platform::TilePoint point{corner.x + column, y};
+      if (!terrain.resident(point)) continue;
+      auto tile = terrain.tile(point);
+      if (canopy && tile != platform::Tile::canopy) continue;
+      if (!canopy && tile == platform::Tile::canopy) tile = platform::Tile::grass;
+      pixels[column] = 0xff000000U | platform::tile_color(tile);
+    }
+  }
+  const double size = side * units * viewScale();
+  painter.drawImage(
+      QRectF(screenPosition(corner.x * units, (corner.y + side) * units), QSizeF(size, size)),
+      layer);
 }
 
 void Viewport::paintEvent(QPaintEvent*) {
   QPainter painter(this);
   painter.fillRect(rect(), theme::color::viewport_background);
-  const auto origin = screenPosition({});
-  const int grid = std::max(4, static_cast<int>(std::lround(24.0 * viewScale() / kDefaultScale)));
-  painter.setPen(theme::color::viewport_grid);
-  for (int x = static_cast<int>(origin.x()) % grid; x < width(); x += grid)
-    painter.drawLine(x, 0, x, height());
-  for (int y = static_cast<int>(origin.y()) % grid; y < height(); y += grid)
-    painter.drawLine(0, y, width(), y);
-  painter.setPen(theme::color::viewport_axes);
-  painter.drawLine(QPointF(origin.x(), 0), QPointF(origin.x(), height()));
-  painter.drawLine(QPointF(0, origin.y()), QPointF(width(), origin.y()));
+  const bool terrain = playback_ && playback_->terrain();
+  if (terrain) {
+    drawTiles(painter, false);
+  } else {
+    const auto origin = screenPosition(0, 0);
+    const int grid = std::max(4, static_cast<int>(std::lround(24.0 * viewScale() / kDefaultScale)));
+    painter.setPen(theme::color::viewport_grid);
+    for (int x = static_cast<int>(origin.x()) % grid; x < width(); x += grid)
+      painter.drawLine(x, 0, x, height());
+    for (int y = static_cast<int>(origin.y()) % grid; y < height(); y += grid)
+      painter.drawLine(0, y, width(), y);
+    painter.setPen(theme::color::viewport_axes);
+    painter.drawLine(QPointF(origin.x(), 0), QPointF(origin.x(), height()));
+    painter.drawLine(QPointF(0, origin.y()), QPointF(width(), origin.y()));
+  }
 
   painter.setRenderHint(QPainter::Antialiasing);
   for (const auto value : entities_) {
     const auto entity = value.toObject();
     const auto name = entity.value("id").toString();
-    const auto position = screenPosition(entity);
+    const auto position =
+        screenPosition(entity.value("x").toDouble(), entity.value("y").toDouble());
     const auto half_width = entity.value("half_width").toDouble() * viewScale();
     const auto half_height = entity.value("half_height").toDouble() * viewScale();
     if (running_ && half_width > 0) {
@@ -184,6 +221,13 @@ void Viewport::paintEvent(QPaintEvent*) {
     painter.setPen(theme::color::entity_line);
     painter.drawText(position + QPointF(12, -8), name);
   }
+  if (terrain) {
+    drawTiles(painter, true);
+    const auto brightness = playback_->terrain()->daylight(playback_->snapshot().ticks);
+    auto night = theme::color::scene_night;
+    night.setAlpha(255 - brightness);
+    painter.fillRect(rect(), night);
+  }
   painter.setPen(running_ ? theme::color::running : theme::color::secondary_text);
   painter.drawText(QPointF(16, 25), running_
                                         ? QCoreApplication::translate("Viewport", "Play mode")
@@ -208,7 +252,8 @@ void Viewport::mousePressEvent(QMouseEvent* event) {
   // 命中测试与绘制共用 screenPosition，缩放平移后点选位置不会漂。
   for (auto it = entities_.constEnd(); it != entities_.constBegin();) {
     const auto entity = (*--it).toObject();
-    const auto delta = screenPosition(entity) - event->position();
+    const auto delta = screenPosition(entity.value("x").toDouble(), entity.value("y").toDouble()) -
+                       event->position();
     if (delta.x() * delta.x() + delta.y() * delta.y() <= kPickRadius * kPickRadius) {
       select_(entity.value("id").toString());
       return;

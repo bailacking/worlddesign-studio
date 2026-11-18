@@ -105,12 +105,44 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   if (id == "project.export")
     return Json::parse(export_result_json(
         export_project(directory, revision, text(input, "target"), path(input, "destination"))));
+  if (id == "scene.navigate") {
+    const TilePoint from{number<int>(input, "from_x"), number<int>(input, "from_y")};
+    const TilePoint to{number<int>(input, "to_x"), number<int>(input, "to_y")};
+    if (!TileWorld::inside(from) || !TileWorld::inside(to))
+      return fail("invalid_argument", "/input");
+    auto loaded = start_scene(directory, revision);
+    if (!loaded.session) return Json::parse(scene_result_json(loaded));
+    const auto& terrain = loaded.session->terrain();
+    if (!terrain) return fail("invalid_terrain", "/terrain");
+    auto route = Json::array();
+    for (const auto tile : terrain->route(from, to)) route.push_back({tile.x, tile.y});
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"visible", terrain->visible(from, to)},
+            {"route", std::move(route)}};
+  }
+  if (id == "scene.tile.set") {
+    const TileEdit edit{
+        {number<int>(input, "x"), number<int>(input, "y")}, text(input, "kind"), revision};
+    return Json::parse(
+        field_result_json(edit_tile(directory, edit, apply, flag(input, "capture_change"))));
+  }
   if (id == "scene.inspect" || id == "project.play") {
     const bool inspect = id == "scene.inspect";
     const auto ticks = inspect ? 0 : number<std::uint64_t>(input, "ticks");
     if (ticks > SceneSession::max_ticks) return fail("invalid_argument", "/ticks");
     auto loaded = start_scene(directory, revision, inspect);
-    if (loaded.session && ticks) loaded.session->advance(ticks);
+    SceneInput keys;
+    if (const auto given = input.find("keys"); given != input.end()) {
+      if (!given->is_array() || given->size() > keys.size()) throw InvalidInput{"/input/keys"};
+      for (const auto& item : *given) {
+        const auto key =
+            item.is_string() ? scene_key(item.get_ref<const std::string&>()) : std::nullopt;
+        if (!key || keys.test(static_cast<std::size_t>(*key))) throw InvalidInput{"/input/keys"};
+        keys.set(static_cast<std::size_t>(*key));
+      }
+    }
+    if (loaded.session && ticks) loaded.session->advance(ticks, keys);
     return Json::parse(scene_result_json(loaded, inspect));
   }
   if (id.starts_with("resource.field.")) {

@@ -84,6 +84,15 @@ struct EntityEdit {
   std::size_t index = 0;
 };
 
+struct TileEdit {
+  TilePoint point;
+  std::string kind;
+  std::uint64_t revision;
+};
+
+FieldResult edit_tile(const std::filesystem::path& root, const TileEdit& edit, bool apply,
+                      bool capture_change = false);
+
 struct VoxelScene {
   voxel::World world;
   SceneChange source;

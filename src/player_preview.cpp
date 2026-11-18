@@ -124,20 +124,56 @@ const char* status_text(const SceneSnapshot& scene, bool started, bool focused) 
   return "Playing";
 }
 
-void draw(const SceneSnapshot& scene, const Sprites& sprites, const SceneBounds& bounds,
+void draw_tiles(const TileWorld& terrain, float scale, float left, float top, bool canopy) {
+  const auto corner = terrain.corner();
+  const float step = TileWorld::tile_size * scale;
+  for (int y = corner.y; y < corner.y + TileWorld::side; ++y) {
+    for (int x = corner.x; x < corner.x + TileWorld::side; ++x) {
+      if (!terrain.resident({x, y})) continue;
+      auto tile = terrain.tile({x, y});
+      if (canopy && tile != Tile::canopy) continue;
+      if (!canopy && tile == Tile::canopy) tile = Tile::grass;
+      const auto color = tile_color(tile);
+      const Color tint{static_cast<unsigned char>((color >> 16) & 255),
+                       static_cast<unsigned char>((color >> 8) & 255),
+                       static_cast<unsigned char>(color & 255), 255};
+      DrawRectangleRec(
+          {left + static_cast<float>(x) * step, top - static_cast<float>(y + 1) * step, step, step},
+          tint);
+    }
+  }
+}
+
+void draw(const SceneSession& session, const Sprites& sprites, const SceneBounds& bounds,
           const char* status, const std::string& controls_hint) {
+  const auto& scene = session.snapshot();
+  const auto& terrain = session.terrain();
   const auto width = static_cast<float>(GetScreenWidth());
   const auto height = static_cast<float>(GetScreenHeight());
-  const auto scale = std::min({2.0f, width / (static_cast<float>(bounds.right - bounds.left) + 56),
-                               height / (static_cast<float>(bounds.top - bounds.bottom) + 86)});
-  const auto origin_x = static_cast<float>(bounds.left + bounds.right) * 0.5f;
-  const auto origin_y = static_cast<float>(bounds.bottom + bounds.top) * 0.5f;
+  auto scale = std::min({2.0f, width / (static_cast<float>(bounds.right - bounds.left) + 56),
+                         height / (static_cast<float>(bounds.top - bounds.bottom) + 86)});
+  auto origin_x = static_cast<float>(bounds.left + bounds.right) * 0.5f;
+  auto origin_y = static_cast<float>(bounds.bottom + bounds.top) * 0.5f;
+  if (terrain) {
+    const auto& player = scene.entities[session.controls()->player];
+    origin_x = static_cast<float>(player.x);
+    origin_y = static_cast<float>(player.y);
+    scale = std::max({1.0f, width / 420, height / 350});
+  }
+  const auto left = width * 0.5f - origin_x * scale;
+  const auto top = height * 0.5f + origin_y * scale;
   BeginDrawing();
   ClearBackground({22, 30, 40, 255});
+  if (terrain) draw_tiles(*terrain, scale, left, top, false);
   for (const auto& entity : scene.entities) {
-    const Vector2 center{width * 0.5f + (static_cast<float>(entity.x) - origin_x) * scale,
-                         height * 0.5f - (static_cast<float>(entity.y) - origin_y) * scale};
+    const Vector2 center{left + static_cast<float>(entity.x) * scale,
+                         top - static_cast<float>(entity.y) * scale};
     sprites.draw(entity, center, scale);
+  }
+  if (terrain) {
+    draw_tiles(*terrain, scale, left, top, true);
+    const auto night = static_cast<unsigned char>(255 - terrain->daylight(scene.ticks));
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {16, 23, 52, night});
   }
   DrawText(status, 20, 18, 22, RAYWHITE);
   const auto rate = SceneClock::ticks_per_second;
@@ -213,7 +249,7 @@ bool play_scene(SceneSession& session, const char* title) {
           SetWindowTitle(caption.c_str());
           previous_status = status;
         }
-        draw(snapshot, sprites, bounds, status, controls.hint);
+        draw(session, sprites, bounds, status, controls.hint);
       }
     }
   }

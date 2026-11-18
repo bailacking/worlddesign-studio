@@ -46,7 +46,14 @@ VoxelViewport::VoxelViewport(std::function<void()> changed, QWidget* parent)
 
 void VoxelViewport::setWorld(voxel::World* world, bool reset_camera) {
   world_ = world;
-  if (reset_camera || (world_ && world_->collides(player_.feet))) player_ = {};
+  if (reset_camera) player_ = {};
+  if (world_) {
+    world_->stream(player_.feet);
+    if (world_->collides(player_.feet)) {
+      player_ = {};
+      world_->stream(player_.feet);
+    }
+  }
   clearInput();
   if (world_) {
     elapsed_.start();

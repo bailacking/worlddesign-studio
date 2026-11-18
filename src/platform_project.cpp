@@ -293,17 +293,70 @@ FieldResult parse_scene_behavior(const Json& value, const std::vector<SceneEntit
   return {"ok"};
 }
 
+std::optional<TilePoint> tile_point(const Json& value) {
+  const auto x = integer(value["x"]);
+  const auto y = integer(value["y"]);
+  if (!x || !y || *x < -TileWorld::limit || *x >= TileWorld::limit || *y < -TileWorld::limit ||
+      *y >= TileWorld::limit)
+    return {};
+  return TilePoint{static_cast<int>(*x), static_cast<int>(*y)};
+}
+
+FieldResult parse_tiles(const Json& value, const std::vector<SceneEntity>& entities,
+                        const std::optional<SceneControls>& controls,
+                        std::optional<TileWorld>* output) {
+  if (!controls || controls->speed > TileWorld::chunk_size * TileWorld::tile_size ||
+      !has_fields(value, {"seed", "day_ticks", "day_start", "tiles"}))
+    return {"invalid_terrain", "/terrain"};
+  const auto seed = integer(value["seed"]);
+  const auto ticks = integer(value["day_ticks"]);
+  const auto start = integer(value["day_start"]);
+  if (!seed || *seed < 0 || *seed > UINT32_MAX) return {"invalid_terrain", "/terrain/seed"};
+  if (!ticks || *ticks < 2 || *ticks > 1'000'000 || *ticks % 2)
+    return {"invalid_terrain", "/terrain/day_ticks"};
+  if (!start || *start < 0 || *start >= *ticks) return {"invalid_terrain", "/terrain/day_start"};
+  const auto& rows = value["tiles"];
+  if (!rows.is_array() || rows.size() > TileWorld::max_edits)
+    return {"invalid_terrain", "/terrain/tiles"};
+  TileWorld::Edits edits;
+  for (std::size_t index = 0; index < rows.size(); ++index) {
+    const auto& row = rows[index];
+    const auto path = "/terrain/tiles/" + std::to_string(index);
+    if (!has_fields(row, {"x", "y", "kind"}) || !row["kind"].is_string())
+      return {"invalid_terrain", path};
+    const auto point = tile_point(row);
+    const auto kind = tile_kind(row["kind"].get_ref<const std::string&>());
+    if (!point || !kind || !edits.emplace(*point, *kind).second) return {"invalid_terrain", path};
+  }
+  const auto& player = entities[controls->player];
+  if (player.half_width > TileWorld::tile_size / 2 || player.half_height > TileWorld::tile_size / 2)
+    return {"invalid_terrain", "/play/player"};
+  TileWorld terrain(static_cast<std::uint32_t>(*seed), static_cast<int>(*ticks),
+                    static_cast<int>(*start), std::move(edits));
+  terrain.stream(TileWorld::cell(player.x, player.y));
+  const auto first = TileWorld::cell(player.x - player.half_width, player.y - player.half_height);
+  const auto last =
+      TileWorld::cell(player.x + player.half_width - 1, player.y + player.half_height - 1);
+  for (int y = first.y; y <= last.y; ++y)
+    for (int x = first.x; x <= last.x; ++x)
+      if (terrain.solid({x, y})) return {"invalid_terrain", "/play/player"};
+  if (output) *output = std::move(terrain);
+  return {"ok"};
+}
+
 FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
                         std::optional<SceneControls>* controls = nullptr,
                         std::optional<behavior::Program>* program = nullptr,
-                        std::optional<VelocityBinding>* binding = nullptr) {
+                        std::optional<VelocityBinding>* binding = nullptr,
+                        std::optional<TileWorld>* terrain = nullptr) {
   // Older projects use an empty object for a new scene.
   if (json.is_object() && json.empty()) return {"ok"};
   if (!json.is_object() || !json.contains("format_version") ||
       !json["format_version"].is_number_integer())
     return {"invalid_scene", "/format_version"};
   if (json["format_version"] != 1) return {"unsupported_scene_version", "/format_version"};
-  if (!json.contains("entities") || json.size() != 2U + json.count("play") + json.count("behavior"))
+  if (!json.contains("entities") ||
+      json.size() != 2U + json.count("play") + json.count("behavior") + json.count("terrain"))
     return {"invalid_scene", "/"};
   const auto& entities = json["entities"];
   if (!entities.is_array()) return {"invalid_scene", "/entities"};
@@ -347,10 +400,16 @@ FieldResult parse_scene(const Json& json, std::vector<SceneEntity>& output,
     if (!entity.sprite.empty() && entity.half_width == 0) return {"invalid_scene", where + "/box"};
     output.push_back(std::move(entity));
   }
+  std::optional<SceneControls> config;
   if (json.contains("play")) {
-    auto result = parse_controls(json["play"], output, controls);
+    auto result = parse_controls(json["play"], output, &config);
     if (result.code != "ok") return result;
   }
+  if (json.contains("terrain")) {
+    auto result = parse_tiles(json["terrain"], output, config, terrain);
+    if (result.code != "ok") return result;
+  }
+  if (controls) *controls = std::move(config);
   if (json.contains("behavior"))
     return parse_scene_behavior(json["behavior"], output, program, binding);
   return {"ok"};
@@ -361,13 +420,20 @@ bool is_voxel_scene(const Json& json) {
 }
 
 FieldResult parse_voxel_scene(const Json& json, voxel::World& world) {
-  if (!has_fields(json, {"format_version", "kind", "materials"}) &&
-      !has_fields(json, {"format_version", "kind", "materials", "world"}))
+  if (!json.contains("format_version") || !json.contains("materials") ||
+      json.size() != 3U + json.count("world") + json.count("terrain"))
     return {"invalid_scene", "/"};
   if (!json["format_version"].is_number_integer() || json["format_version"] != 1)
     return {"unsupported_scene_version", "/format_version"};
   if (!json["materials"].is_string() || !valid_id(json["materials"].get_ref<const std::string&>()))
     return {"invalid_voxel_materials", "/materials"};
+  if (json.contains("terrain")) {
+    const auto& terrain = json["terrain"];
+    if (!has_fields(terrain, {"seed"})) return {"invalid_voxel_world", "/terrain"};
+    const auto seed = integer(terrain["seed"]);
+    if (!seed || *seed < 0 || *seed > UINT32_MAX) return {"invalid_voxel_world", "/terrain/seed"};
+    world.use_seed(static_cast<std::uint32_t>(*seed));
+  }
   if (!json.contains("world")) return {"ok"};
   if (!json["world"].is_string()) return {"invalid_voxel_world", "/world"};
   std::istringstream input(json["world"].get<std::string>());
@@ -738,8 +804,9 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
                          {project.id, scene.id, scene.path, *bytes, {}},
                          project.revision}};
     }
-    const auto parsed = parse_scene(json, session.state_.entities, &session.controls_,
-                                    &session.behavior_, &session.velocity_binding_);
+    const auto parsed =
+        parse_scene(json, session.state_.entities, &session.controls_, &session.behavior_,
+                    &session.velocity_binding_, &session.terrain_);
     if (parsed.code != "ok")
       return {std::nullopt, parsed.code, parsed.location, scene.path, project.revision};
     session.state_.interactive = session.controls_.has_value();
@@ -885,6 +952,35 @@ FieldResult edit_entity(const fs::path& root, const EntityEdit& edit, bool apply
                        {"index", edit.index}};
   return edit_scene_file(root, edit.revision, {{"version", 3}, {"edit", operation}}, apply,
                          capture_change, [&](Json& scene) { return change_entities(scene, edit); });
+}
+
+FieldResult edit_tile(const fs::path& root, const TileEdit& edit, bool apply, bool capture_change) {
+  if (!TileWorld::inside(edit.point) || (edit.kind != "default" && !tile_kind(edit.kind)))
+    return {"invalid_argument", "/input"};
+  return edit_scene_file(
+      root, edit.revision, {{"version", 4}}, apply, capture_change,
+      [&](Json& scene) -> FieldResult {
+        std::vector<SceneEntity> entities;
+        const auto checked = parse_scene(scene, entities);
+        if (checked.code != "ok") return checked;
+        if (!scene.contains("terrain")) return {"invalid_terrain", "/terrain"};
+        auto& rows = scene["terrain"]["tiles"];
+        const auto found = std::ranges::find_if(
+            rows, [&](const Json& row) { return tile_point(row) == edit.point; });
+        const bool existed = found != rows.end();
+        bool changed = false;
+        if (edit.kind == "default") {
+          if (existed) rows.erase(found);
+          changed = existed;
+        } else if (existed) {
+          changed = (*found)["kind"] != edit.kind;
+          (*found)["kind"] = edit.kind;
+        } else {
+          rows.push_back({{"x", edit.point.x}, {"y", edit.point.y}, {"kind", edit.kind}});
+          changed = true;
+        }
+        return {"ok", "/terrain/tiles", edit.revision, {}, {}, changed};
+      });
 }
 
 namespace {
@@ -1436,11 +1532,13 @@ std::string project_resources_json(const ProjectResult& result) {
 std::string scene_result_json(const SceneResult& result, bool include_fields) {
   if (result.voxel_scene) {
     const auto& voxel = *result.voxel_scene;
-    return Json{{"code", "ok"},
+    Json output{{"code", "ok"},
                 {"kind", "voxel"},
                 {"revision", voxel.revision},
-                {"scene_id", voxel.source.scene_id}}
-        .dump();
+                {"scene_id", voxel.source.scene_id}};
+    if (const auto& terrain = voxel.world.terrain())
+      output["terrain"] = {{"seed", terrain->seed()}, {"loaded_chunks", terrain->loaded()}};
+    return output.dump();
   }
   if (!result.session) {
     Json json{{"code", result.code}, {"location", result.location}};
@@ -1464,6 +1562,13 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
               {"entities", std::move(entities)}};
   if (scene.interactive) output["outcome"] = outcome_name(scene.outcome);
   if (scene.behavior_state) output["behavior_state"] = *scene.behavior_state;
+  if (const auto& terrain = result.session->terrain()) {
+    const auto chunk = terrain->chunk();
+    output["terrain"] = {{"seed", terrain->seed()},
+                         {"chunk", {chunk.x, chunk.y}},
+                         {"loaded_chunks", terrain->loaded()},
+                         {"daylight", terrain->daylight(scene.ticks)}};
+  }
   if (include_fields) {
     auto fields = Json::array();
     for (const auto& field : scene_fields) {
@@ -1542,10 +1647,29 @@ Json build_operation_specs() {
         "scene_too_large", "duplicate_entity_id", "invalid_sprite", "invalid_png",
         "image_too_large", "source_too_large", "unsupported_scene_kind", "invalid_behavior",
         "behavior_too_large", "unsupported_behavior", "duplicate_behavior_value",
-        "unknown_behavior_value", "unknown_behavior_state"})
+        "unknown_behavior_value", "unknown_behavior_state", "invalid_terrain"})
     scene_errors.push_back(code);
   add("project.play", "project play DIRECTORY REVISION TICKS", false,
-      {{"directory", "path"}, {"expected_revision", "integer"}, {"ticks", "integer 0 through 600"}},
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"ticks", "integer 0 through 600"},
+       {"keys", "optional array of simultaneous key names"}},
+      scene_errors);
+  add("scene.navigate", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"from_x", "tile x"},
+       {"from_y", "tile y"},
+       {"to_x", "tile x"},
+       {"to_y", "tile y"}},
+      scene_errors);
+  add("scene.tile.set", "project request DIRECTORY", true,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"x", "tile x"},
+       {"y", "tile y"},
+       {"kind", "grass | soil | rock | canopy | default"},
+       {"capture_change", "optional boolean"}},
       scene_errors);
   auto export_errors = scene_errors;
   for (const auto* code : {"unsupported_export_target", "invalid_export_destination",
@@ -1608,7 +1732,7 @@ Json build_operation_specs() {
   for (auto& operation : operations) {
     const auto& id = operation["id"].get_ref<const std::string&>();
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
-        id == "resource.import.apply") {
+        id == "resource.import.apply" || id == "scene.tile.set") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};

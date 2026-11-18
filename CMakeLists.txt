@@ -59,7 +59,7 @@ target_compile_definitions(wds_png PUBLIC
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
   src/asset_import.cpp
-  src/behavior.cpp src/scene_play.cpp)
+  src/behavior.cpp src/tile_world.cpp src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
@@ -156,7 +156,7 @@ if(WDS_BUILD_MODERN_STUDIO)
   endif()
 endif()
 
-add_library(wds_voxel STATIC src/voxel_world.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
+add_library(wds_voxel STATIC src/voxel_world.cpp src/voxel_terrain.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
 target_link_libraries(wds_project PRIVATE wds_voxel)
@@ -192,6 +192,14 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_executable(wds_w13_probe tests/seeded_worlds.cpp)
+target_link_libraries(wds_w13_probe PRIVATE wds_project wds_compile_options)
+add_test(NAME seeded_worlds COMMAND "${CMAKE_COMMAND}"
+  -DPROBE=$<TARGET_FILE:wds_w13_probe>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/seeded-worlds
+  -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/seeded_worlds.cmake")
+
 add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)
 target_link_libraries(wds_w12_probe PRIVATE wds_project wds_compile_options)
 

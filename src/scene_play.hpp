@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "behavior.hpp"
+#include "tile_world.hpp"
 
 namespace wds::platform {
 
@@ -95,6 +96,7 @@ class SceneSession {
   const SceneSnapshot& snapshot() const { return state_; }
   const std::vector<SceneSprite>& sprites() const { return sprites_; }
   const std::optional<SceneControls>& controls() const { return controls_; }
+  const std::optional<TileWorld>& terrain() const { return terrain_; }
   bool advance(std::uint64_t ticks, const SceneInput& input = {});
   void restart();
 
@@ -110,6 +112,7 @@ class SceneSession {
   std::optional<SceneControls> controls_;
   std::vector<SceneSprite> sprites_;
   std::optional<behavior::Program> behavior_;
+  std::optional<TileWorld> terrain_;
   std::optional<VelocityBinding> velocity_binding_;
 };
 
