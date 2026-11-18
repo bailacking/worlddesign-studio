@@ -4,16 +4,29 @@ execute_process(COMMAND "${CLI}" --project-operations RESULT_VARIABLE status OUT
 if(NOT status STREQUAL "0")
   message(FATAL_ERROR "Project operation discovery failed")
 endif()
+set(expected_ids
+  behavior.convert circuit.replay
+  project.create project.export project.imports project.index project.open
+  project.play project.recover project.resources project.validate
+  resource.field.preview resource.field.set resource.import.apply resource.import.preview
+  scene.entity.apply scene.entity.preview scene.field.preview scene.field.set scene.inspect
+  scene.navigate scene.palette.set scene.restore scene.tile.set
+)
+set(writers
+  project.create project.recover resource.field.set resource.import.apply scene.field.set
+  scene.entity.apply scene.palette.set scene.restore scene.tile.set
+)
+list(LENGTH expected_ids expected_count)
 string(JSON declared LENGTH "${registry}" operations)
-if(NOT declared EQUAL 19)
-  message(FATAL_ERROR "Unexpected number of project operations")
+if(NOT declared EQUAL expected_count)
+  message(FATAL_ERROR "Expected ${expected_count} project operations, got ${declared}")
 endif()
-foreach(index RANGE 0 18)
+math(EXPR last_operation "${declared} - 1")
+foreach(index RANGE ${last_operation})
   string(JSON operation GET "${registry}" operations ${index})
   string(JSON id GET "${operation}" id)
   string(JSON version GET "${operation}" version)
   string(JSON writes GET "${operation}" writes_project)
-  set(writers project.create project.recover resource.field.set resource.import.apply scene.field.set scene.entity.apply scene.restore)
   list(FIND writers "${id}" writer)
   if(NOT version EQUAL 1 OR (writer GREATER_EQUAL 0 AND NOT writes) OR
       (writer LESS 0 AND writes))
@@ -28,7 +41,7 @@ foreach(index RANGE 0 18)
   endif()
 endforeach()
 list(SORT ids)
-if(NOT ids STREQUAL "project.create;project.export;project.imports;project.index;project.open;project.play;project.recover;project.resources;project.validate;resource.field.preview;resource.field.set;resource.import.apply;resource.import.preview;scene.entity.apply;scene.entity.preview;scene.field.preview;scene.field.set;scene.inspect;scene.restore")
+if(NOT ids STREQUAL expected_ids)
   message(FATAL_ERROR "Unexpected operation IDs: ${ids}")
 endif()
 
