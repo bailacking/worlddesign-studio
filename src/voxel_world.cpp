@@ -149,9 +149,11 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
     if (hit.normal == 0) return false;
     target[hit.side] += hit.normal;
   }
-  const auto [x, y, z] = target;
+  const int x = target[0];
+  const int y = target[1];
+  const int z = target[2];
   if (y <= 0 || y >= height || (!terrain_ && !inside(x, y, z))) return false;
-  const auto set = [&](Block value) {
+  const auto set = [this, x, y, z](Block value) {
     if (terrain_) return terrain_->set(x, y, z, value);
     blocks_[index(x, y, z)] = value;
     return true;

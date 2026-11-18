@@ -27,7 +27,7 @@
 
 | 验收项 | 结果 |
 | --- | --- |
-| 本机 Windows 工作台构建与冒烟 | Windows 11 x64、MSVC、Qt 6.8.3 通过。已加入 GitHub Actions，远端执行待推送 |
+| Windows 工作台构建与冒烟 | Windows 11 x64 本机通过，W1–W16 集成分支也通过 Windows CI。 [GitHub Actions](https://github.com/bailacking/worlddesign-studio/actions/runs/44298731361/job/134782505726) |
 | 本机创作者流程复跑 | 自动操作工作台完成导入、修改 X、保存、重开和修订 2 导出，播放器自检通过 |
 | 本机独立成品 | 从压缩包解压到临时目录，系统 PATH 仅含 System32。退出、胜负和原地重玩通过 |
 | 另一位创作者完成接手 | 待人工回传 |
