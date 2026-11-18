@@ -46,9 +46,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ninja-build xvfb xauth libglvnd-dev libxcb-cursor0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 \
-            libxkbcommon-x11-0
+          sudo apt-get install --yes ninja-build xvfb xauth libglvnd-dev libegl1 \
+            libfontconfig1 libfreetype6 libsm6 libice6 libx11-xcb1 libxrender1 \
+            libxcb-cursor0 libxcb-glx0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-util1 \
+            libxcb-xfixes0 libxcb-xinerama0 libxcb-xinput0 libxcb-xkb1 libxkbcommon-x11-0
       - name: Install Qt SDK
         env:
           AQT_HOST: ${{ matrix.aqt-host }}
@@ -73,6 +75,10 @@ jobs:
           command=(ctest --test-dir build/native -R '^(behavior_project|workbench_behavior_smoke)$'
             --verbose --no-tests=error)
           if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xcb_plugin=$(find "$RUNNER_TEMP/Qt" -name libqxcb.so -print -quit)
+            test -n "$xcb_plugin"
+            dependencies=$(ldd "$xcb_plugin")
+            if grep 'not found' <<< "$dependencies"; then exit 1; fi
             QT_QPA_PLATFORM=xcb xvfb-run -a "${command[@]}"
           else
             QT_QPA_PLATFORM=cocoa "${command[@]}"
