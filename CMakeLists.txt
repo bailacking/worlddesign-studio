@@ -192,6 +192,9 @@ add_test(NAME plugin_host COMMAND wds_plugin_test)
 add_executable(wds_voxel_test tests/voxel_world.cpp)
 target_link_libraries(wds_voxel_test PRIVATE wds_voxel wds_compile_options)
 add_test(NAME voxel_world COMMAND wds_voxel_test)
+add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)
+target_link_libraries(wds_w12_probe PRIVATE wds_project wds_compile_options)
+
 add_executable(wds_voxel_project_test tests/voxel_project.cpp)
 target_link_libraries(wds_voxel_project_test PRIVATE wds_project wds_compile_options)
 add_test(NAME voxel_project COMMAND "${CMAKE_COMMAND}"
