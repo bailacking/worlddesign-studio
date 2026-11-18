@@ -230,6 +230,19 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 python scripts/project_handoff.py --cli ./build/studio/wds_cli.exe --project ./examples/scene-editing
 ```
 
+### 复跑共享操作
+
+在仓库根使用带 W10 的 `wds_cli` 和未改动的「运动场景」副本。先读取公共操作清单，再运行示例计划。
+
+```powershell
+$trial = Join-Path (Get-Location) ('build/w10-replay-' + [guid]::NewGuid().ToString('N'))
+Copy-Item examples/scene-motion $trial -Recurse
+./build/studio/wds_cli.exe --project-operations
+python scripts/project_workflow.py --cli ./build/studio/wds_cli.exe --project $trial --plan "$trial/w10-replay.json" --allow-project-write
+```
+
+计划先预览并取消，再提交属性修改，验证重试旧修订及无效字段的结果，最后通过保存回执回退。完成时项目到修订 2，场景内容与初始相同。工作台的 **项目 → 可用操作** 显示公共清单与本窗口请求用量。 [JSON 请求与诊断](../architecture/commands.md#平台操作接口-v1)
+
 ## 运行方块沙盒
 
 Windows 构建完成后执行 `./build/dev/wds_sandbox.exe`。点击窗口锁定鼠标，移动鼠标转向，WASD 移动，空格跳跃，方向键也可转向。对准方块时准星变黄，左键破坏、右键放置石块，成功时准星闪绿。F5 保存，Esc 先释放鼠标，再按一次退出。重开恢复地形，玩家回到出生点。

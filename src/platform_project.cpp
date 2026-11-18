@@ -2,6 +2,7 @@
 
 #include "asset_import.hpp"
 #include "project_io.hpp"
+#include "project_operations.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -847,6 +848,23 @@ FieldResult edit_entity(const fs::path& root, const EntityEdit& edit, bool apply
                          capture_change, [&](Json& scene) { return change_entities(scene, edit); });
 }
 
+namespace {
+
+FieldResult replace_scene_source(const fs::path& root, std::uint64_t revision,
+                                 const SceneChange& change) {
+  return edit_scene_file(
+      root, revision, {{"version", 4}}, true, false,
+      [&](Json& current) -> FieldResult {
+        if (auto result = validate_scene_replacement(current, parse_json(change.after));
+            result.code != "ok")
+          return result;
+        return {"ok", "/", revision, {}, {}, change.before != change.after};
+      },
+      &change);
+}
+
+}  // namespace
+
 FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::string_view request) {
   const FieldResult invalid{"invalid_argument", "/input"};
   if (request.size() > max_scene_restore_request) return invalid;
@@ -867,18 +885,10 @@ FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::str
       !valid_path(change.resource_path) || change.before.size() > max_edit_bytes ||
       change.after.size() > max_edit_bytes)
     return invalid;
-  return edit_scene_file(
-      root, revision, {{"version", 4}}, true, false,
-      [&](Json& current) -> FieldResult {
-        if (auto result = validate_scene_replacement(current, parse_json(change.after));
-            result.code != "ok")
-          return result;
-        return {"ok", "/", revision, {}, {}, change.before != change.after};
-      },
-      &change);
+  return replace_scene_source(root, revision, change);
 }
 
-FieldResult save_voxel_scene(const fs::path& root, const VoxelScene& scene) {
+FieldResult prepare_voxel_save(const VoxelScene& scene) {
   auto change = scene.source;
   auto json = parse_json(change.before);
   if (!is_voxel_scene(json)) return {"unsupported_scene_kind", "/kind"};
@@ -894,12 +904,13 @@ FieldResult save_voxel_scene(const fs::path& root, const VoxelScene& scene) {
     json["world"] = std::move(after).str();
     change.after = json.dump(2) + "\n";
   }
-  return edit_scene_file(
-      root, scene.revision, {{"version", 4}}, true, false,
-      [&](Json&) -> FieldResult {
-        return {"ok", "/", scene.revision, {}, {}, change.before != change.after};
-      },
-      &change);
+  return {"ok", "/", scene.revision, {}, {}, change.before != change.after, std::move(change)};
+}
+
+FieldResult save_voxel_scene(const fs::path& root, const VoxelScene& scene) {
+  auto prepared = prepare_voxel_save(scene);
+  if (!prepared.scene_change) return prepared;
+  return replace_scene_source(root, scene.revision, *prepared.scene_change);
 }
 
 ImportResult import_resource(const fs::path& root, const ImportRequest& request, bool apply) {
@@ -1427,7 +1438,9 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
   return output.dump();
 }
 
-std::string project_operations_json() {
+namespace {
+
+Json build_operation_specs() {
   auto operations = Json::array();
   const auto add = [&operations](std::string_view id, std::string_view command, bool writes,
                                  Json input, Json errors) {
@@ -1449,6 +1462,10 @@ std::string project_operations_json() {
   add("project.open", "project open DIRECTORY", false, path_input, read_errors);
   add("project.validate", "project validate DIRECTORY", false, path_input, read_errors);
   add("project.resources", "project resources DIRECTORY", false, path_input, read_errors);
+  auto index_errors = read_errors;
+  index_errors.push_back("revision_conflict");
+  add("project.index", "project index DIRECTORY [REVISION]", false,
+      {{"directory", "path"}, {"expected_revision", "optional integer"}}, index_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
   auto import_errors = read_errors;
   for (const auto* code : {"invalid_argument", "invalid_path", "invalid_source", "source_too_large",
@@ -1523,6 +1540,7 @@ std::string project_operations_json() {
       false, scene_input, scene_errors);
   add("scene.field.set", "project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE", true,
       scene_input, scene_errors);
+  operations.back()["input"]["capture_change"] = "optional boolean";
   const Json entity_input{{"directory", "path"},
                           {"operation", "add | copy | remove | move"},
                           {"entity_id", "entity identifier"},
@@ -1532,13 +1550,41 @@ std::string project_operations_json() {
       false, entity_input, scene_errors);
   add("scene.entity.apply", "project edit-entity DIRECTORY OPERATION ENTITY REVISION [ARG]", true,
       entity_input, scene_errors);
+  operations.back()["input"]["capture_change"] = "optional boolean";
   scene_errors.push_back("scene_content_conflict");
   add("scene.restore", "project restore-scene DIRECTORY REVISION", true,
       {{"directory", "path"},
        {"expected_revision", "integer"},
-       {"stdin", "scene_change JSON with expected before bytes and replacement after bytes"}},
+       {"change", "scene_change JSON with expected before bytes and replacement after bytes"}},
       scene_errors);
-  return Json{{"code", "ok"}, {"operations", std::move(operations)}}.dump();
+  for (auto& operation : operations) {
+    const auto& id = operation["id"].get_ref<const std::string&>();
+    if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
+        id == "resource.import.apply") {
+      operation["modes"] = {"preview", "apply", "cancel"};
+    } else if (id.ends_with(".preview")) {
+      operation["modes"] = {"preview"};
+    } else {
+      const bool writes =
+          operation["writes_project"] == true || operation.value("writes_destination", false);
+      operation["modes"] = {writes ? "apply" : "read"};
+    }
+  }
+  return operations;
+}
+
+}  // namespace
+
+const Json& detail::operation_specs() {
+  static const auto specs = build_operation_specs();
+  return specs;
+}
+
+std::string project_operations_json() {
+  return Json{{"code", "ok"},
+              {"request_command", "project request DIRECTORY"},
+              {"operations", detail::operation_specs()}}
+      .dump();
 }
 
 }  // namespace wds::platform

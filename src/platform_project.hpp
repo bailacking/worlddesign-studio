@@ -159,6 +159,7 @@ ProjectResult recover_project(const std::filesystem::path& directory);
 SceneResult start_scene(const std::filesystem::path& directory, std::uint64_t expected_revision,
                         bool allow_voxel = false);
 FieldResult save_voxel_scene(const std::filesystem::path& directory, const VoxelScene& scene);
+FieldResult prepare_voxel_save(const VoxelScene& scene);
 FieldResult edit_scene(const std::filesystem::path& directory, const SceneEdit& edit, bool apply,
                        bool capture_change = false);
 FieldResult edit_entity(const std::filesystem::path& directory, const EntityEdit& edit, bool apply,

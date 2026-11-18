@@ -16,8 +16,33 @@ namespace wds::studio {
 
 ProjectBridge::ProjectBridge(QObject* parent) : QObject(parent) {}
 
-void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> complete,
-                        QByteArray input) {
+void ProjectBridge::request(const QString& directory, const QString& operation, const QString& mode,
+                            std::optional<qint64> revision, const QJsonObject& input,
+                            Completion complete) {
+  QJsonObject body{{"operation", operation}, {"version", 1}, {"mode", mode}, {"input", input}};
+  if (revision) body.insert("expected_revision", *revision);
+  QStringList arguments{"project", "request", directory};
+  const bool apply = mode == "apply";
+  if (apply)
+    arguments.append(operation == "project.export" ? "--allow-destination-write"
+                                                   : "--allow-project-write");
+  run(
+      std::move(arguments),
+      [this, complete = std::move(complete)](QJsonObject result) {
+        const auto usage = result.value("usage").toObject();
+        requests_ += usage.value("requests").toInteger();
+        elapsed_ms_ += usage.value("elapsed_ms").toDouble();
+        complete(std::move(result));
+      },
+      QJsonDocument(body).toJson(QJsonDocument::Compact), apply);
+}
+
+void ProjectBridge::discover(Completion complete) {
+  run({"--project-operations"}, std::move(complete), {}, false);
+}
+
+void ProjectBridge::run(QStringList arguments, Completion complete, QByteArray input,
+                        bool may_write) {
   auto* process = new QProcess(this);
   auto* deadline = new QTimer(process);
   deadline->setSingleShot(true);
@@ -44,10 +69,7 @@ void ProjectBridge::run(QStringList arguments, std::function<void(QJsonObject)> 
                       {"location", process->arguments().value(1)}});
             }
           });
-  const auto action = arguments.value(1);
-  if (action != "create" && action != "set-scene-field" && action != "edit-entity" &&
-      action != "recover" && action != "restore-scene" && action != "import" &&
-      action != "export") {
+  if (!may_write) {
     connect(deadline, &QTimer::timeout, process, [process, timed_out] {
       *timed_out = true;
       process->kill();

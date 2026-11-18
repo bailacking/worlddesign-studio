@@ -1,0 +1,10 @@
+[
+  {"request_id":"index","operation":"project.index","version":1,"mode":"read","expected_revision":0},
+  {"request_id":"preview","operation":"scene.field.set","version":1,"mode":"preview","expected_revision":0,"input":{"entity_id":"marker","field":"x","value":-240}},
+  {"request_id":"cancel","operation":"scene.field.set","version":1,"mode":"cancel","expected_revision":0,"input":{"entity_id":"marker","field":"x","value":-240},"expect":"cancelled"},
+  {"request_id":"save","operation":"scene.field.set","version":1,"mode":"apply","expected_revision":0,"input":{"entity_id":"marker","field":"x","value":-240,"capture_change":true}},
+  {"request_id":"retry","operation":"scene.field.set","version":1,"mode":"apply","expected_revision":0,"input":{"entity_id":"marker","field":"x","value":-240},"expect":"revision_conflict"},
+  {"request_id":"failed-edit","operation":"scene.field.set","version":1,"mode":"apply","expected_revision":1,"input":{"entity_id":"marker","field":"missing","value":-245},"expect":"invalid_field"},
+  {"request_id":"restore","operation":"scene.restore","version":1,"mode":"apply","expected_revision":1,"restore_from":"save"},
+  {"request_id":"verify","operation":"project.index","version":1,"mode":"read","expected_revision":2}
+]

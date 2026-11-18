@@ -57,12 +57,14 @@ target_compile_definitions(wds_png PUBLIC
 )
 
 add_library(wds_project STATIC
-  src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/asset_import.cpp
+  src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
+  src/asset_import.cpp
   src/scene_play.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png)
 target_link_libraries(wds_cli PRIVATE wds_project)
+target_include_directories(wds_cli SYSTEM PRIVATE third_party/nlohmann)
 if(WIN32)
   set(kit_spec "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-x64-runtime.json")
   file(READ "${kit_spec}" WDS_WINDOWS_RUNTIME_SPEC)
@@ -207,6 +209,11 @@ add_test(
           -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
           -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_play.cmake
 )
+add_test(NAME project_request COMMAND "${CMAKE_COMMAND}"
+  -DCLI=$<TARGET_FILE:wds_cli>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/project-requests
+  -DEXAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/scene-motion
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/project_request.cmake")
 add_executable(wds_scene_controls_test tests/scene_controls.cpp)
 target_link_libraries(wds_scene_controls_test PRIVATE wds_project wds_compile_options)
 add_test(NAME scene_controls COMMAND wds_scene_controls_test

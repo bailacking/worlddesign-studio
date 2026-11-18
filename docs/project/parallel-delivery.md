@@ -95,7 +95,7 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | PRD-08 | 核心 | PRD-05、PRD-06、PRD-07 | `src/studio/asset_preview.*` | PNG 派生缩略图按输入摘要复用，清理后可重建 |
 | PRD-09 | 核心 | PRJ-03、PRD-01 | src/migrations/ | 旧通用项目、旧方块项目显式迁移或报告不支持项，原目录可重开 |
 | PRD-10 | 核心 | PRD-04、CMD-04 | src/resources/diff/ | 用稳定 ID 比较结构化改动，区分内容冲突和路径冲突 |
-| CMD-01 | 核心 | OPS-01、OPS-03 | src/operations/registry/ | 统一 JSON 请求、结果及字段说明，旧 CLI 参数可用 |
+| CMD-01 | 核心 | OPS-01、OPS-03 | src/project_operations.*、src/cli.cpp | W10 统一清单、JSON 请求、结果与诊断，保留旧 CLI 参数 |
 | CMD-02 | 核心 | CMD-01、PRJ-04 | src/operations/transaction/ | 带预期修订的多文件提交，失败可诊断和恢复 |
 | CMD-03 | 实现 | CMD-01 | src/operations/cli/ | 接入发现、查询和预览，保留退出码和 JSON 兼容性 |
 | CMD-04 | 核心 | CMD-02、OPS-04 | src/operations/history/ | 撤销重做走相同写入路径，重开历史可解释，外部冲突不静默覆盖 |
@@ -132,8 +132,8 @@ Codex 并行承担 WKB-01、WKB-03、EDT-03A 和 EDT-03B。先合入窗口骨架
 | KIT-04 | 实现 | KIT-03、SIM-05、SIM-11 | examples/starter-2d/ | 原创非方块模板包含一条可修改玩法，运行时和工作台能打开 |
 | KIT-05 | 核心 | KIT-02、KIT-03 | src/capabilities/install/ | 能力安装、替换、禁用与回退，依赖变化有诊断 |
 | KIT-06 | 实现 | KIT-01、KIT-02、KIT-05 | docs/engineering/、examples/capability/ | 交付可复制的包开发样例，演示声明、装配及卸载 |
-| AUT-01 | 核心 | CMD-01、KIT-01 | src/automation/discovery/ | 按任务查询相关操作、字段和能力摘要，保持稳定标识 |
-| AUT-02 | 核心 | AUT-01、CMD-04、CMD-05 | src/automation/session/ | 外部 Agent 可查询、预览、应用及回退，权限和修订由宿主核验 |
+| AUT-01 | 核心 | CMD-01、KIT-01 | src/project_operations.*、src/studio/bridge.* | W10 共用操作清单与项目索引，支持按修订读上下文 |
+| AUT-02 | 核心 | AUT-01、CMD-04、CMD-05 | scripts/project_workflow.py、src/project_operations.* | W10 外部 Agent 可查询、预览、取消、提交及回退，记录结果和用量 |
 | AUT-03 | 实现 | AUT-02、KIT-03 | src/automation/handoff/ | 生成最小项目摘要、改动及可复跑入口，人可从同一项目接手 |
 | AUT-04 | 核心 | AUT-02、SIM-01、SHIP-04 | src/automation/validation/ | Agent 可从现有操作完成创建、试玩和导出，失败定位到具体步骤 |
 | AUT-05 | 核心 | AUT-04、WKB-13 | src/studio/agent/ | 工作台可查看、批准和接管操作，实际改动可回溯 |

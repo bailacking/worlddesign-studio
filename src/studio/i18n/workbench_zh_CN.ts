@@ -250,6 +250,18 @@
             <source>unsupported_scene_kind</source>
             <translation>当前操作不支持此场景类型</translation>
         </message>
+        <message>
+            <source>invalid_mode</source>
+            <translation>此操作不支持所选执行方式</translation>
+        </message>
+        <message>
+            <source>permission_denied</source>
+            <translation>本次操作未获得写入权限</translation>
+        </message>
+        <message>
+            <source>unsupported_operation</source>
+            <translation>未发现该项目操作</translation>
+        </message>
     </context>
     <context>
         <name>ResourcePanel</name>
@@ -835,6 +847,26 @@
         <message>
             <source>World saved · revision %1</source>
             <translation>方块世界已保存 · 修订 %1</translation>
+        </message>
+        <message>
+            <source>Available Operations…</source>
+            <translation>可用操作…</translation>
+        </message>
+        <message>
+            <source>Available Operations</source>
+            <translation>可用操作</translation>
+        </message>
+        <message>
+            <source>This window · %1 requests · %2 ms</source>
+            <translation>本窗口 · %1 次请求 · %2 毫秒</translation>
+        </message>
+        <message>
+            <source>Preview cancelled.</source>
+            <translation>已取消预览。</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>关闭</translation>
         </message>
     </context>
     <context>

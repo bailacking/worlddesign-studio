@@ -20,6 +20,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -31,6 +32,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <deque>
 #include <optional>
@@ -89,6 +91,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_export_destination"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_field"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_manifest"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_mode"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
@@ -105,6 +108,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_runtime_dependency"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "permission_denied"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "recovery_required"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
@@ -115,6 +119,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "target_exists"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsafe_path"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_export_target"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_operation"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_kind"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_scene_version"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "unsupported_version")};
@@ -187,6 +192,7 @@ class Workbench final : public QMainWindow {
 #endif
     clear_cache_ = project_menu_->addAction(QString{}, this, &Workbench::clearThumbnailCache);
     recover_ = project_menu_->addAction(QString{}, this, &Workbench::recoverProject);
+    operations_ = project_menu_->addAction(QString{}, this, &Workbench::showOperations);
     close_ = project_menu_->addAction(QString{}, this, &Workbench::closeProject);
     edit_menu_ = menuBar()->addMenu(QString{});
     undo_ = edit_menu_->addAction(QString{}, this, [this] { restoreHistory(false); });
@@ -356,6 +362,7 @@ class Workbench final : public QMainWindow {
     export_->setText(tr("Export for Windows x64…"));
     clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
+    operations_->setText(tr("Available Operations…"));
     close_->setText(tr("Close Project"));
     edit_data_->setText(tr("Edit Integer Data Field…"));
     add_entity_->setText(tr("Add Entity…"));
@@ -403,6 +410,37 @@ class Workbench final : public QMainWindow {
       QMessageBox::warning(this, tr("Settings"), tr("Could not apply the interface language."));
   }
 
+  void showOperations() {
+    setBusy(true);
+    bridge_.discover([this](const QJsonObject& result) {
+      setBusy(false);
+      if (result.value("code") != "ok" || !result.value("operations").isArray()) {
+        report({nullptr, {}, result});
+        return;
+      }
+      QDialog dialog(this);
+      dialog.setWindowTitle(tr("Available Operations"));
+      dialog.resize(620, 420);
+      QVBoxLayout layout(&dialog);
+      QLabel usage(tr("This window · %1 requests · %2 ms")
+                       .arg(bridge_.requests())
+                       .arg(bridge_.elapsedMs(), 0, 'f', 1),
+                   &dialog);
+      QPlainTextEdit list(&dialog);
+      list.setReadOnly(true);
+      list.setAccessibleName(tr("Available Operations"));
+      list.setPlainText(QString::fromUtf8(
+          QJsonDocument(result.value("operations").toArray()).toJson(QJsonDocument::Indented)));
+      QDialogButtonBox buttons(QDialogButtonBox::Close, &dialog);
+      buttons.button(QDialogButtonBox::Close)->setText(tr("Close"));
+      connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+      layout.addWidget(&usage);
+      layout.addWidget(&list);
+      layout.addWidget(&buttons);
+      dialog.exec();
+    });
+  }
+
   void chooseProject() {
     const auto path = QFileDialog::getExistingDirectory(
         this, tr("Open WDS Project"), root_,
@@ -425,17 +463,18 @@ class Workbench final : public QMainWindow {
     }
     const auto path = QDir(parent).filePath(id);
     setBusy(true);
-    bridge_.run({"project", "create", path, id}, [this, path](const QJsonObject& result) {
-      if (result.value("code") != "ok") {
-        report({nullptr, {}, result});
-        setBusy(false);
-        return;
-      }
-      stop();
-      root_ = path;
-      clearProject();
-      refresh();
-    });
+    bridge_.request(path, "project.create", "apply", {}, {{"project_id", id}},
+                    [this, path](const QJsonObject& result) {
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      stop();
+                      root_ = path;
+                      clearProject();
+                      refresh();
+                    });
   }
 
   void importResource() {
@@ -470,8 +509,9 @@ class Workbench final : public QMainWindow {
     const auto destination = QDir(parent).filePath(name);
     setBusy(true);
     setStatus(QT_TR_NOOP("Exporting revision %1…"), {argument(*revision_)});
-    bridge_.run(
-        {"project", "export", root_, argument(*revision_), "windows-x64", destination},
+    bridge_.request(
+        root_, "project.export", "apply", revision_,
+        {{"target", "windows-x64"}, {"destination", destination}},
         [this](const QJsonObject& result) {
           setBusy(false);
           if (result.value("code") != "ok") {
@@ -538,65 +578,65 @@ class Workbench final : public QMainWindow {
     form.addRow(&buttons);
     if (dialog.exec() != QDialog::Accepted) return;
 
-    QStringList args{"project",
-                     "preview-import",
-                     root_,
-                     source,
-                     id.text().trimmed(),
-                     kind.currentData().toString(),
-                     target.text().trimmed(),
-                     argument(*revision_)};
+    const QJsonObject input{{"source", source},
+                            {"resource_id", id.text().trimmed()},
+                            {"kind", kind.currentData().toString()},
+                            {"path", target.text().trimmed()}};
     setBusy(true);
-    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
-      if (preview.value("code") != "ok") {
-        reportImportError(preview, args[3]);
-        setBusy(false);
-        return;
-      }
-      const auto resource = preview.value("resource_id").toString();
-      if (!preview.value("changed").toBool()) {
-        report({QT_TR_NOOP("Resource %1 is already imported."), {resource}, {}});
-        setBusy(false);
-        return;
-      }
-      const auto digest = preview.value("digest").toString();
-      if (digest.isEmpty()) {
-        report({nullptr, {}, {{"code", "cli_invalid_result"}, {"location", "preview-import"}}});
-        setBusy(false);
-        return;
-      }
-      auto details =
-          tr("Import %1 as %2?\n%3 · %4 bytes")
-              .arg(preview.value("source_name").toString(), resource,
-                   preview.value("path").toString(), argument(preview.value("bytes").toInteger()));
-      if (preview.contains("width"))
-        details += "\n" + tr("%1 × %2 px")
-                              .arg(preview.value("width").toInt())
-                              .arg(preview.value("height").toInt());
-      else if (preview.contains("line_count"))
-        details += "\n" + tr("Lines · %1").arg(preview.value("line_count").toInteger());
-      QMessageBox confirm(QMessageBox::Question, tr("Import Preview"), details,
-                          QMessageBox::Yes | QMessageBox::Cancel, this);
-      confirm.setTextFormat(Qt::PlainText);
-      confirm.setDefaultButton(QMessageBox::Cancel);
-      confirm.button(QMessageBox::Yes)->setText(tr("Import"));
-      confirm.button(QMessageBox::Cancel)->setText(tr("Cancel"));
-      if (confirm.exec() != QMessageBox::Yes) {
-        setBusy(false);
-        return;
-      }
-      args[1] = "import";
-      args.append({"--expect-digest", digest});
-      bridge_.run(args, [this, source = args[3]](const QJsonObject& result) {
-        if (result.value("code") != "ok") {
-          reportImportError(result, source);
-          setBusy(false);
-          return;
-        }
-        report({QT_TR_NOOP("Imported %1."), {result.value("resource_id").toString()}, {}});
-        refresh(false);
-      });
-    });
+    bridge_.request(
+        root_, "resource.import.apply", "preview", revision_, input,
+        [this, input, source](const QJsonObject& preview) {
+          if (preview.value("code") != "ok") {
+            reportImportError(preview, source);
+            setBusy(false);
+            return;
+          }
+          const auto resource = preview.value("resource_id").toString();
+          if (!preview.value("changed").toBool()) {
+            report({QT_TR_NOOP("Resource %1 is already imported."), {resource}, {}});
+            setBusy(false);
+            return;
+          }
+          const auto digest = preview.value("digest").toString();
+          if (digest.isEmpty()) {
+            report({nullptr, {}, {{"code", "cli_invalid_result"}, {"location", "preview-import"}}});
+            setBusy(false);
+            return;
+          }
+          auto details = tr("Import %1 as %2?\n%3 · %4 bytes")
+                             .arg(preview.value("source_name").toString(), resource,
+                                  preview.value("path").toString(),
+                                  argument(preview.value("bytes").toInteger()));
+          if (preview.contains("width"))
+            details += "\n" + tr("%1 × %2 px")
+                                  .arg(preview.value("width").toInt())
+                                  .arg(preview.value("height").toInt());
+          else if (preview.contains("line_count"))
+            details += "\n" + tr("Lines · %1").arg(preview.value("line_count").toInteger());
+          QMessageBox confirm(QMessageBox::Question, tr("Import Preview"), details,
+                              QMessageBox::Yes | QMessageBox::Cancel, this);
+          confirm.setTextFormat(Qt::PlainText);
+          confirm.setDefaultButton(QMessageBox::Cancel);
+          confirm.button(QMessageBox::Yes)->setText(tr("Import"));
+          confirm.button(QMessageBox::Cancel)->setText(tr("Cancel"));
+          if (confirm.exec() != QMessageBox::Yes) {
+            cancelPreview("resource.import.apply", input);
+            return;
+          }
+          auto commit = input;
+          commit["expected_digest"] = digest;
+          bridge_.request(
+              root_, "resource.import.apply", "apply", revision_, commit,
+              [this, source](const QJsonObject& result) {
+                if (result.value("code") != "ok") {
+                  reportImportError(result, source);
+                  setBusy(false);
+                  return;
+                }
+                report({QT_TR_NOOP("Imported %1."), {result.value("resource_id").toString()}, {}});
+                refresh(false);
+              });
+        });
   }
 
   void reportImportError(QJsonObject result, const QString& source) {
@@ -620,7 +660,7 @@ class Workbench final : public QMainWindow {
       return;
     }
     setBusy(true);
-    bridge_.run({"project", "recover", root_}, [this](const QJsonObject& result) {
+    bridge_.request(root_, "project.recover", "apply", {}, {}, [this](const QJsonObject& result) {
       if (result.value("code") != "ok") {
         report({nullptr, {}, result});
         setBusy(false);
@@ -679,63 +719,66 @@ class Workbench final : public QMainWindow {
 
   void refresh(bool announce_ready = true) {
     setBusy(true);
-    bridge_.run({"project", "resources", root_}, [this, announce_ready](const QJsonObject& result) {
-      if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
-          !result.value("resources").isArray() || !result.value("project_id").isString()) {
-        report({nullptr, {}, result});
-        setBusy(false);
-        emit inspectionFinished(false);
-        return;
-      }
-      project_id_ = result.value("project_id").toString();
-      revision_ = result.value("revision").toInteger();
-      resources_model_ = result.value("resources").toArray();
-      resources_->setResources(resources_model_);
-      bridge_.run({"project", "imports", root_},
-                  [this, announce_ready](const QJsonObject& imports) {
-                    const bool ok = imports.value("code") == "ok";
-                    resources_->setImportRecords(imports.value("imports").toArray());
-                    if (!ok) report({nullptr, {}, imports});
-                    readScene(announce_ready && ok);
-                  });
-    });
+    bridge_.request(
+        root_, "project.index", "read", {}, {}, [this, announce_ready](const QJsonObject& result) {
+          if (result.value("code") != "ok" || !result.value("revision").isDouble() ||
+              !result.value("resources").isArray() || !result.value("project_id").isString()) {
+            report({nullptr, {}, result});
+            setBusy(false);
+            emit inspectionFinished(false);
+            return;
+          }
+          project_id_ = result.value("project_id").toString();
+          revision_ = result.value("revision").toInteger();
+          resources_model_ = result.value("resources").toArray();
+          resources_->setResources(resources_model_);
+          const auto imports = result.value("imports").toObject();
+          const bool ok = imports.value("code") == "ok";
+          resources_->setImportRecords(imports.value("imports").toArray());
+          if (!ok) report({nullptr, {}, imports});
+          showScene(result.value("scene").toObject(), announce_ready && ok);
+        });
   }
 
   void readScene(bool announce_ready = true) {
     scene_ready_ = false;
-    bridge_.run({"project", "scene", root_, argument(*revision_)}, [this, announce_ready](
-                                                                       QJsonObject result) {
-      const bool keep_camera = voxel_scene_.has_value();
-      voxel_view_->setWorld(nullptr, false);
-      voxel_scene_.reset();
-      if (result.value("code") == "ok" && result.value("kind") == "voxel") {
-        auto loaded = platform::start_scene(projectPath(), *revision_, true);
-        if (loaded.voxel_scene) {
-          voxel_scene_ = std::move(loaded.voxel_scene);
-          voxel_view_->setWorld(&voxel_scene_->world, !keep_camera);
-        } else {
-          result = QJsonDocument::fromJson(
-                       QByteArray::fromStdString(platform::scene_result_json(loaded)))
-                       .object();
-        }
+    bridge_.request(root_, "scene.inspect", "read", revision_, {},
+                    [this, announce_ready](QJsonObject result) {
+                      showScene(std::move(result), announce_ready);
+                    });
+  }
+
+  void showScene(QJsonObject result, bool announce_ready) {
+    const bool keep_camera = voxel_scene_.has_value();
+    voxel_view_->setWorld(nullptr, false);
+    voxel_scene_.reset();
+    if (result.value("code") == "ok" && result.value("kind") == "voxel") {
+      auto loaded = platform::start_scene(projectPath(), *revision_, true);
+      if (loaded.voxel_scene) {
+        voxel_scene_ = std::move(loaded.voxel_scene);
+        voxel_view_->setWorld(&voxel_scene_->world, !keep_camera);
+      } else {
+        result =
+            QJsonDocument::fromJson(QByteArray::fromStdString(platform::scene_result_json(loaded)))
+                .object();
       }
-      views_->setCurrentWidget(voxel_scene_ ? static_cast<QWidget*>(voxel_view_) : viewport_);
-      scene_ready_ =
-          result.value("code") == "ok" && result.value("entities").isArray() &&
-          result.value("fields").toArray().size() == static_cast<qsizetype>(fields_.size());
-      entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
-      field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
-      populateInspector();
-      setEntities();
-      const bool ready = scene_ready_ || voxel_scene_.has_value();
-      if (ready && announce_ready)
-        report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
-      else if (!ready)
-        report({nullptr, {}, result});
-      setBusy(false);
-      if (voxel_scene_) voxel_view_->setFocus(Qt::OtherFocusReason);
-      emit inspectionFinished(ready);
-    });
+    }
+    views_->setCurrentWidget(voxel_scene_ ? static_cast<QWidget*>(voxel_view_) : viewport_);
+    scene_ready_ =
+        result.value("code") == "ok" && result.value("entities").isArray() &&
+        result.value("fields").toArray().size() == static_cast<qsizetype>(fields_.size());
+    entities_ = scene_ready_ ? result.value("entities").toArray() : QJsonArray{};
+    field_schema_ = scene_ready_ ? result.value("fields").toArray() : QJsonArray{};
+    populateInspector();
+    setEntities();
+    const bool ready = scene_ready_ || voxel_scene_.has_value();
+    if (ready && announce_ready)
+      report({QT_TR_NOOP("Project ready · %1"), {root_}, {}});
+    else if (!ready)
+      report({nullptr, {}, result});
+    setBusy(false);
+    if (voxel_scene_) voxel_view_->setFocus(Qt::OtherFocusReason);
+    emit inspectionFinished(ready);
   }
 
   std::filesystem::path projectPath() const {
@@ -800,21 +843,22 @@ class Workbench final : public QMainWindow {
   void changeEntities(const QString& operation, const QString& id, const QStringList& extra,
                       const QString& selection) {
     if (!scene_ready_ || !revision_ || busy_ || dirty_ || session_) return;
-    QStringList args{"project", "edit-entity", root_, operation, id, argument(*revision_)};
-    args.append(extra);
-    args.append("--capture-change");
+    QJsonObject input{{"operation", operation}, {"entity_id", id}, {"capture_change", true}};
+    if (operation == "move") input["argument"] = extra.value(0).toLongLong();
+    if (operation == "copy") input["argument"] = extra.value(0);
     setBusy(true);
-    bridge_.run(args, [this, selection](const QJsonObject& result) {
-      if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-        report({nullptr, {}, result});
-        setBusy(false);
-        return;
-      }
-      recordHistory(result, selection);
-      revision_ = result.value("revision").toInteger();
-      selected_ = selection;
-      readScene();
-    });
+    bridge_.request(root_, "scene.entity.apply", "apply", revision_, input,
+                    [this, selection](const QJsonObject& result) {
+                      if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      recordHistory(result, selection);
+                      revision_ = result.value("revision").toInteger();
+                      selected_ = selection;
+                      readScene();
+                    });
   }
 
   void recordHistory(const QJsonObject& result, const QString& next_selection) {
@@ -839,8 +883,8 @@ class Workbench final : public QMainWindow {
       request["after"] = before;
     }
     setBusy(true);
-    bridge_.run(
-        {"project", "restore-scene", root_, argument(*revision_)},
+    bridge_.request(
+        root_, "scene.restore", "apply", revision_, {{"change", request}},
         [this, redo](const QJsonObject& result) {
           if (result.value("code") != "ok" || !result.value("changed").toBool() ||
               !result.value("revision").isDouble()) {
@@ -858,8 +902,7 @@ class Workbench final : public QMainWindow {
                   {},
                   {}});
           readScene(false);
-        },
-        QJsonDocument(request).toJson(QJsonDocument::Compact));
+        });
   }
 
   void populateInspector() {
@@ -940,53 +983,62 @@ class Workbench final : public QMainWindow {
     if (voxel_scene_) {
       if (!voxel_dirty_ || busy_) return;
       setBusy(true);
-      const auto result = platform::save_voxel_scene(projectPath(), *voxel_scene_);
-      if (result.code != "ok" || !result.revision) {
-        report(
-            {nullptr,
-             {},
-             QJsonDocument::fromJson(QByteArray::fromStdString(platform::field_result_json(result)))
-                 .object()});
+      const auto prepared = platform::prepare_voxel_save(*voxel_scene_);
+      const auto reply =
+          QJsonDocument::fromJson(QByteArray::fromStdString(platform::field_result_json(prepared)))
+              .object();
+      if (!prepared.scene_change) {
+        report({nullptr, {}, reply});
         setBusy(false);
         return;
       }
-      voxel_dirty_ = false;
-      revision_ = static_cast<qint64>(*result.revision);
-      report({QT_TR_NOOP("World saved · revision %1"), {argument(*revision_)}, {}});
-      readScene(false);
+      bridge_.request(
+          root_, "scene.restore", "apply", revision_, {{"change", reply.value("scene_change")}},
+          [this](const QJsonObject& result) {
+            if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
+              report({nullptr, {}, result});
+              setBusy(false);
+              return;
+            }
+            voxel_dirty_ = false;
+            revision_ = result.value("revision").toInteger();
+            report({QT_TR_NOOP("World saved · revision %1"), {argument(*revision_)}, {}});
+            readScene(false);
+          });
       return;
     }
     if (!dirty_ || busy_ || !revision_) return;
     const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
     const auto value = fields_[editing_]->value();
-    QStringList args{"project",        "preview-scene-field", root_,          selected_,
-                     field.toString(), argument(*revision_),  argument(value)};
+    const QJsonObject input{
+        {"entity_id", selected_}, {"field", field}, {"value", value}, {"capture_change", true}};
     setBusy(true);
-    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
-      if (preview.value("code") != "ok") {
-        report({nullptr, {}, preview});
-        setBusy(false);
-        return;
-      }
-      args[1] = "set-scene-field";
-      args.append("--capture-change");
-      bridge_.run(args, [this](const QJsonObject& result) {
-        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-          report({nullptr, {}, result});
-          setBusy(false);
-          return;
-        }
-        recordHistory(result, selected_);
-        revision_ = result.value("revision").toInteger();
-        dirty_ = false;
-        report(
-            {QT_TR_NOOP("Saved %1 · %2 → %3"),
-             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
-              argument(result.value("new_value").toInteger())},
-             {}});
-        readScene(false);
-      });
-    });
+    bridge_.request(root_, "scene.field.set", "preview", revision_, input,
+                    [this, input](const QJsonObject& preview) {
+                      if (preview.value("code") != "ok") {
+                        report({nullptr, {}, preview});
+                        setBusy(false);
+                        return;
+                      }
+                      bridge_.request(root_, "scene.field.set", "apply", revision_, input,
+                                      [this](const QJsonObject& result) {
+                                        if (result.value("code") != "ok" ||
+                                            !result.value("revision").isDouble()) {
+                                          report({nullptr, {}, result});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        recordHistory(result, selected_);
+                                        revision_ = result.value("revision").toInteger();
+                                        dirty_ = false;
+                                        report({QT_TR_NOOP("Saved %1 · %2 → %3"),
+                                                {result.value("location").toString(),
+                                                 argument(result.value("old_value").toInteger()),
+                                                 argument(result.value("new_value").toInteger())},
+                                                {}});
+                                        readScene(false);
+                                      });
+                    });
   }
 
   void editDataField() {
@@ -1007,51 +1059,66 @@ class Workbench final : public QMainWindow {
     form.addRow(&buttons);
     if (dialog.exec() != QDialog::Accepted) return;
 
-    QStringList args{"project",
-                     "preview-field",
-                     root_,
-                     resource.text(),
-                     field.text(),
-                     argument(*revision_),
-                     value.text().trimmed()};
+    bool is_integer = false;
+    const auto new_integer = value.text().trimmed().toLongLong(&is_integer);
+    if (!is_integer) {
+      report({nullptr, {}, {{"code", "invalid_argument"}, {"location", "/input/value"}}});
+      return;
+    }
+    const QJsonObject input{
+        {"resource_id", resource.text()}, {"field", field.text()}, {"value", new_integer}};
     setBusy(true);
-    bridge_.run(args, [this, args](const QJsonObject& preview) mutable {
-      if (preview.value("code") != "ok") {
-        report({nullptr, {}, preview});
-        setBusy(false);
-        return;
-      }
-      const auto old_value = argument(preview.value("old_value").toInteger());
-      const auto new_value = argument(preview.value("new_value").toInteger());
-      if (!preview.value("changed").toBool()) {
-        report({QT_TR_NOOP("The data field already has this value."), {}, {}});
-        setBusy(false);
-        return;
-      }
-      if (QMessageBox::question(
-              this, tr("Preview"),
-              tr("Apply %1 · %2 → %3?")
-                  .arg(preview.value("location").toString(), old_value, new_value),
-              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
-        setBusy(false);
-        return;
-      }
-      args[1] = "set-field";
-      bridge_.run(args, [this](const QJsonObject& result) {
-        if (result.value("code") != "ok" || !result.value("revision").isDouble()) {
-          report({nullptr, {}, result});
-          setBusy(false);
-          return;
-        }
-        revision_ = result.value("revision").toInteger();
-        report(
-            {QT_TR_NOOP("Saved %1 · %2 → %3"),
-             {result.value("location").toString(), argument(result.value("old_value").toInteger()),
-              argument(result.value("new_value").toInteger())},
-             {}});
-        readScene(false);
-      });
-    });
+    bridge_.request(root_, "resource.field.set", "preview", revision_, input,
+                    [this, input](const QJsonObject& preview) {
+                      if (preview.value("code") != "ok") {
+                        report({nullptr, {}, preview});
+                        setBusy(false);
+                        return;
+                      }
+                      const auto old_value = argument(preview.value("old_value").toInteger());
+                      const auto new_value = argument(preview.value("new_value").toInteger());
+                      if (!preview.value("changed").toBool()) {
+                        report({QT_TR_NOOP("The data field already has this value."), {}, {}});
+                        setBusy(false);
+                        return;
+                      }
+                      if (QMessageBox::question(
+                              this, tr("Preview"),
+                              tr("Apply %1 · %2 → %3?")
+                                  .arg(preview.value("location").toString(), old_value, new_value),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+                        cancelPreview("resource.field.set", input);
+                        return;
+                      }
+                      bridge_.request(root_, "resource.field.set", "apply", revision_, input,
+                                      [this](const QJsonObject& result) {
+                                        if (result.value("code") != "ok" ||
+                                            !result.value("revision").isDouble()) {
+                                          report({nullptr, {}, result});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        revision_ = result.value("revision").toInteger();
+                                        report({QT_TR_NOOP("Saved %1 · %2 → %3"),
+                                                {result.value("location").toString(),
+                                                 argument(result.value("old_value").toInteger()),
+                                                 argument(result.value("new_value").toInteger())},
+                                                {}});
+                                        readScene(false);
+                                      });
+                    });
+  }
+
+  void cancelPreview(const QString& operation, const QJsonObject& input) {
+    bridge_.request(root_, operation, "cancel", revision_, input,
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") == "cancelled")
+                        setStatus(QT_TR_NOOP("Preview cancelled."));
+                      else
+                        report({nullptr, {}, result});
+                      setBusy(false);
+                    });
   }
 
   void play() {
@@ -1186,6 +1253,7 @@ class Workbench final : public QMainWindow {
                         revision_.has_value());
     clear_cache_->setEnabled(!busy_ && revision_.has_value());
     recover_->setEnabled(!busy_ && !session_ && !hasDraft() && !root_.isEmpty());
+    operations_->setEnabled(!busy_);
     edit_data_->setEnabled(!busy_ && !session_ && !hasDraft() && revision_.has_value());
     save_->setText(voxel_scene_ ? tr("&Save World") : tr("&Save Property"));
     revert_->setText(voxel_scene_ ? tr("Discard World Draft") : tr("Discard Property Draft"));
@@ -1253,6 +1321,7 @@ class Workbench final : public QMainWindow {
   QAction* export_;
   QAction* clear_cache_;
   QAction* recover_;
+  QAction* operations_;
   QAction* edit_data_;
   QAction* save_;
   QAction* undo_;

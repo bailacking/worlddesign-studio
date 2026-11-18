@@ -11,7 +11,8 @@
 #endif
 
 #include "platform_project.hpp"
-#include "project_export.hpp"
+#include "project_io.hpp"
+#include "project_operations.hpp"
 #include "sandbox_rules.hpp"
 #include "voxel_content.hpp"
 #include "workspace.hpp"
@@ -110,145 +111,153 @@ int print_result(const wds::RenameResult& result) {
   return result.status == wds::RenameStatus::ok ? 0 : 1;
 }
 
+using nlohmann::json;
+using namespace wds::platform;
+
+std::optional<std::string> read_request() {
+  std::string bytes;
+  std::array<char, 8192> buffer;
+  while (bytes.size() <= max_project_request && std::cin) {
+    std::cin.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    bytes.append(buffer.data(), static_cast<std::size_t>(std::cin.gcount()));
+  }
+  if (std::cin.bad() || bytes.size() > max_project_request) return std::nullopt;
+  return bytes;
+}
+
+int print_operation(const json& result) {
+  std::cout << result.dump() << '\n';
+  return result.value("code", "") == "ok" ? 0 : 1;
+}
+
+int bad_request(std::string_view location = "/input") {
+  return print_operation({{"code", "invalid_argument"}, {"location", location}});
+}
+
+int project_command(int argc, char** argv) {
+  const std::string_view action(argv[2]);
+  const auto directory = path_from_utf8(argv[3]);
+  if (action == "request") {
+    OperationAccess access;
+    for (int i = 4; i < argc; ++i) {
+      const std::string_view flag(argv[i]);
+      if (flag == "--allow-project-write" && !access.project_write)
+        access.project_write = true;
+      else if (flag == "--allow-destination-write" && !access.destination_write)
+        access.destination_write = true;
+      else
+        return bad_request("/permissions");
+    }
+    const auto bytes = read_request();
+    if (!bytes) return bad_request("/");
+    return print_operation(request_operation(directory, *bytes, access));
+  }
+  const auto execute = [&](std::string_view id, std::string_view mode,
+                           std::optional<std::uint64_t> revision = std::nullopt,
+                           const json& input = json::object()) {
+    return print_operation(run_operation(directory, id, mode, revision, input, {true, true}));
+  };
+  std::uint64_t revision = 0;
+  if (action == "index" && (argc == 4 || argc == 5)) {
+    if (argc == 4) return execute("project.index", "read");
+    if (!parse_integer(argv[4], revision)) return bad_request("/revision");
+    return execute("project.index", "read", revision);
+  }
+  if (action == "export") {
+    if (argc != 7 || !parse_integer(argv[4], revision)) return bad_request();
+    return execute("project.export", "apply", revision,
+                   {{"target", argv[5]}, {"destination", argv[6]}});
+  }
+  if ((argc == 5 && action == "scene") || (argc == 6 && action == "play")) {
+    if (!parse_integer(argv[4], revision)) return bad_request("/revision");
+    if (action == "scene") return execute("scene.inspect", "read", revision);
+    std::uint64_t ticks = 0;
+    if (!parse_integer(argv[5], ticks)) return bad_request("/ticks");
+    return execute("project.play", "read", revision, {{"ticks", ticks}});
+  }
+  if (action == "restore-scene") {
+    if (argc != 5 || !parse_integer(argv[4], revision)) return bad_request();
+    const auto bytes = read_request();
+    if (!bytes) return bad_request();
+    try {
+      const auto change = wds::platform::detail::parse_json(*bytes);
+      if (!change.is_object()) return bad_request();
+      return execute("scene.restore", "apply", revision, {{"change", change}});
+    } catch (const std::length_error&) {
+      return bad_request();
+    }
+  }
+  const bool capture_field =
+      argc == 9 && action == "set-scene-field" && std::string_view(argv[8]) == "--capture-change";
+  if (capture_field ||
+      (argc == 8 && (action == "preview-scene-field" || action == "set-scene-field"))) {
+    std::int64_t value = 0;
+    if (!parse_integer(argv[6], revision) || !parse_integer(argv[7], value)) return bad_request();
+    auto input = json{{"entity_id", argv[4]}, {"field", argv[5]}, {"value", value}};
+    if (capture_field) input["capture_change"] = true;
+    const bool apply = action == "set-scene-field";
+    return execute(apply ? "scene.field.set" : "scene.field.preview", apply ? "apply" : "preview",
+                   revision, input);
+  }
+  if (action == "preview-entity" || action == "edit-entity") {
+    const bool apply = action == "edit-entity";
+    const bool capture =
+        apply && argc >= 8 && std::string_view(argv[argc - 1]) == "--capture-change";
+    const int count = argc - (capture ? 1 : 0);
+    if ((count != 7 && count != 8) || !parse_integer(argv[6], revision)) return bad_request();
+    const std::string_view edit(argv[4]);
+    auto input = json{{"operation", edit}, {"entity_id", argv[5]}};
+    if (count == 8 && edit == "copy") {
+      input["argument"] = argv[7];
+    } else if (count == 8 && edit == "move") {
+      std::size_t index = 0;
+      if (!parse_integer(argv[7], index)) return bad_request();
+      input["argument"] = index;
+    } else if (count != 7 || (edit != "add" && edit != "remove")) {
+      return bad_request();
+    }
+    if (capture) input["capture_change"] = true;
+    return execute(apply ? "scene.entity.apply" : "scene.entity.preview",
+                   apply ? "apply" : "preview", revision, input);
+  }
+  if (argc == 8 && (action == "preview-field" || action == "set-field")) {
+    std::int64_t value = 0;
+    if (!parse_integer(argv[6], revision) || !parse_integer(argv[7], value)) return bad_request();
+    const bool apply = action == "set-field";
+    return execute(apply ? "resource.field.set" : "resource.field.preview",
+                   apply ? "apply" : "preview", revision,
+                   {{"resource_id", argv[4]}, {"field", argv[5]}, {"value", value}});
+  }
+  const bool guarded_import =
+      action == "import" && argc == 11 && std::string_view(argv[9]) == "--expect-digest";
+  if (guarded_import || (argc == 9 && (action == "preview-import" || action == "import"))) {
+    if (!parse_integer(argv[8], revision)) return bad_request("/revision");
+    auto input =
+        json{{"source", argv[4]}, {"resource_id", argv[5]}, {"kind", argv[6]}, {"path", argv[7]}};
+    if (guarded_import) input["expected_digest"] = argv[10];
+    const bool apply = action == "import";
+    return execute(apply ? "resource.import.apply" : "resource.import.preview",
+                   apply ? "apply" : "preview", revision, input);
+  }
+  if (action == "create" && argc == 5)
+    return execute("project.create", "apply", std::nullopt, {{"project_id", argv[4]}});
+  if (argc == 4) {
+    if (action == "recover") return execute("project.recover", "apply");
+    if (action == "open" || action == "validate" || action == "resources" || action == "imports")
+      return execute("project." + std::string(action), "read");
+  }
+  std::cerr << "Use wds_cli --project-operations to list project commands.\n";
+  return 2;
+}
+
 int run(int argc, char** argv) {
   if (argc == 2 && std::string_view(argv[1]) == "--project-operations") {
     std::cout << wds::platform::project_operations_json() << '\n';
     return 0;
   }
   if (argc >= 4 && std::string_view(argv[1]) == "project" &&
-      std::string_view(argv[2]) != "asset.rename") {
-    const std::string_view action(argv[2]);
-    const auto directory = path_from_utf8(argv[3]);
-    if (action == "export") {
-      std::uint64_t revision = 0;
-      const auto result =
-          argc == 7 && parse_integer(argv[4], revision)
-              ? wds::platform::export_project(directory, revision, argv[5], path_from_utf8(argv[6]))
-              : wds::platform::ExportResult{"invalid_argument", "/input"};
-      std::cout << wds::platform::export_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    const bool inspect_scene = argc == 5 && action == "scene";
-    if (inspect_scene || (argc == 6 && action == "play")) {
-      std::uint64_t revision = 0;
-      std::uint64_t ticks = 0;
-      wds::platform::SceneResult result{std::nullopt, "invalid_argument", "/revision"};
-      if (parse_integer(argv[4], revision)) {
-        if (inspect_scene ||
-            (parse_integer(argv[5], ticks) && ticks <= wds::platform::SceneSession::max_ticks)) {
-          result = wds::platform::start_scene(directory, revision, inspect_scene);
-          if (result.session) result.session->advance(ticks);
-        } else {
-          result.location = "/ticks";
-        }
-      }
-      std::cout << wds::platform::scene_result_json(result, inspect_scene) << '\n';
-      return result.session || result.voxel_scene ? 0 : 1;
-    }
-    if (action == "restore-scene") {
-      wds::platform::FieldResult result{"invalid_argument", "/input"};
-      std::uint64_t revision = 0;
-      if (argc == 5 && parse_integer(argv[4], revision)) {
-        std::string request;
-        std::array<char, 8192> bytes;
-        while (request.size() <= wds::platform::max_scene_restore_request && std::cin) {
-          std::cin.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-          request.append(bytes.data(), static_cast<std::size_t>(std::cin.gcount()));
-        }
-        if (!std::cin.bad()) result = wds::platform::restore_scene(directory, revision, request);
-      }
-      std::cout << wds::platform::field_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    const bool capture_field =
-        argc == 9 && action == "set-scene-field" && std::string_view(argv[8]) == "--capture-change";
-    if (capture_field ||
-        (argc == 8 && (action == "preview-scene-field" || action == "set-scene-field"))) {
-      wds::platform::SceneEdit edit{argv[4], argv[5], 0, 0};
-      const auto result =
-          parse_integer(argv[6], edit.revision) && parse_integer(argv[7], edit.value)
-              ? wds::platform::edit_scene(directory, edit, action == "set-scene-field",
-                                          capture_field)
-              : wds::platform::FieldResult{"invalid_argument", "/input"};
-      std::cout << wds::platform::field_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    if (action == "preview-entity" || action == "edit-entity") {
-      const bool capture = action == "edit-entity" && argc >= 8 &&
-                           std::string_view(argv[argc - 1]) == "--capture-change";
-      const int count = argc - (capture ? 1 : 0);
-      wds::platform::FieldResult result{"invalid_argument", "/input"};
-      if (count == 7 || count == 8) {
-        wds::platform::EntityEdit edit{argv[4], argv[5]};
-        const bool valid_argument =
-            count == 7 ? (edit.operation == "add" || edit.operation == "remove")
-                       : (edit.operation == "copy" ||
-                          (edit.operation == "move" && parse_integer(argv[7], edit.index)));
-        if (count == 8 && edit.operation == "copy") edit.target = argv[7];
-        if (valid_argument && parse_integer(argv[6], edit.revision))
-          result = wds::platform::edit_entity(directory, edit, action == "edit-entity", capture);
-      }
-      std::cout << wds::platform::field_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    if (argc == 8 && (action == "preview-field" || action == "set-field")) {
-      wds::platform::FieldEdit edit{argv[4], argv[5], 0, 0};
-      const auto result =
-          parse_integer(argv[6], edit.revision) && parse_integer(argv[7], edit.value)
-              ? wds::platform::edit_field(directory, edit, action == "set-field")
-              : wds::platform::FieldResult{"invalid_argument", "/input"};
-      std::cout << wds::platform::field_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    if (argc == 4 && action == "imports") {
-      const auto result = wds::platform::list_imports(directory);
-      std::cout << wds::platform::import_list_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    const bool guarded_import =
-        action == "import" && argc == 11 && std::string_view(argv[9]) == "--expect-digest";
-    if (guarded_import || (argc == 9 && (action == "preview-import" || action == "import"))) {
-      wds::platform::ImportRequest request{argv[4], argv[5], argv[6], argv[7], 0};
-      if (guarded_import) request.expected_digest = argv[10];
-      const auto result =
-          guarded_import && request.expected_digest.empty()
-              ? wds::platform::ImportResult{"invalid_argument", "/expected_digest"}
-          : parse_integer(argv[8], request.revision)
-              ? wds::platform::import_resource(directory, request, action == "import")
-              : wds::platform::ImportResult{"invalid_argument", "/revision"};
-      std::cout << wds::platform::import_result_json(result) << '\n';
-      return result.code == "ok" ? 0 : 1;
-    }
-    const bool create = action == "create" && argc == 5;
-    const bool recover = action == "recover" && argc == 4;
-    const bool read =
-        argc == 4 && (action == "validate" || action == "open" || action == "resources");
-    if (!create && !read && !recover) {
-      std::cerr << "Usage: wds_cli project create DIRECTORY ID | project open|validate|resources "
-                   "DIRECTORY\n"
-                   "       wds_cli project play DIRECTORY REVISION TICKS\n"
-                   "       wds_cli project export DIRECTORY REVISION windows-x64 DESTINATION\n"
-                   "       wds_cli project scene DIRECTORY REVISION\n"
-                   "       wds_cli project preview-scene-field|set-scene-field DIRECTORY ENTITY "
-                   "FIELD REVISION VALUE\n"
-                   "       wds_cli project preview-entity|edit-entity DIRECTORY OPERATION "
-                   "ENTITY REVISION [ARG]\n"
-                   "       wds_cli project preview-import DIRECTORY SOURCE ID KIND PATH "
-                   "REVISION\n"
-                   "       wds_cli project import DIRECTORY SOURCE ID KIND PATH REVISION "
-                   "[--expect-digest DIGEST]\n"
-                   "       wds_cli project imports DIRECTORY\n"
-                   "       wds_cli project restore-scene DIRECTORY REVISION < CHANGE.json\n";
-      return 2;
-    }
-    const auto result = create    ? wds::platform::create_project(directory, argv[4])
-                        : recover ? wds::platform::recover_project(directory)
-                                  : wds::platform::open_project(directory);
-    std::cout << (action == "resources" ? wds::platform::project_resources_json(result)
-                                        : wds::platform::project_result_json(result))
-              << '\n';
-    return result.project ? 0 : 1;
-  }
+      std::string_view(argv[2]) != "asset.rename")
+    return project_command(argc, argv);
   if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-rules") return rules(argc, argv);
   if (argc >= 3 && std::string_view(argv[1]) == "--sandbox-project") return rules(argc, argv, true);
   const bool opening = argc == 3 && std::string_view(argv[2]) == "open";

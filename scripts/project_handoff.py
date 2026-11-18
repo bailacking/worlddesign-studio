@@ -87,6 +87,8 @@ def resource_rows(resources: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def entity_rows(scene: dict[str, Any]) -> list[dict[str, Any]]:
+    if scene.get("kind") == "voxel":
+        return []
     entries = scene.get("entities")
     if not isinstance(entries, list):
         raise HandoffError("project scene 未返回实体列表")
@@ -122,7 +124,9 @@ def render(resources: dict[str, Any], scene: dict[str, Any]) -> str:
             f"| {cell(entry.get('path'))} | {cell('、'.join(declared) or None)} |"
         )
     lines.extend(["", "## 实体", ""])
-    if not entities:
+    if scene.get("kind") == "voxel":
+        lines.append("入口为 3D 方块场景。")
+    elif not entities:
         lines.append("入口场景没有实体。")
     else:
         header = " | ".join(("ID", *[field.upper() for field in ENTITY_FIELDS]))
