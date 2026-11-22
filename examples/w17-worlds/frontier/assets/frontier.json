@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "kind": "voxel",
+  "materials": "palette",
+  "terrain": {"seed": 73021, "profile": "frontier-v1"},
+  "workshop": {
+    "version": 1,
+    "bag_slots": 8,
+    "chest_slots": 2,
+    "items": {
+      "stone": {"tags": ["material"], "limit": 64},
+      "copper-ore": {"tags": ["ore"], "limit": 32},
+      "quartz": {"tags": ["ore"], "limit": 32}
+    },
+    "recipes": {},
+    "sources": {
+      "stone": {"yield": {"item": "stone", "count": 1}, "uses": 0},
+      "copper": {"yield": {"item": "copper-ore", "count": 1}, "uses": 0},
+      "quartz": {"yield": {"item": "quartz", "count": 1}, "uses": 0}
+    },
+    "progress": {"bag": [{"item": "stone", "count": 8}], "chest": [], "loot": [], "unlocked": []}
+  }
+}

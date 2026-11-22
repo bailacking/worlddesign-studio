@@ -129,6 +129,36 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
             {"visible", terrain->visible(from, to)},
             {"route", std::move(route)}};
   }
+  if (id == "scene.landscape.sample") {
+    const auto x = number<int>(input, "x");
+    const auto z = number<int>(input, "z");
+    constexpr auto limit = voxel::SeededTerrain::limit;
+    if (x < -limit || x >= limit || z < -limit || z >= limit)
+      return fail("invalid_argument", "/input");
+    auto loaded = start_scene(directory, revision, true);
+    if (!loaded.voxel_scene && !loaded.session) return Json::parse(scene_result_json(loaded));
+    if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
+    auto& world = loaded.voxel_scene->world;
+    const auto& terrain = world.terrain();
+    if (!terrain || !terrain->frontier()) return fail("invalid_voxel_world", "/terrain/profile");
+    world.stream({static_cast<double>(x), 0, static_cast<double>(z)});
+    auto blocks = Json::array();
+    for (int y = 0; y < voxel::World::height; ++y)
+      blocks.push_back(voxel::block_name(world.block(x, y, z)));
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"biome", terrain->biome(x, z)},
+            {"landmark", terrain->landmark(x, z)},
+            {"blocks", std::move(blocks)}};
+  }
+  if (id == "scene.character.set") {
+    const auto optional = [&](const char* key) -> std::optional<int> {
+      return input.contains(key) ? std::optional(number<int>(input, key)) : std::nullopt;
+    };
+    return Json::parse(
+        field_result_json(edit_character(directory, revision, text(input, "id"), optional("speed"),
+                                         optional("sight"), apply, flag(input, "capture_change"))));
+  }
   if (id == "scene.tile.set") {
     const TileEdit edit{
         {number<int>(input, "x"), number<int>(input, "y")}, text(input, "kind"), revision};

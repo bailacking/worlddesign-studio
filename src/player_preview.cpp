@@ -232,7 +232,19 @@ void draw(const SceneSession& session, const Sprites& sprites, const SceneBounds
   const auto top = height * 0.5f + origin_y * scale;
   BeginDrawing();
   ClearBackground({22, 30, 40, 255});
-  if (terrain) draw_tiles(*terrain, scale, left, top, false);
+  if (terrain) {
+    draw_tiles(*terrain, scale, left, top, false);
+    constexpr auto units = static_cast<float>(TileWorld::tile_size);
+    for (const auto& site : session.populations()) {
+      const auto color = species_color(site.species);
+      const Color tint{static_cast<unsigned char>(color >> 16),
+                       static_cast<unsigned char>(color >> 8), static_cast<unsigned char>(color),
+                       255};
+      DrawCircleV({left + (static_cast<float>(site.point.x) + 0.5f) * units * scale,
+                   top - (static_cast<float>(site.point.y) + 0.5f) * units * scale},
+                  3 * scale, tint);
+    }
+  }
   for (const auto& entity : scene.entities) {
     const Vector2 center{left + static_cast<float>(entity.x) * scale,
                          top - static_cast<float>(entity.y) * scale};

@@ -52,8 +52,8 @@ Block World::block(int x, int y, int z) const {
   return inside(x, y, z) ? blocks_[index(x, y, z)] : Block::air;
 }
 
-void World::use_seed(std::uint32_t seed) {
-  terrain_.emplace(seed);
+void World::use_seed(std::uint32_t seed, bool frontier) {
+  terrain_.emplace(seed, frontier);
   stream(Player{}.feet);
 }
 

@@ -164,6 +164,12 @@ bool SceneSession::advance(std::uint64_t ticks, const SceneInput& input) {
   return true;
 }
 
+std::vector<EcologySite> SceneSession::populations() const {
+  if (!terrain_ || !terrain_->ecology()) return {};
+  const auto& player = state_.entities[controls_->player];
+  return terrain_->populations(TileWorld::cell(player.x, player.y), state_.ticks);
+}
+
 void SceneSession::restart() {
   state_.entities = initial_entities_;
   state_.ticks = 0;

@@ -9,7 +9,7 @@
 
 namespace wds::voxel {
 
-enum class Block { air, grass, dirt, stone };
+enum class Block { air, grass, dirt, stone, copper, quartz, timber };
 
 struct BlockStyle {
   std::uint32_t color;
@@ -20,8 +20,13 @@ struct BlockStyle {
 struct Content {
   std::uint32_t sky = 0x87bce8;
   Block placement = Block::stone;
-  std::array<BlockStyle, 4> blocks{
-      {{0, false}, {0x659645, true}, {0x90643e, true}, {0x87929f, true}}};
+  std::array<BlockStyle, 7> blocks{{{0, false},
+                                    {0x659645, true},
+                                    {0x90643e, true},
+                                    {0x87929f, true},
+                                    {0xad603f, true},
+                                    {0xd2cbd6, true},
+                                    {0x795239, true}}};
 
   [[nodiscard]] const BlockStyle& style(Block block) const;
   bool operator==(const Content&) const = default;

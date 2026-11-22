@@ -9,7 +9,8 @@
 namespace wds::voxel {
 namespace {
 
-constexpr std::array names{"air", "grass", "dirt", "stone"};
+constexpr std::array names{"air", "grass", "dirt", "stone", "copper", "quartz", "timber"};
+constexpr std::size_t legacy_materials = 4;
 constexpr std::string_view signature = "wds-sandbox-content-v1";
 
 std::optional<std::uint32_t> color(std::string_view text) {
@@ -50,7 +51,7 @@ std::optional<Content> read_content(std::istream& input) {
   Content result;
   bool seen_sky = false;
   bool seen_placement = false;
-  std::array<bool, names.size()> seen_block{};
+  std::array<bool, legacy_materials> seen_block{};
   while (std::getline(input, line)) {
     std::istringstream row(line);
     std::string key, value, flag, extra;
@@ -62,7 +63,7 @@ std::optional<Content> read_content(std::istream& input) {
       result.sky = *parsed;
       seen_sky = true;
     } else if (key == "place" && !seen_placement && !(row >> extra)) {
-      for (std::size_t i = 1; i < names.size(); ++i) {
+      for (std::size_t i = 1; i < legacy_materials; ++i) {
         if (value == names[i]) {
           result.placement = static_cast<Block>(i);
           seen_placement = true;
@@ -71,8 +72,8 @@ std::optional<Content> read_content(std::istream& input) {
       if (!seen_placement) return std::nullopt;
     } else {
       std::size_t i = 1;
-      while (i < names.size() && key != names[i]) ++i;
-      if (i == names.size() || seen_block[i] || !(row >> flag) || (row >> extra)) {
+      while (i < legacy_materials && key != names[i]) ++i;
+      if (i == legacy_materials || seen_block[i] || !(row >> flag) || (row >> extra)) {
         return std::nullopt;
       }
       const auto parsed = color(value);
@@ -101,7 +102,7 @@ void write_content(std::ostream& output, const Content& content) {
   std::ostringstream encoded;
   encoded << signature << "\nsky " << std::hex << std::setfill('0') << std::setw(6) << content.sky
           << "\nplace " << block_name(content.placement) << '\n';
-  for (std::size_t i = 1; i < names.size(); ++i) {
+  for (std::size_t i = 1; i < legacy_materials; ++i) {
     const auto& style = content.blocks[i];
     encoded << names[i] << ' ' << std::setw(6) << style.color
             << (style.breakable ? " breakable\n" : " locked\n");

@@ -98,6 +98,7 @@ class SceneSession {
   const std::vector<SceneSprite>& sprites() const { return sprites_; }
   const std::optional<SceneControls>& controls() const { return controls_; }
   const std::optional<TileWorld>& terrain() const { return terrain_; }
+  std::vector<EcologySite> populations() const;
   const std::optional<items::Workshop>& workshop() const { return workshop_; }
   std::string_view work(const items::Action& action, const std::vector<std::string>& grid = {});
   bool advance(std::uint64_t ticks, const SceneInput& input = {});

@@ -304,11 +304,44 @@ std::optional<TilePoint> tile_point(const Json& value) {
   return TilePoint{static_cast<int>(*x), static_cast<int>(*y)};
 }
 
+FieldResult parse_ecology(const Json& value, std::optional<EcologyRules>& output) {
+  constexpr std::string_view path = "/terrain/ecology";
+  if (!has_fields(value, {"refresh_ticks", "active", "characters"}) ||
+      !value["active"].is_string() || !value["characters"].is_array())
+    return {"invalid_terrain", std::string(path)};
+  const auto refresh = integer(value["refresh_ticks"]);
+  if (!refresh || *refresh < EcologyRules::min_refresh || *refresh > EcologyRules::max_refresh)
+    return {"invalid_terrain", std::string(path) + "/refresh_ticks"};
+  const auto& rows = value["characters"];
+  if (rows.empty() || rows.size() > 16)
+    return {"invalid_terrain", std::string(path) + "/characters"};
+  const auto& active = value["active"].get_ref<const std::string&>();
+  std::set<std::string_view> ids;
+  for (std::size_t index = 0; index < rows.size(); ++index) {
+    const auto& row = rows[index];
+    const auto location = std::string(path) + "/characters/" + std::to_string(index);
+    if (!has_fields(row, {"id", "speed", "sight"}) || !row["id"].is_string())
+      return {"invalid_terrain", location};
+    const auto& id = row["id"].get_ref<const std::string&>();
+    if (!valid_id(id) || !ids.emplace(id).second) return {"invalid_terrain", location + "/id"};
+    const auto speed = integer(row["speed"]);
+    if (!speed || *speed < 1 || *speed > TileWorld::chunk_size * TileWorld::tile_size)
+      return {"invalid_terrain", location + "/speed"};
+    const auto sight = integer(row["sight"]);
+    if (!sight || *sight < 1 || *sight > EcologyRules::max_sight)
+      return {"invalid_terrain", location + "/sight"};
+    if (id == active)
+      output = EcologyRules{static_cast<int>(*refresh),
+                            {id, static_cast<int>(*speed), static_cast<int>(*sight)}};
+  }
+  return output ? FieldResult{"ok"} : FieldResult{"invalid_terrain", std::string(path) + "/active"};
+}
+
 FieldResult parse_tiles(const Json& value, const std::vector<SceneEntity>& entities,
-                        const std::optional<SceneControls>& controls,
-                        std::optional<TileWorld>* output) {
+                        std::optional<SceneControls>& controls, std::optional<TileWorld>* output) {
   if (!controls || controls->speed > TileWorld::chunk_size * TileWorld::tile_size ||
-      !has_fields(value, {"seed", "day_ticks", "day_start", "tiles"}))
+      (!has_fields(value, {"seed", "day_ticks", "day_start", "tiles"}) &&
+       !has_fields(value, {"seed", "day_ticks", "day_start", "tiles", "ecology"})))
     return {"invalid_terrain", "/terrain"};
   const auto seed = integer(value["seed"]);
   const auto ticks = integer(value["day_ticks"]);
@@ -333,8 +366,14 @@ FieldResult parse_tiles(const Json& value, const std::vector<SceneEntity>& entit
   const auto& player = entities[controls->player];
   if (player.half_width > TileWorld::tile_size / 2 || player.half_height > TileWorld::tile_size / 2)
     return {"invalid_terrain", "/play/player"};
+  std::optional<EcologyRules> ecology;
+  if (value.contains("ecology")) {
+    const auto parsed = parse_ecology(value["ecology"], ecology);
+    if (parsed.code != "ok") return parsed;
+    controls->speed = ecology->character.speed;
+  }
   TileWorld terrain(static_cast<std::uint32_t>(*seed), static_cast<int>(*ticks),
-                    static_cast<int>(*start), std::move(edits));
+                    static_cast<int>(*start), std::move(edits), std::move(ecology));
   terrain.stream(TileWorld::cell(player.x, player.y));
   const auto first = TileWorld::cell(player.x - player.half_width, player.y - player.half_height);
   const auto last =
@@ -452,10 +491,14 @@ FieldResult parse_voxel_scene(const Json& json, voxel::World& world,
     return {"invalid_palette_plugin", "/palette_plugin"};
   if (json.contains("terrain")) {
     const auto& terrain = json["terrain"];
-    if (!has_fields(terrain, {"seed"})) return {"invalid_voxel_world", "/terrain"};
+    if (!has_fields(terrain, {"seed"}) && !has_fields(terrain, {"seed", "profile"}))
+      return {"invalid_voxel_world", "/terrain"};
     const auto seed = integer(terrain["seed"]);
     if (!seed || *seed < 0 || *seed > UINT32_MAX) return {"invalid_voxel_world", "/terrain/seed"};
-    world.use_seed(static_cast<std::uint32_t>(*seed));
+    const bool frontier = terrain.contains("profile");
+    if (frontier && terrain["profile"] != "frontier-v1")
+      return {"invalid_voxel_world", "/terrain/profile"};
+    world.use_seed(static_cast<std::uint32_t>(*seed), frontier);
   }
   if (json.contains("workshop")) {
     auto loaded = items::read_workshop(json["workshop"], true);
@@ -1058,6 +1101,32 @@ FieldResult edit_tile(const fs::path& root, const TileEdit& edit, bool apply, bo
       });
 }
 
+FieldResult edit_character(const fs::path& root, std::uint64_t revision, std::string_view id,
+                           std::optional<int> speed, std::optional<int> sight, bool apply,
+                           bool capture_change) {
+  if (!valid_id(id)) return {"invalid_argument", "/input/id"};
+  return edit_scene_file(
+      root, revision, {{"version", 4}}, apply, capture_change, [&](Json& scene) -> FieldResult {
+        std::vector<SceneEntity> entities;
+        const auto checked = parse_scene(scene, entities);
+        if (checked.code != "ok") return checked;
+        if (!scene.contains("terrain") || !scene["terrain"].contains("ecology"))
+          return {"invalid_terrain", "/terrain/ecology"};
+        auto& ecology = scene["terrain"]["ecology"];
+        auto& rows = ecology["characters"];
+        auto found = std::ranges::find_if(
+            rows, [id](const Json& row) { return row["id"].get_ref<const std::string&>() == id; });
+        if (found == rows.end()) return {"invalid_argument", "/input/id"};
+        const bool changed = ecology["active"].get_ref<const std::string&>() != id ||
+                             (speed && (*found)["speed"] != *speed) ||
+                             (sight && (*found)["sight"] != *sight);
+        ecology["active"] = std::string(id);
+        if (speed) (*found)["speed"] = *speed;
+        if (sight) (*found)["sight"] = *sight;
+        return {"ok", "/terrain/ecology", revision, {}, {}, changed};
+      });
+}
+
 namespace {
 
 FieldResult replace_scene_source(const fs::path& root, std::uint64_t revision,
@@ -1634,8 +1703,10 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
                 {"kind", "voxel"},
                 {"revision", voxel.revision},
                 {"scene_id", voxel.source.scene_id}};
-    if (const auto& terrain = voxel.world.terrain())
+    if (const auto& terrain = voxel.world.terrain()) {
       output["terrain"] = {{"seed", terrain->seed()}, {"loaded_chunks", terrain->loaded()}};
+      if (terrain->frontier()) output["terrain"]["profile"] = "frontier-v1";
+    }
     if (voxel.workshop) output["workshop"] = items::state_json(voxel.workshop->state());
     output["palette"] = {{"provider", voxel.palette}, {"sky", voxel.world.content().sky}};
     return output.dump();
@@ -1672,6 +1743,18 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
                          {"chunk", {chunk.x, chunk.y}},
                          {"loaded_chunks", terrain->loaded()},
                          {"daylight", terrain->daylight(scene.ticks)}};
+    if (const auto& ecology = terrain->ecology()) {
+      const auto& character = ecology->character;
+      auto sites = Json::array();
+      for (const auto& site : result.session->populations())
+        sites.push_back(
+            {{"x", site.point.x}, {"y", site.point.y}, {"species", species_name(site.species)}});
+      output["ecology"] = {
+          {"refresh_ticks", ecology->refresh_ticks},
+          {"character",
+           {{"id", character.id}, {"speed", character.speed}, {"sight", character.sight}}},
+          {"populations", std::move(sites)}};
+    }
   }
   if (include_fields) {
     auto fields = Json::array();
@@ -1797,6 +1880,17 @@ Json build_operation_specs() {
        {"kind", "grass | soil | rock | canopy | default"},
        {"capture_change", "optional boolean"}},
       scene_errors);
+  add("scene.landscape.sample", "project request DIRECTORY", false,
+      {{"directory", "path"}, {"expected_revision", "integer"}, {"x", "block x"}, {"z", "block z"}},
+      scene_errors);
+  add("scene.character.set", "project request DIRECTORY", true,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"id", "character profile id"},
+       {"speed", "optional integer 1 through 128"},
+       {"sight", "optional integer 1 through 16"},
+       {"capture_change", "optional boolean"}},
+      scene_errors);
   auto export_errors = scene_errors;
   for (const auto* code : {"unsupported_export_target", "invalid_export_destination",
                            "target_exists", "missing_runtime_dependency",
@@ -1863,7 +1957,8 @@ Json build_operation_specs() {
   for (auto& operation : operations) {
     const auto& id = operation["id"].get_ref<const std::string&>();
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
-        id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set") {
+        id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set" ||
+        id == "scene.character.set") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};

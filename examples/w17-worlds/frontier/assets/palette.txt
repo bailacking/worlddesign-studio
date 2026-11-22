@@ -1,0 +1,6 @@
+wds-sandbox-content-v1
+sky aed2ea
+place stone
+grass 739952 breakable
+dirt 9b754f breakable
+stone 828b91 breakable

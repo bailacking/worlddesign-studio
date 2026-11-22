@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -20,6 +21,29 @@ enum class Tile { grass, soil, rock, canopy };
 std::optional<Tile> tile_kind(std::string_view name);
 std::uint32_t tile_color(Tile tile);
 
+struct CharacterProfile {
+  std::string id;
+  int speed;
+  int sight;
+};
+
+struct EcologyRules {
+  static constexpr int min_refresh = 6;
+  static constexpr int max_refresh = 300;
+  static constexpr int max_sight = 16;
+  int refresh_ticks;
+  CharacterProfile character;
+};
+
+enum class Species { reed, hare, moth };
+std::string_view species_name(Species species);
+std::uint32_t species_color(Species species);
+
+struct EcologySite {
+  TilePoint point;
+  Species species;
+};
+
 class TileWorld {
  public:
   static constexpr int tile_size = 16;
@@ -30,7 +54,8 @@ class TileWorld {
   static constexpr int side = (2 * chunk_radius + 1) * chunk_size;
   using Edits = std::map<TilePoint, Tile>;
 
-  TileWorld(std::uint32_t seed, int day_ticks, int day_start, Edits edits);
+  TileWorld(std::uint32_t seed, int day_ticks, int day_start, Edits edits,
+            std::optional<EcologyRules> ecology = {});
   static TilePoint cell(std::int64_t x, std::int64_t y);
   static bool inside(TilePoint point);
   void stream(TilePoint center);
@@ -39,6 +64,8 @@ class TileWorld {
   int loaded() const { return loaded_; }
   std::uint32_t seed() const { return seed_; }
   int daylight(std::uint64_t ticks) const;
+  const std::optional<EcologyRules>& ecology() const { return ecology_; }
+  std::vector<EcologySite> populations(TilePoint viewer, std::uint64_t ticks) const;
   bool resident(TilePoint point) const;
   Tile tile(TilePoint point) const;
   bool solid(TilePoint point) const { return tile(point) == Tile::rock; }
@@ -53,6 +80,7 @@ class TileWorld {
   int day_ticks_;
   int day_start_;
   Edits edits_;
+  std::optional<EcologyRules> ecology_;
   TilePoint chunk_{limit, limit};
   TilePoint corner_{};
   int loaded_ = 0;

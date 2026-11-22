@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "project_id": "reed-bank-count",
+  "revision": 0,
+  "entry_scene": "wetlands",
+  "resources": [
+    {"id": "wetlands", "kind": "scene", "path": "assets/wetlands.json", "refs": []}
+  ]
+}

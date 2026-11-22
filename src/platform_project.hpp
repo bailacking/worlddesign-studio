@@ -93,6 +93,10 @@ struct TileEdit {
 FieldResult edit_tile(const std::filesystem::path& root, const TileEdit& edit, bool apply,
                       bool capture_change = false);
 
+FieldResult edit_character(const std::filesystem::path& root, std::uint64_t revision,
+                           std::string_view id, std::optional<int> speed, std::optional<int> sight,
+                           bool apply, bool capture_change);
+
 bool edit_voxel(voxel::World& world, items::Workshop* workshop, voxel::Vec3 feet, voxel::Vec3 eye,
                 voxel::Vec3 direction, bool place);
 

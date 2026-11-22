@@ -229,6 +229,15 @@ add_test(NAME seeded_worlds COMMAND "${CMAKE_COMMAND}"
   -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples
   -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/seeded_worlds.cmake")
 
+add_executable(wds_w17_probe tests/world_ecology.cpp)
+target_link_libraries(wds_w17_probe PRIVATE wds_project wds_compile_options)
+add_test(NAME world_ecology COMMAND "${CMAKE_COMMAND}"
+  -DPROBE=$<TARGET_FILE:wds_w17_probe>
+  -DCLI=$<TARGET_FILE:wds_cli>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/world-ecology
+  -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples/w17-worlds
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/world_ecology.cmake")
+
 add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)
 target_link_libraries(wds_w12_probe PRIVATE wds_project wds_compile_options)
 
