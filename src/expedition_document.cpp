@@ -104,9 +104,11 @@ Region region(const Json& row, const std::string& location, std::set<std::string
     const auto where = point(entry["at"], width, height, path + "/at");
     if (!occupied.insert(where).second) throw Invalid{path + "/at"};
     const auto power = entry.contains("power") ? integer(entry, "power", 1, 20, path) : 1;
+    if (entry.contains("capacity") && kind != "anchor") throw Invalid{path + "/capacity"};
+    const auto capacity = entry.contains("capacity") ? integer(entry, "capacity", 1, 20, path) : 3;
     result.sites.push_back({key, kind, where, token(entry, "target", path, true),
                             token(entry, "item", path, true), token(entry, "reward", path, true),
-                            power});
+                            power, capacity});
   }
   return result;
 }
@@ -258,6 +260,7 @@ Json state(const Expedition& expedition) {
           {"ending", current.ending},
           {"anchor_charge", current.anchor_charge},
           {"anchor", expedition.rules().regions[current.anchor].id},
+          {"anchor_site", current.anchor_site},
           {"population", current.population},
           {"companions", current.companions},
           {"encounters", current.encounters},

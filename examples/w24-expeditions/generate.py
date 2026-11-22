@@ -58,7 +58,7 @@ def copper_regions():
                site("return", "chapter", 10, 1, item="spire-emblem", target="spire-found")),
         region("slag-field", "ember",
                site("ember-market", "trade", 2, 1, item="ore", reward="charge"),
-               site("kiln-anchor", "anchor", 1, 2, item="charge"),
+               site("kiln-anchor", "anchor", 1, 2, item="charge", capacity=2),
                site("fortress-ruin", "chapter", 3, 1, item="badge", target="departure"),
                site("cooling-vault", "rest", 3, 2, power=8),
                site("sky-gate", "portal", 5, 1, item="spear", target="cloud-ring"),

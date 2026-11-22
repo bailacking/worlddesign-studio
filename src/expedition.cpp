@@ -178,12 +178,15 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   }
   if (site.kind == "portal") return enter(site) ? "ok" : "route_locked";
   if (site.kind == "trade") return award(site.reward, site.item) ? "ok" : "trade_unavailable";
+  if (site.kind == "anchor" && state_.anchor_site == site.id &&
+      state_.anchor_charge >= site.anchor_capacity)
+    return "anchor_full";
   if (!site.item.empty() && !workshop_.has_item(site.item)) return "missing_item";
   if (site.kind == "anchor") {
-    if (state_.anchor_charge == 3 && state_.anchor == state_.region) return "anchor_full";
     if (!workshop_.consume(site.item, 1)) return "missing_item";
-    state_.anchor_charge = state_.anchor == state_.region ? state_.anchor_charge + 1 : 1;
+    state_.anchor_charge = state_.anchor_site == site.id ? state_.anchor_charge + 1 : 1;
     state_.anchor = state_.region;
+    state_.anchor_site = site.id;
     change("anchor_charged", 0);
   } else if (site.kind == "dock") {
     if (state_.boat != 0) return "already_launched";

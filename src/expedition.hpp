@@ -25,6 +25,7 @@ struct Site {
   std::string item;
   std::string reward;
   int power;
+  int anchor_capacity = 3;
 };
 
 struct Region {
@@ -82,6 +83,7 @@ struct State {
   bool dead = false;
   bool ending = false;
   std::size_t anchor = 0;
+  std::string anchor_site;
   std::string chapter = "departure";
   std::map<std::string, int, std::less<>> encounters;
   std::map<std::string, TilePoint, std::less<>> actors;

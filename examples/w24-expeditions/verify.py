@@ -117,6 +117,16 @@ def journey(cli, projects):
     assert not recovery["state"]["dead"] and "revival" in causes(recovery["steps"][-1:])
     assert carry(recovery["state"], "spear") and recovery["state"]["positions"]["cloud-ring"] == [1, 1]
 
+    at_market = COPPER_TO_SKY.index(use("ember-market"))
+    capacities = replay(cli, copper, [
+        *gather("copper-vein", 3), *COPPER_TO_SKY[:at_market],
+        *([use("ember-market"), use("kiln-anchor")] * 3),
+    ])
+    assert all(step["code"] == "ok" for step in capacities["steps"][:-1])
+    rejected = capacities["steps"][-1]
+    assert rejected["code"] == "anchor_full" and rejected["anchor_charge"] == 2
+    assert rejected["tick"] == capacities["steps"][-2]["tick"] and carry(rejected, "charge")
+
     permanent = replay(cli, drift, [*([WAIT] * 132), action("revive")])
     assert permanent["steps"][-1]["code"] == "permanent_death" and permanent["state"]["dead"]
     token = replay(cli, drift, [*DRIFT_TO_SHORE, *([WAIT] * 150), action("revive")])
@@ -142,9 +152,10 @@ def persistence(probe, project, save):
         assert result.returncode == expected, (stage, result.returncode)
 
 
-def reauthor(cli, project):
+def reauthor(cli, project, route):
     path = project / "assets" / "expedition.json"
     data = json.loads(path.read_text(encoding="utf-8"))
+    start = time.perf_counter()
     initial = data["regions"][0]["sites"][0]["reward"]
     data["regions"][0]["sites"][0]["reward"] = "unknown"
     write_json(path, data)
@@ -158,29 +169,49 @@ def reauthor(cli, project):
     trial = call(cli, project, "expedition.replay", {"actions": []})
     assert trial["code"] == "invalid_expedition" and trial["location"].endswith("/icons/source"), trial
     icon.write_bytes(original)
+    repair_ms = (time.perf_counter() - start) * 1000
     rejected = call(cli, project, "resource.field.set",
                     {"resource_id": "expedition", "field": "hunger_interval", "value": 0},
                     mode="apply", access=("--allow-project-write",))
     assert rejected["code"] == "invalid_expedition" and rejected["revision"] == 0, rejected
     start = time.perf_counter()
-    receipt = call(cli, project, "resource.field.set",
-                   {"resource_id": "expedition", "field": "hunger_interval", "value": 3},
-                   mode="apply", access=("--allow-project-write",))
-    assert receipt["code"] == "ok" and receipt["revision"] == 1, receipt
-    after = replay(cli, project, [WAIT] * 3, revision=1)
+    for expected, (field, value) in enumerate((
+        ("hunger_interval", 3),
+        ("seed", (data["seed"] + 1) % 2**32),
+    )):
+        receipt = call(
+            cli, project, "resource.field.set",
+            {"resource_id": "expedition", "field": field, "value": value},
+            revision=expected, mode="apply", access=("--allow-project-write",),
+        )
+        assert receipt["code"] == "ok" and receipt["revision"] == expected + 1, receipt
+    edit_ms = (time.perf_counter() - start) * 1000
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["seed"] != data["seed"] and saved["hunger_interval"] == 3
+    after = replay(cli, project, [WAIT] * 3, revision=2)
     assert after["state"]["hunger"] == 19
-    return (time.perf_counter() - start) * 1000
+    revised = replay(cli, project, route, revision=2)
+    failures = [(index, step["code"]) for index, step in enumerate(revised["steps"])
+                if step["code"] != "ok"]
+    assert not failures and revised["state"]["ending"], (project.name, failures)
+    return {"repair_ms": repair_ms, "edit_ms": edit_ms}
 
 
 def export(cli, source, destination, revision):
+    start = time.perf_counter()
     result = subprocess.run([cli, "project", "export", source, str(revision), "windows-x64", destination],
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     assert not result.returncode, (result.stdout, result.stderr)
+    packed = time.perf_counter()
     assert (destination / "game" / "assets" / "icon-portal.png").is_file()
     env = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
-    for mode in ("--check", "--expedition-smoke"):
+    checks = {"pack_ms": (packed - start) * 1000}
+    for mode, metric in (("--check", "check_ms"), ("--expedition-smoke", "graphics_ms")):
+        start = time.perf_counter()
         subprocess.run([destination / "Play.exe", mode], cwd=destination.parent,
                        env=env, timeout=20, check=True)
+        checks[metric] = (time.perf_counter() - start) * 1000
+    return checks
 
 
 def main():
@@ -190,12 +221,16 @@ def main():
     parser.add_argument("--runtime", type=Path)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--seed", type=int, default=73021)
+    parser.add_argument("--scale", type=int, default=4, choices=range(5))
     args = parser.parse_args()
+    if not 0 <= args.seed < 2**32:
+        parser.error("--seed must be an unsigned 32-bit integer")
     args.work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="w24-", dir=args.work) as folder:
         root = Path(folder)
         start = time.perf_counter()
-        metrics = generate(root / "projects", scale=4)
+        metrics = generate(root / "projects", seed=args.seed, scale=args.scale)
         generation = time.perf_counter()
         reports = journey(args.cli.resolve(), root / "projects")
         replayed = time.perf_counter()
@@ -203,24 +238,25 @@ def main():
         drift = root / "projects" / "drift-naturalists"
         persistence(args.probe.resolve(), drift, root / "save.json")
         checkpoint = time.perf_counter()
+        packages = {}
         if args.runtime:
-            export(args.runtime.resolve(), copper, root / "copper-original", 0)
-            export(args.runtime.resolve(), drift, root / "drift-original", 0)
+            packages["copper-r0"] = export(args.runtime.resolve(), copper, root / "copper-original", 0)
+            packages["drift-r0"] = export(args.runtime.resolve(), drift, root / "drift-original", 0)
         first_packed = time.perf_counter()
-        patched = reauthor(args.cli.resolve(), drift) + reauthor(args.cli.resolve(), copper)
+        changes = {"copper": reauthor(args.cli.resolve(), copper, COPPER),
+                   "drift": reauthor(args.cli.resolve(), drift, DRIFT)}
         before_pack = time.perf_counter()
         if args.runtime:
-            export(args.runtime.resolve(), copper, root / "copper-revised", 1)
-            export(args.runtime.resolve(), drift, root / "drift-revised", 1)
-        end = time.perf_counter()
-        result = {**metrics, "total_generation_ms": (generation - start) * 1000,
+            packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised", 2)
+            packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised", 2)
+        result = {**metrics, "seed": args.seed, "scale": args.scale,
+                  "total_generation_ms": (generation - start) * 1000,
                   "replay_and_coverage_ms": (replayed - generation) * 1000,
                   "checkpoint_ms": (checkpoint - replayed) * 1000,
-                  "rule_transaction_ms": patched, "reauthor_ms": (before_pack - first_packed) * 1000,
-                  "export_ms": ((first_packed - checkpoint) + (end - before_pack)) * 1000
-                  if args.runtime else None,
+                  "reauthor_ms": (before_pack - first_packed) * 1000,
+                  "reauthor": changes, "packages": packages,
                   "route_steps": {key: len(value["steps"]) for key, value in reports.items()},
-                  "independent_packages_checked": 4 if args.runtime else 0}
+                  "independent_packages_checked": len(packages)}
         if args.report:
             write_json(args.report, result)
         print(json.dumps(result, indent=2))
