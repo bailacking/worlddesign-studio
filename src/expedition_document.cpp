@@ -64,9 +64,9 @@ TilePoint point(const Json& value, int width, int height, const std::string& loc
 }
 
 const Json& array(const Json& row, const char* key, std::size_t low, std::size_t high,
-                  const std::string& location) {
+                  std::string_view location) {
   if (!row.contains(key) || !row[key].is_array() || row[key].size() < low || row[key].size() > high)
-    throw Invalid{location + "/" + key};
+    throw Invalid{std::string(location) + "/" + key};
   return row[key];
 }
 
