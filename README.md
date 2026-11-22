@@ -45,6 +45,8 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 周交付记录已更新至 W17。种子方块场景加入群系、矿脉和村落，二维地块场景加入生态刷新和角色档案。 [W17 样例](examples/w17-worlds/README.md)Windows 本机已验收二维与三维方块项目从创建到独立导出和续编的流程。Linux x64 与 macOS arm64 已有 W11 原生工作台验证。W8 的第二台 Windows 机器与创作者签收、W12–W16 的发起人亲手验收仍待完成。 [周交付记录](docs/project/roadmap.md#周交付记录) · [W16 验收](docs/project/w16-shared-delivery.md)
 
+W18–W24 的两条原创远征可从空目录生成，导出后独立试玩，并可修改规则后再发布。 [试玩步骤](examples/w24-expeditions/README.md) · [W18–W24 验收](docs/project/w18-w24-expeditions.md)
+
 ## 开源与协作
 
 WDS 由王大帅发起，以 **MIT** 许可证开放自有且有权授权的代码与文档。欢迎参与、复用、商业应用和独立衍生。贡献者地位平等，维护权限对应具体责任；插件评价依据用户体验与公开证据。

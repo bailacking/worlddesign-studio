@@ -5,7 +5,7 @@ if(NOT status STREQUAL "0")
   message(FATAL_ERROR "Project operation discovery failed")
 endif()
 set(expected_ids
-  behavior.convert circuit.replay
+  behavior.convert circuit.replay expedition.replay
   project.create project.export project.imports project.index project.open
   project.play project.recover project.resources project.validate
   resource.field.preview resource.field.set resource.import.apply resource.import.preview

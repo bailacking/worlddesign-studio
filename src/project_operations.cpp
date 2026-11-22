@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "behavior_document.hpp"
+#include "expedition.hpp"
 #include "platform_project.hpp"
 #include "project_export.hpp"
 #include "project_io.hpp"
@@ -90,6 +91,13 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   const auto revision = expected.value_or(0);
   const bool apply = mode == "apply";
   if (id == "project.index") return project_index(directory, expected);
+  if (id == "expedition.replay") {
+    auto loaded = expedition::load(directory, revision);
+    if (!loaded.expedition) return fail(loaded.code, loaded.location);
+    const auto actions = input.find("actions");
+    if (actions == input.end()) return fail("invalid_argument", "/input/actions");
+    return Json::parse(expedition::replay(std::move(*loaded.expedition), actions->dump()));
+  }
   if (id == "circuit.replay") return voxel::replay_circuit(input);
   if (id == "behavior.convert") {
     const auto document = input.find("document");

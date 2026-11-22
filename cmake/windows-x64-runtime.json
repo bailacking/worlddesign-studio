@@ -7,6 +7,7 @@
   "workshop_format": 1,
   "voxel_format": 1,
   "world_ecology_format": 1,
+  "expedition_format": 1,
   "minimum_environment": {
     "os": "Windows 10 x64",
     "graphics": "OpenGL 3.3"

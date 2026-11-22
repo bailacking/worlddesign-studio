@@ -2,6 +2,7 @@
 
 #include "asset_import.hpp"
 #include "behavior_document.hpp"
+#include "expedition.hpp"
 #include "project_io.hpp"
 #include "project_operations.hpp"
 #include "voxel_palette.hpp"
@@ -1016,9 +1017,14 @@ FieldResult edit_field(const fs::path& root, const FieldEdit& edit, bool apply) 
     if (!result.changed) return result;
     if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
     *field = edit.value;
-    const auto code =
-        commit_edit(root, *resource, {{"version", 1}, {"field", edit.field}}, *manifest_bytes,
-                    *data_bytes, manifest, data.dump(2) + "\n", revision, apply);
+    const auto source = data.dump(2) + "\n";
+    const auto& declared = entry_resource(*project.project).refs;
+    if (edit.resource == "expedition" &&
+        std::ranges::find(declared, edit.resource) != declared.end())
+      if (const auto error = expedition::document_error(source))
+        return {"invalid_expedition", resource->path + *error, revision};
+    const auto code = commit_edit(root, *resource, {{"version", 1}, {"field", edit.field}},
+                                  *manifest_bytes, *data_bytes, manifest, source, revision, apply);
     if (code != "ok")
       return {code, code == "recovery_required" ? journal_name : resource->path, revision};
     if (!apply) return result;
@@ -1880,6 +1886,9 @@ Json build_operation_specs() {
        {"kind", "grass | soil | rock | canopy | default"},
        {"capture_change", "optional boolean"}},
       scene_errors);
+  add("expedition.replay", "project request DIRECTORY", false,
+      {{"directory", "path"}, {"expected_revision", "integer"}, {"actions", "array of actions"}},
+      {"no_expedition", "invalid_expedition", "invalid_action", "revision_conflict", "io_error"});
   add("scene.landscape.sample", "project request DIRECTORY", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"x", "block x"}, {"z", "block z"}},
       scene_errors);
@@ -1909,8 +1918,9 @@ Json build_operation_specs() {
                         {"expected_revision", "integer"},
                         {"value", "integer"}};
   auto edit_errors = read_errors;
-  for (const auto* code : {"invalid_argument", "revision_conflict", "invalid_resource",
-                           "invalid_field", "edit_too_large", "revision_exhausted"})
+  for (const auto* code :
+       {"invalid_argument", "revision_conflict", "invalid_resource", "invalid_field",
+        "edit_too_large", "revision_exhausted", "invalid_expedition"})
     edit_errors.push_back(code);
   add("resource.field.preview", "project preview-field DIRECTORY RESOURCE FIELD REVISION VALUE",
       false, edit_input, edit_errors);

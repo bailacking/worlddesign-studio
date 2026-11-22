@@ -8,6 +8,7 @@
 #include <map>
 #include <numbers>
 
+#include "expedition.hpp"
 #include "platform_project.hpp"
 #include "player_view.hpp"
 
@@ -465,6 +466,13 @@ int main(int argc, char** argv) {
   auto result = start_scene(path, opened.project->revision, true);
   if (!result.session && !result.voxel_scene) {
     std::cerr << scene_result_json(result) << '\n';
+    return 1;
+  }
+  auto journey = wds::expedition::load(path, opened.project->revision);
+  if (journey.expedition)
+    return wds::player::play_expedition(*journey.expedition, journey.icons, {}) ? 0 : 1;
+  if (journey.code != "no_expedition") {
+    std::cerr << journey.code << ": " << journey.location << '\n';
     return 1;
   }
   if (result.voxel_scene)

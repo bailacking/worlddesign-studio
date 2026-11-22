@@ -1,5 +1,6 @@
 #include "project_export.hpp"
 
+#include "expedition.hpp"
 #include "platform_project.hpp"
 #include "project_io.hpp"
 
@@ -105,7 +106,7 @@ bool valid_runtime(const Json& metadata) {
   for (const auto& [name, value] : spec.items()) {
     // Earlier players can export scenes that use only the capabilities they advertise.
     if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format" ||
-         name == "voxel_format" || name == "world_ecology_format") &&
+         name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -296,6 +297,11 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/behavior_format");
     if (scene.session && scene.session->terrain() && !metadata.contains("terrain_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/terrain_format");
+    const auto route = expedition::load(stage / "game", revision);
+    if (route.code != "ok" && route.code != "no_expedition")
+      fail(route.code.c_str(), route.location);
+    if (route.expedition && !metadata.contains("expedition_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_format");
     const bool frontier = scene.voxel_scene && scene.voxel_scene->world.terrain() &&
                           scene.voxel_scene->world.terrain()->frontier();
     const bool ecology =
