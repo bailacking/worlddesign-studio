@@ -197,6 +197,22 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
             {"landmark", terrain->landmark(x, z)},
             {"blocks", std::move(blocks)}};
   }
+  if (id == "scene.landscape.environment") {
+    const auto x = number<int>(input, "x"), y = number<int>(input, "y"),
+               z = number<int>(input, "z");
+    const auto tick = number<std::uint32_t>(input, "tick");
+    const auto loaded = start_scene(directory, revision, true);
+    if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+    if (!loaded.voxel_scene || !loaded.voxel_scene->world.terrain())
+      return fail("unsupported_scene_kind", "/terrain");
+    const auto sample = loaded.voxel_scene->world.environment(x, y, z, tick);
+    if (!sample) return fail("invalid_argument", "/input");
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"weather", sample->weather},
+            {"open_sky", sample->open_sky},
+            {"vertical_light", sample->vertical_light}};
+  }
   if (id == "scene.character.set") {
     const auto optional = [&](const char* key) -> std::optional<int> {
       return input.contains(key) ? std::optional(number<int>(input, key)) : std::nullopt;

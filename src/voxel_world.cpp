@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include "seeded_grid.hpp"
+
 namespace wds::voxel {
 namespace {
 
@@ -201,6 +203,27 @@ std::string_view World::shift_block(int x, int y, int z, int dx, int dz) {
   if (spawn_loaded && candidate.collides(spawn)) return "spawn_blocked";
   *this = std::move(candidate);
   return "ok";
+}
+
+std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::uint32_t tick) const {
+  if (!terrain_ || x < -SeededTerrain::limit || x >= SeededTerrain::limit ||
+      z < -SeededTerrain::limit || z >= SeededTerrain::limit || y < 0 || y >= height)
+    return {};
+  stream({static_cast<double>(x), 0, static_cast<double>(z)});
+  bool open_sky = true;
+  for (int above = y; above < height; ++above) {
+    if (block(x, above, z) == Block::air) continue;
+    open_sky = false;
+    break;
+  }
+  constexpr std::array weather_names{"clear", "rain", "storm"};
+  constexpr std::array attenuation{0, 2, 4};
+  const auto roll = coordinate_hash(terrain_->seed(), static_cast<int>(tick / 120), 0) % 10U;
+  const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
+  const int time = static_cast<int>(tick % 240);
+  const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, 14) + 1;
+  return EnvironmentSample{weather_names[weather], open_sky,
+                           open_sky ? std::max(1, daytime - attenuation[weather]) : 0};
 }
 
 bool World::read(std::istream& input) {

@@ -1903,6 +1903,14 @@ Json build_operation_specs() {
   add("scene.landscape.sample", "project request DIRECTORY", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"x", "block x"}, {"z", "block z"}},
       scene_errors);
+  add("scene.landscape.environment", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"x", "block x"},
+       {"y", "block y"},
+       {"z", "block z"},
+       {"tick", "absolute game tick"}},
+      scene_errors);
   add("scene.character.set", "project request DIRECTORY", true,
       {{"directory", "path"},
        {"expected_revision", "integer"},

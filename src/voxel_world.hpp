@@ -28,6 +28,12 @@ struct Camera {
   [[nodiscard]] Vec3 ray(double horizontal, double vertical) const;
 };
 
+struct EnvironmentSample {
+  std::string_view weather;
+  bool open_sky;
+  int vertical_light;
+};
+
 class World {
  public:
   static constexpr int width = 24;
@@ -40,6 +46,8 @@ class World {
   [[nodiscard]] Hit cast(Vec3 origin, Vec3 direction, double limit) const;
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
   std::string_view shift_block(int x, int y, int z, int dx, int dz);
+  [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
+                                                             std::uint32_t tick) const;
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }

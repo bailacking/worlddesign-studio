@@ -10,7 +10,7 @@ set(expected_ids
   project.play project.recover project.resources project.validate
   resource.field.preview resource.field.set resource.import.apply resource.import.preview
   scene.character.set scene.entity.apply scene.entity.preview scene.field.preview scene.field.set
-  scene.inspect scene.landscape.sample scene.navigate scene.palette.set scene.restore scene.tile.set scene.voxel.actuate
+  scene.inspect scene.landscape.environment scene.landscape.sample scene.navigate scene.palette.set scene.restore scene.tile.set scene.voxel.actuate
 )
 set(writers
   project.create project.recover resource.field.set resource.import.apply scene.field.set

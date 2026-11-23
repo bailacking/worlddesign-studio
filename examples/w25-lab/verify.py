@@ -111,6 +111,15 @@ def actuate(cli, project):
     def operation(expected="ok", **options):
         return request(cli, project, "scene.voxel.actuate", values, expected, **options)
 
+    def sky(x, tick, revision):
+        return request(cli, project, "scene.landscape.environment",
+                       {"x": x, "y": 10, "z": 1, "tick": tick}, revision=revision)
+
+    left, right = sky(15, 90, 0), sky(16, 90, 0)
+    assert left["weather"] == right["weather"]
+    assert not left["open_sky"] and left["vertical_light"] == 0
+    assert right["open_sky"] and right["vertical_light"] > 1
+    assert sky(16, 230, 0)["vertical_light"] == 1
     assert not operation(mode="preview")["changed"]
     values["circuit"]["events"].append({"tick": 0, "id": "switch", "level": 15})
     preview = operation(mode="preview")
@@ -129,11 +138,15 @@ def actuate(cli, project):
     assert json.loads(source.read_text(encoding="utf-8"))["world"] == (
         "wds-voxel-seeded-v1\n16 11 1 3\n"
     )
+    left_next, right_next = sky(15, 90, 1), sky(16, 90, 1)
+    assert left_next["weather"] == right_next["weather"] == right["weather"]
+    assert left_next["open_sky"] and left_next["vertical_light"] == right["vertical_light"]
+    assert not right_next["open_sky"] and right_next["vertical_light"] == 0
     operation("revision_conflict", mode="apply")
     operation("immovable", mode="apply", revision=1)
     checked = request(cli, project, "scene.inspect", {}, revision=1)
     assert checked["revision"] == 1 and checked["kind"] == "voxel"
-    print("Delayed circuit actuation moves a real block across chunk boundary and reopens")
+    print("Cross-chunk actuation and reopen, with seeded weather and changing sky coverage")
 
 
 def garden(cli, project, probe, save):
