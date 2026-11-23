@@ -88,22 +88,22 @@ Json project_index(const fs::path& directory, std::optional<std::uint64_t> expec
 }
 
 std::optional<int> actuator_tick(const Json& trace, std::string_view trigger, std::string_view gate,
-                                 bool powered) {
+                                 bool powered, bool rising) {
   auto event = trace.begin();
   while (event != trace.end()) {
     const auto tick = (*event)["tick"].get<int>();
-    bool rising = false;
+    bool triggered = false;
     do {
       const auto& phase = (*event)["phase"];
       if (phase == "update" || phase == "input") {
         const auto& id = (*event)["id"].get_ref<const std::string&>();
         const bool high = (*event)["to"] != 0;
         if (id == gate) powered = high;
-        if (id == trigger && (*event)["from"] == 0 && high) rising = true;
+        if (id == trigger && high == rising && ((*event)["from"] == 0) == rising) triggered = true;
       }
       ++event;
     } while (event != trace.end() && (*event)["tick"] == tick);
-    if (rising && powered) return tick;
+    if (triggered && powered) return tick;
   }
   return {};
 }
@@ -115,6 +115,12 @@ Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, cons
   const auto capacity = input.contains("capacity") ? number<int>(input, "capacity") : 1;
   if (capacity < 1 || capacity > voxel::World::push_capacity)
     return fail("invalid_argument", "/input/capacity");
+  const auto motion = input.contains("motion") ? text(input, "motion") : "push";
+  if (motion != "push" && motion != "sticky-pull") return fail("invalid_argument", "/input/motion");
+  const bool pull = motion == "sticky-pull";
+  if (pull && capacity != 1) return fail("invalid_argument", "/input/capacity");
+  if (pull && !((dx == 0 && (dz == -1 || dz == 1)) || (dz == 0 && (dx == -1 || dx == 1))))
+    return fail("invalid_direction", "/input");
   if (!input.contains("circuit")) return fail("invalid_argument", "/input/circuit");
   const auto& circuit = input["circuit"];
   const auto replay = voxel::replay_circuit(circuit);
@@ -132,10 +138,11 @@ Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, cons
   auto loaded = start_scene(directory, revision, true);
   if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
   if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
-  const auto pulse = actuator_tick(replay["trace"], trigger, gate, powered);
+  const auto pulse = actuator_tick(replay["trace"], trigger, gate, powered, !pull);
   if (!pulse) return {{"code", "ok"}, {"revision", revision}, {"changed", false}};
   auto& scene = *loaded.voxel_scene;
-  const auto result = scene.world.shift_blocks(x, y, z, dx, dz, capacity);
+  const int move_x = pull ? -dx : dx, move_z = pull ? -dz : dz;
+  const auto result = scene.world.shift_blocks(x, y, z, move_x, move_z, capacity);
   if (result.code != "ok") return fail(result.code, "/input");
   auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
   saved.scene_change.reset();
@@ -144,7 +151,7 @@ Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, cons
     reply["tick"] = *pulse;
     reply["moved"] = result.moved;
     reply["from"] = {x, y, z};
-    reply["to"] = {x + dx, y, z + dz};
+    reply["to"] = {x + move_x, y, z + move_z};
   }
   return reply;
 }

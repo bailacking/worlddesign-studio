@@ -211,6 +211,34 @@ def actuate(cli, project):
     checked = request(cli, project, "scene.inspect", {}, revision=1)
     assert checked["revision"] == 1 and checked["kind"] == "voxel"
 
+    sticky = {**values, "x": 16, "motion": "sticky-pull",
+              "circuit": {**values["circuit"], "ticks": 8}}
+
+    def retract(values, expected="ok", mode="preview"):
+        return request(cli, project, "scene.voxel.actuate", values, expected,
+                       revision=1, mode=mode)
+
+    pushed_bytes = source.read_bytes()
+    assert not retract(sticky)["changed"]
+    sticky["circuit"]["events"] = [
+        *values["circuit"]["events"], {"tick": 3, "id": "switch", "level": 0},
+    ]
+    planned = retract(sticky)
+    assert planned["tick"] == 5 and planned["from"] == [16, 11, 1]
+    assert planned["to"] == [15, 11, 1] and source.read_bytes() == pushed_bytes
+    assert not retract({**sticky, "requires_high": "switch"})["changed"]
+    retract({**sticky, "capacity": 2}, "invalid_argument", "apply")
+    obstructed = json.loads(pushed_bytes)
+    obstructed["world"] += "15 11 1 1\n"
+    source.write_text(json.dumps(obstructed), encoding="utf-8")
+    obstructed_bytes = source.read_bytes()
+    retract(sticky, "target_occupied", "apply")
+    assert source.read_bytes() == obstructed_bytes
+    source.write_bytes(pushed_bytes)
+    restored = retract(sticky, mode="apply")
+    assert restored["revision"] == 2
+    assert json.loads(source.read_text(encoding="utf-8"))["world"] == document["world"]
+
     # Place a three-block chain across the chunk seam in a separate circuit bench.
     chain = project.with_name("chain-bench")
     shutil.copytree(project, chain)
