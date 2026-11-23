@@ -59,4 +59,4 @@ CMake 提供 `Tools` 和 `PluginSDK` 安装组件。Windows 播放器构建另�
 
 ## Windows 回归
 
-2026 年 11 月 23 日，Windows x64 本机 22 项回归通过，含两次 CLI 进程间的电路检查点、从第 15 列向第 16 列跨区块推动并重新打开、农场跨地区保存重开，以及双工作树的真实 Git 合并。发行试验另运行 Windows 包完整性和图形启动检查，并验证缺少 `survival_format` 声明的运行包会被拒绝用于发布「风园试验场」。
+2026 年 11 月 23 日，Windows x64 本机 22 项回归通过，含两次 CLI 进程间的电路检查点、从第 15 列向第 16 列跨区块推动并重新打开、农场跨地区保存重开，以及双工作树的真实 Git 合并。W25 和 W26 的发行试验通过图形启动和运行包兼容性检查。新增存档槽的本机播放器构建触发 Defender 隔离。最新源码的独立包、存档槽和安装路径使用 [Windows CI 核验](https://github.com/bailacking/worlddesign-studio/pull/13/checks)，该任务运行无界面检查。

@@ -41,3 +41,32 @@ jobs:
       - run: cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo
       - run: cmake --build build/sdk-demo --parallel 2
       - run: ctest --test-dir build/sdk-demo --output-on-failure --no-tests=error
+
+  windows-package:
+    name: Windows install and package
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Build, install and verify independent game packages
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw "MSVC x64 tools not found." }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          cmake --preset dev -B build/package -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_WINDOWS_PLAYER=ON
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/package --target wds_player wds_cli wds_expedition_save --parallel 3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/package --component Tools --prefix build/installed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/package --component WindowsRuntime --prefix build/installed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python examples/w25-lab/verify.py --cli build/installed/bin/wds_cli.exe --probe build/package/wds_expedition_save.exe --runtime build/installed/bin/wds_cli.exe --work build/package-verify --no-graphics
+          exit $LASTEXITCODE

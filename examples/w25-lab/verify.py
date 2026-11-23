@@ -382,13 +382,14 @@ def combined(cli, project, variants, destination):
     print("Integrated 26-action route from crafting gears through eruption to the story ending")
 
 
-def package(cli, project, root, capability, probe=None):
+def package(cli, project, root, capability, probe=None, *, graphics=True):
     root.mkdir()
     destination = root / "release"
     export = [cli, "project", "export", project, "0", "windows-x64", destination]
     subprocess.run(export, timeout=30, check=True, capture_output=True)
     runtime = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
-    for mode in ("--check", "--expedition-smoke"):
+    modes = ("--check", "--expedition-smoke") if graphics else ("--check",)
+    for mode in modes:
         subprocess.run([destination / "Play.exe", mode], cwd=root, env=runtime,
                        timeout=20, check=True)
     if probe:
@@ -417,7 +418,8 @@ def package(cli, project, root, capability, probe=None):
     result = json.loads(failure.stdout)
     assert failure.returncode and result["code"] == "invalid_runtime_dependency", result
     assert result["location"].endswith("/" + capability) and not rejected.exists()
-    print("Standalone Windows validation, graphics smoke, older runtime rejection")
+    label = "with graphics smoke" if graphics else "headless"
+    print(f"Standalone Windows validation {label}, older runtime rejection")
 
 
 def main():
@@ -426,6 +428,8 @@ def main():
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--no-graphics", action="store_true",
+                        help="check packaging and saves without opening a graphics window")
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="w25-", dir=args.work) as folder:
@@ -444,11 +448,13 @@ def main():
         story(args.cli.resolve(), project, chronicle)
         combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
         if args.runtime:
-            package(args.runtime.resolve(), project, root / "garden-package", "survival_format",
-                    args.probe.resolve())
-            package(args.runtime.resolve(), coast, root / "coast-package", "exposure_format")
-            package(args.runtime.resolve(), kiln, root / "kiln-package", "processing_format")
-            package(args.runtime.resolve(), chronicle, root / "story-package", "story_format")
+            runtime = args.runtime.resolve()
+            graphics = not args.no_graphics
+            package(runtime, project, root / "garden-package", "survival_format",
+                    args.probe.resolve(), graphics=graphics)
+            package(runtime, coast, root / "coast-package", "exposure_format", graphics=graphics)
+            package(runtime, kiln, root / "kiln-package", "processing_format", graphics=graphics)
+            package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
 
 
 if __name__ == "__main__":
