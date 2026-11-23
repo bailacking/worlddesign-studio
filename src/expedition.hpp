@@ -77,6 +77,11 @@ enum class Command {
 
 enum class PlayMode { journey, build, trial, survey };
 
+using KeyBindings = std::map<std::string, std::vector<std::string>, std::less<>>;
+
+const KeyBindings& default_key_bindings();
+bool valid_input_key(std::string_view name);
+
 struct RulePack {
   std::string resource;
   PlayMode mode;
@@ -94,6 +99,7 @@ struct Rules {
   int hunger_interval;
   std::vector<Region> regions;
   std::optional<RulePack> pack{};
+  KeyBindings keys{};
 };
 
 struct Action {
@@ -161,6 +167,7 @@ class Expedition {
   PlayMode mode() const { return rules_.pack ? rules_.pack->mode : PlayMode::journey; }
   bool allows(Command command) const;
   std::vector<std::string_view> permitted_commands() const;
+  const KeyBindings& input_keys() const;
   const Site* nearby(std::string_view target) const;
   std::vector<const Site*> nearby_sites() const;
   int terrain(TilePoint point) const;

@@ -157,17 +157,14 @@ if(WDS_BUILD_MODERN_STUDIO)
   add_test(NAME workbench_behavior_smoke COMMAND wds_studio_modern --smoke
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/shared-behavior"
     "${CMAKE_CURRENT_BINARY_DIR}/w11-workbench.png")
-  set_tests_properties(workbench_behavior_smoke PROPERTIES TIMEOUT 25)
-  if(WIN32)
-    add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
-      "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
-    add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
-      "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
-    add_test(NAME workbench_workyard_smoke COMMAND wds_studio_modern --smoke
-      "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workyard")
-    set_tests_properties(workbench_smoke workbench_voxel_smoke workbench_workyard_smoke PROPERTIES
-      ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
-  endif()
+  add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
+  add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
+  add_test(NAME workbench_workyard_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workyard")
+  set_tests_properties(workbench_behavior_smoke workbench_smoke workbench_voxel_smoke
+    workbench_workyard_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
 endif()
 
 if(WDS_BUILD_W15_LAB)

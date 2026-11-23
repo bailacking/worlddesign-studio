@@ -642,6 +642,39 @@ def play_modes(cli, probe, project, root):
     print("Four rule packs enforce commands, movement and metabolism, with save identity checks")
 
 
+def input_remapping(cli, probe, project, destination):
+    shutil.copytree(project, destination)
+    original_save = destination / "before-remapping.save.json"
+    subprocess.run([probe, project, original_save, "farm-start"], check=True, timeout=20)
+    manifest_path = destination / "wds.project.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expedition = next(item for item in manifest["resources"] if item["id"] == "expedition")
+    expedition["refs"].append("expedition-controls")
+    manifest["resources"].append({
+        "id": "expedition-controls", "kind": "data", "path": "assets/controls.json", "refs": [],
+    })
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    controls = destination / "assets" / "controls.json"
+    bindings = {"north": ["K", "Up"], "south": ["J"], "west": ["H"], "east": ["L"],
+                "gather": ["M"], "use": ["U"]}
+
+    def replay(keys, expected="ok"):
+        controls.write_text(json.dumps({"version": 1, "bindings": keys}), encoding="utf-8")
+        return request(cli, destination, "expedition.replay", {"actions": []}, expected)
+
+    effective = replay(bindings)["state"]["input_bindings"]
+    assert all(effective[name] == keys for name, keys in bindings.items())
+    assert effective["attack"] == ["Space"] and effective["select-site"] == ["Tab"]
+    conflict = replay({**bindings, "gather": ["K"]}, "invalid_expedition")
+    assert "/input_bindings/bindings/" in conflict["location"]
+    reserved = replay({**bindings, "use": ["Escape"]}, "invalid_expedition")
+    assert reserved["location"].endswith("/input_bindings/bindings/use")
+    replay(bindings)
+    subprocess.run([probe, destination, original_save, "farm-cook"], check=True, timeout=20)
+    subprocess.run([probe, destination, original_save, "farm-verify"], check=True, timeout=20)
+    print("Expedition binding overrides, reserved keys and collisions, old save resumes")
+
+
 def package(cli, project, root, capability, probe=None, *, graphics=True):
     root.mkdir()
     destination = root / "release"
@@ -727,6 +760,8 @@ def main():
         controls(args.cli.resolve(), project, control)
         modes = root / "modes"
         play_modes(args.cli.resolve(), args.probe.resolve(), project, modes)
+        remapped = root / "remapped"
+        input_remapping(args.cli.resolve(), args.probe.resolve(), project, remapped)
         if args.runtime:
             runtime = args.runtime.resolve()
             graphics = not args.no_graphics
@@ -742,6 +777,8 @@ def main():
             package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
                     graphics=False)
             package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
+                    graphics=graphics)
+            package(runtime, remapped, root / "input-package", "expedition_input_format",
                     graphics=graphics)
 
 

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "scene_play.hpp"
 #include "seeded_grid.hpp"
 
 namespace wds::expedition {
@@ -37,6 +38,40 @@ std::optional<PlayMode> play_mode(std::string_view name) {
 
 std::string_view play_mode_name(PlayMode value) {
   return modes.at(static_cast<std::size_t>(value));
+}
+
+const KeyBindings& default_key_bindings() {
+  static const KeyBindings defaults{
+      {"north", {"W", "Up"}},
+      {"south", {"S", "Down"}},
+      {"west", {"A", "Left"}},
+      {"east", {"D", "Right"}},
+      {"wait", {"Period"}},
+      {"revive", {"R"}},
+      {"craft", {"C"}},
+      {"eat", {"E"}},
+      {"use", {"F"}},
+      {"attack", {"Space"}},
+      {"gather", {"G"}},
+      {"select-site", {"Tab"}},
+      {"select-recipe", {"Q"}},
+      {"select-ingredient", {"Z"}},
+      {"add-ingredient", {"X"}},
+      {"remove-ingredient", {"Backspace"}},
+      {"select-supply", {"Y"}},
+      {"supply", {"I"}},
+      {"survey-region", {"N"}},
+  };
+  return defaults;
+}
+
+bool valid_input_key(std::string_view name) {
+  return platform::scene_key(name).has_value() || name == "Period" || name == "Space" ||
+         name == "Tab" || name == "Backspace";
+}
+
+const KeyBindings& Expedition::input_keys() const {
+  return rules_.keys.empty() ? default_key_bindings() : rules_.keys;
 }
 
 bool Expedition::allows(Command cmd) const {

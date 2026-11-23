@@ -288,7 +288,35 @@ RulePack read_pack(const Json& data, std::string resource) {
   return result;
 }
 
-Expedition decode(const Json& data, std::string identity, std::optional<RulePack> pack = {}) {
+KeyBindings read_key_bindings(const Json& data, const std::string& path) {
+  if (!data.is_object() || data.size() != 2 || !data.contains("bindings") ||
+      !data["bindings"].is_object())
+    throw Invalid{path};
+  integer(data, "version", 1, 1, path);
+  auto effective = default_key_bindings();
+  for (const auto& [id, keys] : data["bindings"].items()) {
+    const auto location = path + "/bindings/" + id;
+    const auto target = effective.find(id);
+    if (target == effective.end() || !keys.is_array() || keys.empty() || keys.size() > 2)
+      throw Invalid{location};
+    auto& list = target->second;
+    list.clear();
+    for (const auto& key : keys) {
+      if (!key.is_string() || !valid_input_key(key.get_ref<const std::string&>()))
+        throw Invalid{location};
+      list.push_back(key.get<std::string>());
+    }
+  }
+  std::set<std::string> used;
+  for (const auto& [action, keys] : effective) {
+    for (const auto& key : keys)
+      if (!used.insert(key).second) throw Invalid{path + "/bindings/" + action};
+  }
+  return effective;
+}
+
+Expedition decode(const Json& data, std::string identity, std::optional<RulePack> pack = {},
+                  KeyBindings keys = {}) {
   if (!data.is_object() || data.value("version", 0) != 1 || !data.contains("permanent") ||
       !data["permanent"].is_boolean() || !data.contains("seed"))
     throw Invalid{"/"};
@@ -307,6 +335,7 @@ Expedition decode(const Json& data, std::string identity, std::optional<RulePack
     rules.hunger_interval = pack->hunger_interval.value_or(rules.hunger_interval);
     rules.pack = std::move(pack);
   }
+  rules.keys = std::move(keys);
   const auto& regions = array(data, "regions", 1, 16, "");
   std::set<std::string> region_ids, site_ids;
   for (std::size_t i = 0; i < regions.size(); ++i) {
@@ -418,6 +447,7 @@ Json state(const Expedition& expedition) {
                             {"season_ticks", expedition.rules().season_ticks},
                             {"hunger_interval", expedition.rules().hunger_interval}};
   }
+  if (!expedition.rules().keys.empty()) result["input_bindings"] = expedition.input_keys();
   return result;
 }
 
@@ -458,8 +488,24 @@ LoadResult load(const fs::path& root, std::uint64_t revision) {
       }
       pack_bytes = std::move(*contents);
     }
-    auto expedition =
-        decode(data, identity(project.id, revision, *bytes, pack_bytes), std::move(pack));
+    KeyBindings keys;
+    constexpr std::string_view controls_id = "expedition-controls";
+    if (std::ranges::find(resource->refs, controls_id) != resource->refs.end()) {
+      const auto asset = std::ranges::find(project.resources, controls_id, &platform::Resource::id);
+      const std::string path = "/input_bindings";
+      if (asset == project.resources.end() || asset->kind != "data") throw Invalid{path};
+      const auto contents = io::read_bytes(root / asset->path, 8 * 1024);
+      if (!contents) throw Invalid{path};
+      try {
+        keys = read_key_bindings(io::parse_json(*contents), path);
+      } catch (const Json::exception&) {
+        throw Invalid{path};
+      } catch (const std::length_error&) {
+        throw Invalid{path};
+      }
+    }
+    auto expedition = decode(data, identity(project.id, revision, *bytes, pack_bytes),
+                             std::move(pack), std::move(keys));
     auto icons = load_icons(data, expedition.rules(), project, *resource, root);
     const auto current = platform::open_project(root);
     if (!current.project) return {{}, current.code, current.location};

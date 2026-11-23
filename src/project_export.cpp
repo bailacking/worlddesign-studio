@@ -110,7 +110,7 @@ bool valid_runtime(const Json& metadata) {
          name == "survival_format" || name == "exposure_format" || name == "processing_format" ||
          name == "story_format" || name == "interaction_format" ||
          name == "voxel_dynamics_format" || name == "inscription_format" ||
-         name == "expedition_rules_format") &&
+         name == "expedition_rules_format" || name == "expedition_input_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -313,6 +313,9 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
     if (route.expedition && route.expedition->rules().pack &&
         !metadata.contains("expedition_rules_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_rules_format");
+    if (route.expedition && !route.expedition->rules().keys.empty() &&
+        !metadata.contains("expedition_input_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_input_format");
     const bool survival = (route.expedition && route.expedition->uses_survival_rules()) ||
                           (scene.session && scene.session->workshop() &&
                            scene.session->workshop()->uses_survival_rules()) ||
