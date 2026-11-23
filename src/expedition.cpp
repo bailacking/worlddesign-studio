@@ -94,6 +94,10 @@ std::vector<std::string_view> Expedition::permitted_commands() const {
 Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identity)
     : rules_(std::move(rules)), workshop_(std::move(workshop)), identity_(std::move(identity)) {
   state_.hunger = rules_.initial_hunger;
+  if (rules_.crew) {
+    state_.active_character = rules_.crew->initial;
+    state_.unlocked_characters.insert(state_.active_character);
+  }
   for (const auto& region : rules_.regions) {
     state_.positions.push_back(region.spawn);
     for (const auto& site : region.sites)
@@ -134,6 +138,17 @@ bool Expedition::uses_interaction_rules() const {
     return std::ranges::any_of(area.sites,
                                [](const auto& site) { return site.interaction_priority > 0; });
   });
+}
+
+bool Expedition::uses_character_rules() const {
+  return rules_.crew || std::ranges::any_of(rules_.regions, [](const auto& area) {
+           return std::ranges::any_of(area.sites,
+                                      [](const auto& site) { return !site.inspection.empty(); });
+         });
+}
+
+CharacterTraits Expedition::active_traits() const {
+  return rules_.crew ? rules_.crew->characters.at(state_.active_character) : CharacterTraits{};
 }
 
 std::vector<const Site*> Expedition::nearby_sites() const {
@@ -228,7 +243,7 @@ void Expedition::advance_environment() {
     state_.wetness = std::clamp(state_.wetness + rain, 0, 10);
     state_.heat = std::clamp(state_.heat + warmth, 0, 10);
     if (state_.wetness >= 8) change("drenched", 0, 0, -1);
-    if (state_.heat >= 8) change("overheat", -2);
+    if (state_.heat >= 8) change("overheat", -std::max(0, 2 - active_traits().heat_guard));
     if (phase == 3 && state_.wetness > 4) change("cold", -1);
     if (state_.morale == 0) change("despair", -1);
   }
@@ -320,8 +335,9 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
       const bool enraged = site.kind == "boss" && found->second <= site.power / 2;
       const int retaliation = enraged ? 3 : 2;
       change("retaliation", -std::max(0, retaliation - tool.guard), 0, -1);
-      if (!state_.dead && site.venom > state_.poison) {
-        state_.poison = site.venom;
+      const int venom = std::max(0, site.venom - active_traits().venom_guard);
+      if (!state_.dead && venom > state_.poison) {
+        state_.poison = venom;
         change("poisoned", 0);
       }
       if (region().habitat == "ocean") state_.boat = std::max(0, state_.boat - 1);
@@ -384,6 +400,7 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
     state_.ending = finished || (uses_story_rules() && state_.ending);
     if (uses_story_rules()) state_.completed_chapters.insert(site.id);
     if (!site.unlock_character.empty()) state_.unlocked_characters.insert(site.unlock_character);
+    if (site.activate_character) state_.active_character = site.unlock_character;
     change(finished ? "ending" : "chapter", 0, 0, 2);
   } else {
     return "no_action";

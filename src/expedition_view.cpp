@@ -282,6 +282,7 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
     ui_text(30, 28, run.rules().voxel ? "COPPER RELAY" : "DRIFT NATURALISTS", 30);
     auto location = run.region().id + "   /   " + run.state().chapter;
     if (run.rules().pack) location += "   /   " + std::string(play_mode_name(run.mode()));
+    if (run.rules().crew) location += "   /   " + run.state().active_character;
     ui_text(31, 67, std::move(location), 20, accent);
     draw_map(run, site, textures);
     const auto& state = run.state();
@@ -339,6 +340,8 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
       std::string selected_food = "Pot";
       for (const auto& id : ingredients) selected_food += "  " + id;
       ui_text(31, 511, selected_food, 15, subdued);
+    } else if (site && !site->inspection.empty()) {
+      ui_text(31, 511, site->inspection, 15, subdued);
     }
     const auto movement = run.rules().keys.empty()
                               ? std::string("WASD move    ")

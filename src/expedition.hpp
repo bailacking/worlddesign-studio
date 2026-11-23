@@ -31,6 +31,8 @@ struct Site {
   std::vector<std::string> after_any{};
   std::string unlock_character{};
   int interaction_priority = 0;
+  std::string inspection{};
+  bool activate_character = false;
 };
 
 struct Eruption {
@@ -90,6 +92,16 @@ struct RulePack {
   std::optional<int> hunger_interval{};
 };
 
+struct CharacterTraits {
+  int heat_guard = 0;
+  int venom_guard = 0;
+};
+
+struct Crew {
+  std::string initial;
+  std::map<std::string, CharacterTraits, std::less<>> characters;
+};
+
 struct Rules {
   bool voxel;
   bool permanent;
@@ -100,6 +112,7 @@ struct Rules {
   std::vector<Region> regions;
   std::optional<RulePack> pack{};
   KeyBindings keys{};
+  std::optional<Crew> crew{};
 };
 
 struct Action {
@@ -146,6 +159,7 @@ struct State {
   std::map<std::string, int, std::less<>> crops;
   items::Tags completed_chapters;
   items::Tags unlocked_characters;
+  std::string active_character{};
   std::vector<Receipt> receipts;
 };
 
@@ -176,6 +190,8 @@ class Expedition {
   bool uses_exposure_rules() const;
   bool uses_story_rules() const { return !state_.completed_chapters.empty(); }
   bool uses_interaction_rules() const;
+  bool uses_character_rules() const;
+  CharacterTraits active_traits() const;
 
  private:
   std::string_view interact(const Site& site, bool attack);

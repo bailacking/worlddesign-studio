@@ -218,7 +218,7 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
-本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_(voxel_|workyard_)?smoke$' --output-on-failure`。测试离屏启动工作台，并绘制「礁灯投递」「方块工坊」和「块石工场」的视口。
+Windows、Ubuntu 和 macOS 共用工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure`。测试离屏打开「礁灯投递」「方块工坊」「块石工场」和行为场景并绘制视口。Ubuntu 和 macOS 也用 Qt 6.8.3 从源码构建，配置时用 `-DQt6_DIR=<Qt6Config.cmake 所在目录>` 指定已安装的桌面 SDK。
 
 ### 启动工作台与试玩
 

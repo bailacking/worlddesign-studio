@@ -147,15 +147,27 @@ Region region(const Json& row, const std::string& location, std::set<std::string
         after_any.push_back(value.get<std::string>());
       }
     }
-    if (entry.contains("unlock_character") && kind != "chapter")
-      throw Invalid{path + "/unlock_character"};
+    const auto character = token(entry, "unlock_character", path, true);
+    if (!character.empty() && kind != "chapter") throw Invalid{path + "/unlock_character"};
+    if (entry.contains("activate_character") &&
+        (!entry["activate_character"].is_boolean() || character.empty()))
+      throw Invalid{path + "/activate_character"};
+    std::string inspection;
+    if (entry.contains("inspect")) {
+      if (!entry["inspect"].is_string()) throw Invalid{path + "/inspect"};
+      inspection = entry["inspect"].get<std::string>();
+      if (inspection.empty() || inspection.size() > 120 ||
+          std::ranges::any_of(inspection, [](unsigned char byte) { return byte < 32; }))
+        throw Invalid{path + "/inspect"};
+    }
     const auto priority = entry.contains("interaction_priority")
                               ? integer(entry, "interaction_priority", 0, 100, path)
                               : 0;
-    result.sites.push_back(
-        {key, kind, where, token(entry, "target", path, true), token(entry, "item", path, true),
-         token(entry, "reward", path, true), power, capacity, token(entry, "icon", path, true),
-         venom, std::move(after_any), token(entry, "unlock_character", path, true), priority});
+    result.sites.push_back({key, kind, where, token(entry, "target", path, true),
+                            token(entry, "item", path, true), token(entry, "reward", path, true),
+                            power, capacity, token(entry, "icon", path, true), venom,
+                            std::move(after_any), character, priority, std::move(inspection),
+                            entry.value("activate_character", false)});
   }
   return result;
 }
@@ -172,6 +184,10 @@ void validate_references(const Rules& rules, const items::Catalog& catalog,
       if (!site.item.empty() && !catalog.items.contains(site.item)) throw Invalid{path + "/item"};
       if (!site.reward.empty() && !catalog.items.contains(site.reward))
         throw Invalid{path + "/reward"};
+      if (rules.crew && !site.unlock_character.empty() &&
+          !rules.crew->characters.contains(site.unlock_character))
+        throw Invalid{path + "/unlock_character"};
+      if (site.activate_character && !rules.crew) throw Invalid{path + "/activate_character"};
       if (site.kind == "portal" && (!regions.contains(site.target) || site.target == area.id))
         throw Invalid{path + "/target"};
       if (site.kind == "chapter" && !site.target.empty() &&
@@ -315,6 +331,30 @@ KeyBindings read_key_bindings(const Json& data, const std::string& path) {
   return effective;
 }
 
+Crew read_crew(const Json& data) {
+  const std::string path = "/crew";
+  if (!data.is_object() || data.size() != 3 || !data.contains("characters") ||
+      !data["characters"].is_object() || data["characters"].empty() ||
+      data["characters"].size() > 16)
+    throw Invalid{path};
+  integer(data, "version", 1, 1, path);
+  Crew crew{token(data, "initial", path), {}};
+  for (const auto& [name, value] : data["characters"].items()) {
+    const auto location = path + "/characters/" + name;
+    if (!id(name) || !value.is_object() ||
+        value.size() != value.count("heat_guard") + value.count("venom_guard"))
+      throw Invalid{location};
+    CharacterTraits traits;
+    if (value.contains("heat_guard"))
+      traits.heat_guard = integer(value, "heat_guard", 0, 2, location);
+    if (value.contains("venom_guard"))
+      traits.venom_guard = integer(value, "venom_guard", 0, 5, location);
+    crew.characters.emplace(name, traits);
+  }
+  if (!crew.characters.contains(crew.initial)) throw Invalid{path + "/initial"};
+  return crew;
+}
+
 Expedition decode(const Json& data, std::string identity, std::optional<RulePack> pack = {},
                   KeyBindings keys = {}) {
   if (!data.is_object() || data.value("version", 0) != 1 || !data.contains("permanent") ||
@@ -336,6 +376,7 @@ Expedition decode(const Json& data, std::string identity, std::optional<RulePack
     rules.pack = std::move(pack);
   }
   rules.keys = std::move(keys);
+  if (data.contains("crew")) rules.crew = read_crew(data["crew"]);
   const auto& regions = array(data, "regions", 1, 16, "");
   std::set<std::string> region_ids, site_ids;
   for (std::size_t i = 0; i < regions.size(); ++i) {
@@ -448,6 +489,18 @@ Json state(const Expedition& expedition) {
                             {"hunger_interval", expedition.rules().hunger_interval}};
   }
   if (!expedition.rules().keys.empty()) result["input_bindings"] = expedition.input_keys();
+  if (expedition.rules().crew) {
+    const auto traits = expedition.active_traits();
+    result["active_character"] = current.active_character;
+    result["character_traits"] = {{"heat_guard", traits.heat_guard},
+                                  {"venom_guard", traits.venom_guard}};
+    result["unlocked_characters"] = current.unlocked_characters;
+  }
+  auto inspections = Json::object();
+  for (const auto& site : expedition.region().sites)
+    if (!site.inspection.empty() && expedition.nearby(site.id))
+      inspections[site.id] = site.inspection;
+  if (!inspections.empty()) result["nearby_inspections"] = std::move(inspections);
   return result;
 }
 

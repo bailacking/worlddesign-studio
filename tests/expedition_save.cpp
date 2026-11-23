@@ -65,6 +65,21 @@ int main(int argc, char** argv) {
                ? 0
                : 21;
   }
+  if (stage == "crew-save") {
+    const std::array actions{Action{Command::use, "briefing"}, Action{Command::east},
+                             Action{Command::use, "trail"}};
+    for (const auto& action : actions)
+      if (run.apply(action) != "ok") return 22;
+    return save(run, path) ? 0 : 23;
+  }
+  if (stage == "crew-open") {
+    return restore(run, path) && run.region().id == "tide-terrace" &&
+                   run.state().active_character == "coast-guide" &&
+                   run.state().unlocked_characters.contains("gardener") &&
+                   run.active_traits().venom_guard == 3
+               ? 0
+               : 24;
+  }
   if (stage == "start") {
     if (run.apply({Command::gather, "driftwood"}) != "ok" || run.apply({Command::east}) != "ok" ||
         run.apply({Command::use, "rising"}) != "ok" || run.apply({Command::east}) != "ok")

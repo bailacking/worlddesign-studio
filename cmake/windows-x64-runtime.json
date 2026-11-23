@@ -14,6 +14,7 @@
   "inscription_format": 1,
   "expedition_rules_format": 1,
   "expedition_input_format": 1,
+  "expedition_character_format": 1,
   "story_format": 1,
   "interaction_format": 1,
   "voxel_dynamics_format": 1,

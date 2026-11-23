@@ -642,6 +642,57 @@ def play_modes(cli, probe, project, root):
     print("Four rule packs enforce commands, movement and metabolism, with save identity checks")
 
 
+def character_rules(cli, probe, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["crew"] = {
+        "version": 1, "initial": "gardener",
+        "characters": {"gardener": {}, "coast-guide": {"heat_guard": 2, "venom_guard": 3}},
+    }
+    garden, shore = document["regions"]
+    garden["climate"] = {"wetness": [0, 0, 0, 0], "heat": [3, 3, 3, 3]}
+    briefing = {
+        "id": "briefing", "kind": "chapter", "at": [0, 1],
+        "unlock_character": "coast-guide", "activate_character": True,
+        "inspect": "The coast guide knows the heat and the marsh.",
+    }
+    garden["sites"].append(briefing)
+    shore["sites"].append({"id": "stinger", "kind": "enemy", "at": [2, 1],
+                            "power": 6, "venom": 3, "inspect": "Keep clear of the tail."})
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    def replay(actions, expected="ok"):
+        return request(cli, destination, "expedition.replay", {"actions": actions}, expected)
+
+    initial = replay([])["state"]
+    assert initial["active_character"] == "gardener" and initial["unlocked_characters"] == ["gardener"]
+    assert initial["nearby_inspections"] == {"briefing": briefing["inspect"]} and initial["tick"] == 0
+    await_heat = [action("wait")] * 2
+    plain = replay([action("wait"), *await_heat])["state"]
+    guided = replay([action("use", "briefing"), *await_heat])["state"]
+    assert plain["heat"] == guided["heat"] == 9 and plain["health"] == 18 and guided["health"] == 20
+    assert guided["active_character"] == "coast-guide"
+    assert guided["unlocked_characters"] == ["coast-guide", "gardener"]
+    assert guided["character_traits"] == {"heat_guard": 2, "venom_guard": 3}
+
+    visit = [action("east"), action("use", "trail"), action("attack", "stinger")]
+    guided_attack = replay([action("use", "briefing"), *visit])["state"]
+    plain_attack = replay(visit)["state"]
+    assert plain_attack["poison"] == 2 and guided_attack.get("poison", 0) == 0
+    assert guided_attack["active_character"] == "coast-guide"
+    assert guided_attack["nearby_inspections"] == {"stinger": "Keep clear of the tail."}
+    save = destination / "crew.save.json"
+    subprocess.run([probe, destination, save, "crew-save"], check=True, timeout=20)
+    subprocess.run([probe, destination, save, "crew-open"], check=True, timeout=20)
+    briefing["unlock_character"] = "missing"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert replay([], "invalid_expedition")["location"].endswith("/unlock_character")
+    briefing["unlock_character"] = "coast-guide"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    print("Chapter unlock activates a character, traits change hazard effects, inspections stay local")
+
+
 def input_remapping(cli, probe, project, destination):
     shutil.copytree(project, destination)
     original_save = destination / "before-remapping.save.json"
@@ -755,6 +806,8 @@ def main():
         inscriptions(args.cli.resolve(), kiln, engraved)
         chronicle = root / "chronicle"
         story(args.cli.resolve(), project, chronicle)
+        crew = root / "crew"
+        character_rules(args.cli.resolve(), args.probe.resolve(), project, crew)
         combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
         control = root / "controls"
         controls(args.cli.resolve(), project, control)
@@ -772,6 +825,8 @@ def main():
             package(runtime, engraved, root / "engraved-package", "inscription_format",
                     graphics=graphics)
             package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
+            package(runtime, crew, root / "crew-package", "expedition_character_format",
+                    graphics=graphics)
             package(runtime, control, root / "actions-package", "interaction_format",
                     graphics=graphics)
             package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",

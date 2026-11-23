@@ -241,12 +241,27 @@ def write_project(path, plan, data, icons, mode=None):
                "revision": 0, "entry_scene": "entry", "resources": resources})
 
 
-def generate(root, seed=73021, scale=0, mode=None):
+def add_crew(data):
+    data["crew"] = {
+        "version": 1, "initial": "field-recorder",
+        "characters": {"field-recorder": {}, "shore-guide": {"heat_guard": 2, "venom_guard": 3}},
+    }
+    shore = {spot["id"]: spot for spot in data["regions"][0]["sites"]}
+    shore["driftwood"]["inspect"] = "Dry reed for rope and fuel. Take only what you need."
+    shore["rising"].update(
+        unlock_character="shore-guide", activate_character=True,
+        inspect="Meet the shore guide before you enter the caves.",
+    )
+
+
+def generate(root, seed=73021, scale=0, mode=None, crew=False):
     root.mkdir(parents=True)
     start = time.perf_counter()
     plans = [(plan, rules(plan, seed, scale)) for plan in ("copper-relay", "drift-naturalists")]
     expanded = time.perf_counter()
-    for _, data in plans:
+    for plan, data in plans:
+        if crew and plan == "drift-naturalists":
+            add_crew(data)
         generate_palettes(data)
     colored = time.perf_counter()
     icons = [create_icons(data) for _, data in plans]
@@ -277,10 +292,11 @@ def main():
     parser.add_argument("--scale", type=int, default=0, choices=range(5))
     parser.add_argument("--mode", choices=("journey", "build", "trial", "survey"),
                         help="attach a rules pack to Copper Relay")
+    parser.add_argument("--crew", action="store_true", help="add a playable crew to Drift Naturalists")
     args = parser.parse_args()
     if not 0 <= args.seed < 2**32:
         parser.error("--seed must be an unsigned 32-bit integer")
-    print(json.dumps(generate(args.output, args.seed, args.scale, args.mode), indent=2))
+    print(json.dumps(generate(args.output, args.seed, args.scale, args.mode, args.crew), indent=2))
 
 
 if __name__ == "__main__":
