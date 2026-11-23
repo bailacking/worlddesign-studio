@@ -49,11 +49,25 @@ struct Rules {
   std::vector<Region> regions;
 };
 
-enum class Command { north, south, west, east, wait, use, attack, gather, craft, eat, revive };
+enum class Command {
+  north,
+  south,
+  west,
+  east,
+  wait,
+  use,
+  attack,
+  gather,
+  craft,
+  eat,
+  revive,
+  cook
+};
 
 struct Action {
   Command command;
   std::string target{};
+  std::vector<std::string> ingredients{};
 };
 
 std::optional<Command> command(std::string_view name);
@@ -88,6 +102,7 @@ struct State {
   std::string chapter = "departure";
   std::map<std::string, int, std::less<>> encounters;
   std::map<std::string, TilePoint, std::less<>> actors;
+  std::map<std::string, int, std::less<>> crops;
   std::vector<Receipt> receipts;
 };
 
@@ -114,6 +129,7 @@ class Expedition {
   std::string_view interact(const Site& site, bool attack);
   std::string_view move(int x, int y);
   void advance();
+  void advance_crops();
   void change(std::string_view cause, int health, int hunger = 0, int morale = 0);
   bool award(const std::string& reward, const std::string& cost = {});
   bool enter(const Site& portal);

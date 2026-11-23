@@ -8,6 +8,7 @@
 #include "behavior_document.hpp"
 #include "expedition.hpp"
 #include "platform_project.hpp"
+#include "project_diff.hpp"
 #include "project_export.hpp"
 #include "project_io.hpp"
 #include "signal_circuit.hpp"
@@ -86,11 +87,48 @@ Json project_index(const fs::path& directory, std::optional<std::uint64_t> expec
   return result;
 }
 
+Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, const Json& input) {
+  const auto trigger = text(input, "trigger");
+  const auto x = number<int>(input, "x"), y = number<int>(input, "y"), z = number<int>(input, "z");
+  const auto dx = number<int>(input, "dx"), dz = number<int>(input, "dz");
+  if (!input.contains("circuit")) return fail("invalid_argument", "/input/circuit");
+  const auto replay = voxel::replay_circuit(input["circuit"]);
+  if (replay["code"] != "ok")
+    return fail("invalid_circuit",
+                "/input/circuit" + replay["location"].get<std::string>().substr(6));
+  if (!replay["levels"].contains(trigger)) return fail("invalid_argument", "/input/trigger");
+  auto loaded = start_scene(directory, revision, true);
+  if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+  if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
+  const auto& trace = replay["trace"];
+  const auto pulse = std::ranges::find_if(trace, [&](const auto& event) {
+    return (event["phase"] == "update" || event["phase"] == "input") && event["id"] == trigger &&
+           event["from"] == 0 && event["to"] != 0;
+  });
+  if (pulse == trace.end()) return {{"code", "ok"}, {"revision", revision}, {"changed", false}};
+  auto& scene = *loaded.voxel_scene;
+  const auto result = scene.world.shift_block(x, y, z, dx, dz);
+  if (result != "ok") return fail(result, "/input");
+  auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
+  saved.scene_change.reset();
+  auto reply = Json::parse(field_result_json(saved));
+  if (saved.code == "ok") {
+    reply["tick"] = (*pulse)["tick"];
+    reply["from"] = {x, y, z};
+    reply["to"] = {x + dx, y, z + dz};
+  }
+  return reply;
+}
+
 Json dispatch(const fs::path& directory, std::string_view id, std::string_view mode,
               std::optional<std::uint64_t> expected, const Json& input) {
   const auto revision = expected.value_or(0);
   const bool apply = mode == "apply";
   if (id == "project.index") return project_index(directory, expected);
+  if (id == "project.diff")
+    return compare_projects(directory, revision, path(input, "other_directory"),
+                            number<std::uint64_t>(input, "other_revision"));
+  if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
   if (id == "expedition.replay") {
     auto loaded = expedition::load(directory, revision);
     if (!loaded.expedition) return fail(loaded.code, loaded.location);

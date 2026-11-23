@@ -170,6 +170,39 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
   return true;
 }
 
+std::string_view World::shift_block(int x, int y, int z, int dx, int dz) {
+  if (!((dx == 0 && (dz == -1 || dz == 1)) || (dz == 0 && (dx == -1 || dx == 1))))
+    return "invalid_direction";
+  const auto valid = [&](int column, int row) {
+    if (y <= 0 || y >= height) return false;
+    if (!terrain_) return inside(column, y, row);
+    return column >= -SeededTerrain::limit && column < SeededTerrain::limit &&
+           row >= -SeededTerrain::limit && row < SeededTerrain::limit;
+  };
+  if (!valid(x, z) || !valid(x + dx, z + dz)) return "outside_world";
+  const int target_x = x + dx;
+  const int target_z = z + dz;
+  auto candidate = *this;
+  candidate.stream({static_cast<double>(x), 0, static_cast<double>(z)});
+  const auto source = candidate.block(x, y, z);
+  if (source == Block::air || !content_.style(source).breakable) return "immovable";
+  if (candidate.block(target_x, y, target_z) != Block::air) return "target_occupied";
+  if (candidate.terrain_) {
+    if (!candidate.terrain_->set(x, y, z, Block::air) ||
+        !candidate.terrain_->set(target_x, y, target_z, source))
+      return "edit_limit";
+  } else {
+    candidate.blocks_[index(x, y, z)] = Block::air;
+    candidate.blocks_[index(target_x, y, target_z)] = source;
+  }
+  const auto spawn = Player{}.feet;
+  const bool spawn_loaded =
+      !candidate.terrain_ || candidate.terrain_->resident(cell(spawn.x), cell(spawn.z));
+  if (spawn_loaded && candidate.collides(spawn)) return "spawn_blocked";
+  *this = std::move(candidate);
+  return "ok";
+}
+
 bool World::read(std::istream& input) {
   if (terrain_) {
     auto candidate = *this;

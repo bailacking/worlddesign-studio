@@ -24,8 +24,9 @@ struct Invalid {
 };
 
 constexpr std::array habitats{"surface", "ember", "sky", "cavern", "ruins", "shore", "ocean"};
-constexpr std::array kinds{"source", "portal", "enemy", "boss",  "raid", "trade",  "anchor",
-                           "dock",   "repair", "tame",  "breed", "rest", "chapter"};
+constexpr std::array kinds{"source", "portal", "enemy",   "boss",   "raid",
+                           "trade",  "anchor", "dock",    "repair", "tame",
+                           "breed",  "rest",   "chapter", "plot",   "kitchen"};
 
 bool id(std::string_view word) {
   return !word.empty() && word.size() <= 48 && std::ranges::all_of(word, [](unsigned char c) {
@@ -137,10 +138,11 @@ void validate_references(const Rules& rules, const items::Catalog& catalog,
           throw Invalid{path + "/reward"};
       }
       if ((site.kind == "anchor" || site.kind == "repair" || site.kind == "trade" ||
-           site.kind == "breed" || site.kind == "tame") &&
+           site.kind == "breed" || site.kind == "tame" || site.kind == "plot") &&
           site.item.empty())
         throw Invalid{path + "/item"};
-      if (site.kind == "trade" && site.reward.empty()) throw Invalid{path + "/reward"};
+      if ((site.kind == "trade" || site.kind == "plot") && site.reward.empty())
+        throw Invalid{path + "/reward"};
     }
   }
 }
@@ -207,7 +209,7 @@ Expedition decode(const Json& data, std::string identity) {
   }
   if (rules.regions[0].habitat == "ocean") throw Invalid{"/regions/0/habitat"};
   if (!data.contains("workshop")) throw Invalid{"/workshop"};
-  auto items = items::read_workshop(data["workshop"], false);
+  auto items = items::read_workshop(data["workshop"], false, true);
   if (!items.workshop) throw Invalid{items.location};
   validate_references(rules, items.workshop->catalog(), region_ids);
   validate_icons(data);
@@ -226,15 +228,26 @@ std::string identity(std::string_view project, std::uint64_t revision, std::stri
 }
 
 Action decode_action(const Json& value) {
-  if (!value.is_object() || value.size() != 1U + value.count("target")) throw Invalid{"/actions"};
+  if (!value.is_object() || value.size() != 1U + value.count("target") + value.count("ingredients"))
+    throw Invalid{"/actions"};
   const auto parsed = command(token(value, "command", "/actions"));
   if (!parsed) throw Invalid{"/actions/command"};
-  return {*parsed, token(value, "target", "/actions", true)};
+  Action result{*parsed, token(value, "target", "/actions", true)};
+  if (value.contains("ingredients")) {
+    if (*parsed != Command::cook) throw Invalid{"/actions/ingredients"};
+    for (const auto& entry : array(value, "ingredients", 1, 8, "/actions")) {
+      if (!entry.is_string() || !id(entry.get_ref<const std::string&>()))
+        throw Invalid{"/actions/ingredients"};
+      result.ingredients.push_back(entry.get<std::string>());
+    }
+  }
+  return result;
 }
 
 Json encode_action(const Action& action) {
   Json value{{"command", command_name(action.command)}};
   if (!action.target.empty()) value["target"] = action.target;
+  if (!action.ingredients.empty()) value["ingredients"] = action.ingredients;
   return value;
 }
 
@@ -255,29 +268,31 @@ Json state(const Expedition& expedition) {
   }
   auto actors = Json::object();
   for (const auto& [id, point] : current.actors) actors[id] = {point.x, point.y};
-  return {{"region", expedition.region().id},
-          {"positions", positions},
-          {"tick", current.tick},
-          {"health", current.health},
-          {"hunger", current.hunger},
-          {"morale", current.morale},
-          {"wetness", current.wetness},
-          {"heat", current.heat},
-          {"season", expedition.season()},
-          {"tide", expedition.tide()},
-          {"boat", current.boat},
-          {"chapter", current.chapter},
-          {"dead", current.dead},
-          {"ending", current.ending},
-          {"anchor_charge", current.anchor_charge},
-          {"anchor", expedition.rules().regions[current.anchor].id},
-          {"anchor_site", current.anchor_site},
-          {"population", current.population},
-          {"companions", current.companions},
-          {"encounters", current.encounters},
-          {"actors", actors},
-          {"workshop", items::state_json(expedition.workshop().state())},
-          {"receipts", receipts}};
+  Json result{{"region", expedition.region().id},
+              {"positions", positions},
+              {"tick", current.tick},
+              {"health", current.health},
+              {"hunger", current.hunger},
+              {"morale", current.morale},
+              {"wetness", current.wetness},
+              {"heat", current.heat},
+              {"season", expedition.season()},
+              {"tide", expedition.tide()},
+              {"boat", current.boat},
+              {"chapter", current.chapter},
+              {"dead", current.dead},
+              {"ending", current.ending},
+              {"anchor_charge", current.anchor_charge},
+              {"anchor", expedition.rules().regions[current.anchor].id},
+              {"anchor_site", current.anchor_site},
+              {"population", current.population},
+              {"companions", current.companions},
+              {"encounters", current.encounters},
+              {"actors", actors},
+              {"workshop", items::state_json(expedition.workshop().state())},
+              {"receipts", receipts}};
+  if (!current.crops.empty()) result["crops"] = current.crops;
+  return result;
 }
 
 }  // namespace

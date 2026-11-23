@@ -39,6 +39,7 @@ class World {
   [[nodiscard]] bool collides(Vec3 feet) const;
   [[nodiscard]] Hit cast(Vec3 origin, Vec3 direction, double limit) const;
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
+  std::string_view shift_block(int x, int y, int z, int dx, int dz);
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }

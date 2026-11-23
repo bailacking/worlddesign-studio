@@ -81,13 +81,19 @@ Ingredient ingredient(const Catalog& catalog, const Json& object, const std::str
 }
 
 Recipe recipe(const Catalog& catalog, const Json& object, const std::string& location) {
-  if (!shape(object, {"method", "output"}, {"station", "unlocks", "ingredients", "pattern"}) ||
+  if (!shape(object, {"method", "output"},
+             {"station", "unlocks", "ingredients", "pattern", "priority"}) ||
       object.contains("ingredients") == object.contains("pattern"))
     throw Invalid{location};
   Recipe result{};
   result.method = text(object["method"], location + "/method");
   if (result.method != "craft" && result.method != "smelt" && result.method != "cook")
     throw Invalid{location + "/method"};
+  if (object.contains("priority")) {
+    if (result.method != "cook" || object.contains("pattern"))
+      throw Invalid{location + "/priority"};
+    result.priority = number(object["priority"], 0, 100, location + "/priority");
+  }
   if (object.contains("station")) {
     result.requires_station = text(object["station"], location + "/station");
     if (!symbol(result.requires_station)) throw Invalid{location + "/station"};
@@ -124,6 +130,7 @@ Recipe recipe(const Catalog& catalog, const Json& object, const std::string& loc
     }
   }
   if (!units || units > 64) throw Invalid{location};
+  if (result.priority && units > 8) throw Invalid{location + "/ingredients"};
   return result;
 }
 
@@ -156,7 +163,7 @@ State progress(const Catalog& catalog, const Json& object, const Tags& stations)
 
 }  // namespace
 
-LoadResult read_workshop(const Json& document, bool voxel) {
+LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
   try {
     if (!shape(document, {"version", "bag_slots", "chest_slots", "items", "recipes", "sources"},
                {"progress"}) ||
@@ -170,9 +177,25 @@ LoadResult read_workshop(const Json& document, bool voxel) {
     if (!items.is_object() || items.empty() || items.size() > 128) throw Invalid{"/workshop/items"};
     for (const auto& [id, item] : items.items()) {
       const auto where = "/workshop/items/" + id;
-      if (!symbol(id) || !shape(item, {"limit", "tags"})) throw Invalid{where};
-      catalog.items.emplace(id, Item{number(item["limit"], 1, 64, where + "/limit"),
-                                     tags(item["tags"], where + "/tags")});
+      if (!symbol(id) || !shape(item, {"limit", "tags"}, {"spoilage"})) throw Invalid{where};
+      Item entry{number(item["limit"], 1, 64, where + "/limit"),
+                 tags(item["tags"], where + "/tags")};
+      if (item.contains("spoilage")) {
+        const auto path = where + "/spoilage";
+        const auto& rule = item["spoilage"];
+        if (!expedition || !shape(rule, {"ticks", "result"})) throw Invalid{path};
+        entry.spoilage =
+            Spoilage{static_cast<unsigned>(number(rule["ticks"], 1, 4096, path + "/ticks")),
+                     text(rule["result"], path + "/result")};
+      }
+      catalog.items.emplace(id, std::move(entry));
+    }
+    for (const auto& [id, item] : catalog.items) {
+      if (!item.spoilage) continue;
+      const auto result = catalog.items.find(item.spoilage->result);
+      if (result == catalog.items.end() || result->second.spoilage ||
+          result->second.limit < item.limit)
+        throw Invalid{"/workshop/items/" + id + "/spoilage/result"};
     }
     const auto& recipes = document["recipes"];
     if (!recipes.is_object() || recipes.size() > 128) throw Invalid{"/workshop/recipes"};
@@ -212,8 +235,11 @@ LoadResult read_workshop(const Json& document, bool voxel) {
 Json state_json(const State& state) {
   const auto slots = [](const Container& container) {
     auto result = Json::array();
-    for (const auto& stack : container)
-      result.push_back({{"item", stack.id}, {"count", stack.count}});
+    for (const auto& stack : container) {
+      Json row{{"item", stack.id}, {"count", stack.count}};
+      if (stack.best_before) row["best_before"] = stack.best_before;
+      result.push_back(std::move(row));
+    }
     return result;
   };
   return {{"bag", slots(state.bag)},

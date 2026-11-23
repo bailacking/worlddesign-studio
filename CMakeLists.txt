@@ -59,7 +59,7 @@ target_compile_definitions(wds_png PUBLIC
 
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
-  src/asset_import.cpp
+  src/asset_import.cpp src/project_diff.cpp
   src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/voxel_palette.cpp
   src/workshop.cpp src/workshop_document.cpp
   src/scene_play.cpp src/expedition.cpp src/expedition_document.cpp)
@@ -246,6 +246,16 @@ if(Python3_Interpreter_FOUND)
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/w24-expeditions/verify.py"
     --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>
     --work "${CMAKE_CURRENT_BINARY_DIR}/expedition-tests")
+  add_test(NAME living_systems COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/w25-lab/verify.py"
+    --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>
+    --work "${CMAKE_CURRENT_BINARY_DIR}/living-system-tests")
+  find_package(Git QUIET)
+  if(Git_FOUND)
+    add_test(NAME project_collaboration COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/project_collaboration.py"
+      "$<TARGET_FILE:wds_cli>" "${GIT_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/collaboration-tests")
+  endif()
 endif()
 
 add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)

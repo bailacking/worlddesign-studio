@@ -12,15 +12,22 @@ namespace wds::items {
 struct Stack {
   std::string id;
   int count;
+  unsigned best_before = 0;
   bool operator==(const Stack&) const = default;
 };
 
 using Container = std::vector<Stack>;
 using Tags = std::set<std::string, std::less<>>;
 
+struct Spoilage {
+  unsigned ticks;
+  std::string result;
+};
+
 struct Item {
   int limit;
   Tags tags;
+  std::optional<Spoilage> spoilage{};
 };
 
 struct Ingredient {
@@ -35,6 +42,7 @@ struct Recipe {
   std::vector<Ingredient> ingredients;
   std::vector<std::optional<Ingredient>> pattern;
   Stack output;
+  std::optional<int> priority{};
 };
 
 struct Source {
@@ -72,24 +80,30 @@ class Workshop {
   explicit Workshop(Catalog catalog, State initial = {});
   const Catalog& catalog() const { return catalog_; }
   const State& state() const { return state_; }
-  void reset() { state_ = initial_; }
+  void reset();
   bool can_drop(const Stack& stack) const;
   bool drop(const Stack& stack);
   bool has_item(std::string_view id, int amount = 1) const;
   bool consume(std::string_view id, int amount = 1);
+  std::string_view cook(const std::vector<std::string>& supplied);
+  int advance(unsigned tick);
+  bool uses_survival_rules() const;
   std::vector<Action> actions(bool gather) const;
   std::string_view apply(const Action& action, const std::vector<std::string>& grid = {});
 
  private:
   bool matches(const Ingredient& ingredient, std::string_view item) const;
-  std::optional<Container> materials(const Recipe& recipe,
-                                     const std::vector<std::string>& grid) const;
+  std::optional<Container> materials(const Recipe& recipe, const std::vector<std::string>& grid,
+                                     const Container& available) const;
+  std::string_view complete(const Recipe& recipe, const Container& used);
   std::string_view craft(std::string_view id, const std::vector<std::string>& grid);
   std::string_view gather(std::string_view id);
+  Stack fresh(Stack stack) const;
 
   Catalog catalog_;
   State initial_;
   State state_;
+  unsigned tick_ = 0;
 };
 
 }  // namespace wds::items

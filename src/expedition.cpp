@@ -10,8 +10,8 @@
 namespace wds::expedition {
 namespace {
 
-constexpr std::array commands{"north",  "south",  "west",  "east", "wait",  "use",
-                              "attack", "gather", "craft", "eat",  "revive"};
+constexpr std::array commands{"north",  "south",  "west",  "east", "wait",   "use",
+                              "attack", "gather", "craft", "eat",  "revive", "cook"};
 
 int distance(TilePoint a, TilePoint b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 
@@ -37,6 +37,8 @@ Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identi
         state_.encounters.emplace(site.id, site.power);
     for (const auto& site : region.sites)
       if (site.kind == "enemy" || site.kind == "raid") state_.actors.emplace(site.id, site.point);
+    for (const auto& site : region.sites)
+      if (site.kind == "plot") state_.crops.emplace(site.id, -1);
   }
 }
 
@@ -81,6 +83,7 @@ void Expedition::change(std::string_view cause, int health, int hunger, int mora
 
 void Expedition::advance() {
   ++state_.tick;
+  if (workshop_.advance(state_.tick) > 0) change("spoilage", 0);
   if (state_.tick % static_cast<unsigned>(rules_.hunger_interval) == 0) change("metabolism", 0, -1);
   if (state_.hunger == 0) change("starvation", -1);
   if (region().habitat == "cavern" && state_.tick % 2 == 0 && !workshop_.has_item("lantern"))
@@ -96,6 +99,7 @@ void Expedition::advance() {
     if (phase == 3 && state_.wetness > 4) change("cold", -1);
     if (state_.morale == 0) change("despair", -1);
   }
+  advance_crops();
   for (const auto& site : region().sites) {
     const auto actor = state_.actors.find(site.id);
     if (actor == state_.actors.end() || state_.encounters.at(site.id) == 0) continue;
@@ -111,6 +115,18 @@ void Expedition::advance() {
     }
     if (site.kind == "raid" && state_.tick % 6 == 0 && distance(point, position()) <= 2)
       change("raid", -2);
+  }
+}
+
+void Expedition::advance_crops() {
+  if (state_.crops.empty() || season() == 3) return;
+  for (const auto& area : rules_.regions) {
+    if (season() == 2 && area.habitat != "shore") continue;
+    for (const auto& site : area.sites) {
+      if (site.kind != "plot") continue;
+      auto& remaining = state_.crops.at(site.id);
+      if (remaining > 0 && --remaining == 0) change("crop_ready", 0);
+    }
   }
 }
 
@@ -178,6 +194,20 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   }
   if (site.kind == "portal") return enter(site) ? "ok" : "route_locked";
   if (site.kind == "trade") return award(site.reward, site.item) ? "ok" : "trade_unavailable";
+  if (site.kind == "plot") {
+    auto& remaining = state_.crops.at(site.id);
+    if (remaining > 0) return "crop_growing";
+    if (remaining == 0) {
+      if (!award(site.reward)) return "capacity";
+      remaining = -1;
+      change("harvest", 0);
+    } else {
+      if (!workshop_.consume(site.item)) return "missing_item";
+      remaining = site.power;
+      change("plant", 0);
+    }
+    return "ok";
+  }
   if (site.kind == "anchor" && state_.anchor_site == site.id &&
       state_.anchor_charge >= site.anchor_capacity)
     return "anchor_full";
@@ -220,9 +250,11 @@ std::string_view Expedition::apply(Action action) {
   if (history_.size() == max_actions) return "action_limit";
   const auto cmd = action.command;
   if (state_.dead && cmd != Command::revive) return "dead";
-  const bool needs_target = cmd == Command::gather || cmd == Command::craft || cmd == Command::eat;
+  const bool needs_target = cmd == Command::gather || cmd == Command::craft ||
+                            cmd == Command::eat || cmd == Command::cook;
   const bool uses_target = needs_target || cmd == Command::use || cmd == Command::attack;
-  if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()))
+  if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()) ||
+      (cmd == Command::cook) != !action.ingredients.empty())
     return "invalid_action";
   const auto execute = [&]() -> std::string_view {
     switch (cmd) {
@@ -252,6 +284,13 @@ std::string_view Expedition::apply(Action action) {
       }
       case Command::craft:
         return workshop_.apply({"recipe", action.target});
+      case Command::cook: {
+        const auto* site = nearby(action.target);
+        if (!site || site->kind != "kitchen") return "out_of_reach";
+        const auto result = workshop_.cook(action.ingredients);
+        if (result == "ok") change("cooked", 0);
+        return result;
+      }
       case Command::eat:
         if (const auto item = workshop_.catalog().items.find(action.target);
             item == workshop_.catalog().items.end() || !item->second.tags.contains("food") ||

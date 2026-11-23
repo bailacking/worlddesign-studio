@@ -1806,12 +1806,23 @@ Json build_operation_specs() {
   index_errors.push_back("revision_conflict");
   add("project.index", "project index DIRECTORY [REVISION]", false,
       {{"directory", "path"}, {"expected_revision", "optional integer"}}, index_errors);
+  auto diff_errors = index_errors;
+  diff_errors.push_back("different_project");
+  diff_errors.push_back("unreadable_resource");
+  add("project.diff", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"other_directory", "path to another checkout of the same project"},
+       {"other_revision", "integer"}},
+      diff_errors);
   add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
   add("circuit.replay", "project request DIRECTORY", false,
       {{"directory", "path"},
        {"ticks", "integer 1 through 256"},
        {"nodes", "signal nodes by ID"},
-       {"events", "lever changes by tick"}},
+       {"events", "lever changes by tick, relative to this request"},
+       {"checkpoint", "optional boolean to include resumable state"},
+       {"resume", "optional circuit checkpoint for the same layout"}},
       {"invalid_circuit", "invalid_argument"});
   add("behavior.convert", "project request DIRECTORY", false,
       {{"directory", "path"},
@@ -1958,6 +1969,21 @@ Json build_operation_specs() {
        {"expected_revision", "integer"},
        {"provider", "daylight | amber-dusk"}},
       scene_errors);
+  auto actuator_errors = scene_errors;
+  for (const auto code : {"invalid_circuit", "invalid_direction", "outside_world", "immovable",
+                          "target_occupied", "edit_limit", "spawn_blocked"})
+    actuator_errors.push_back(code);
+  add("scene.voxel.actuate", "project request DIRECTORY", true,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"circuit", "circuit.replay input"},
+       {"trigger", "signal node that must rise from zero"},
+       {"x", "source block x"},
+       {"y", "source block y"},
+       {"z", "source block z"},
+       {"dx", "east or west step, or zero"},
+       {"dz", "south or north step, or zero"}},
+      actuator_errors);
   scene_errors.push_back("scene_content_conflict");
   add("scene.restore", "project restore-scene DIRECTORY REVISION", true,
       {{"directory", "path"},
@@ -1968,7 +1994,7 @@ Json build_operation_specs() {
     const auto& id = operation["id"].get_ref<const std::string&>();
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
         id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set" ||
-        id == "scene.character.set") {
+        id == "scene.character.set" || id == "scene.voxel.actuate") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};

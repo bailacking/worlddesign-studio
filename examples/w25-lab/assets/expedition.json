@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "view": "planar",
+  "seed": 53207,
+  "permanent": false,
+  "season_ticks": 8,
+  "initial_hunger": 20,
+  "hunger_interval": 100,
+  "regions": [
+    {
+      "id": "wind-garden",
+      "habitat": "surface",
+      "width": 10,
+      "height": 7,
+      "spawn": [1, 1],
+      "sites": [
+        {"id": "seed-mat", "kind": "source", "at": [1, 2], "reward": "seed"},
+        {"id": "herbs", "kind": "source", "at": [2, 1], "reward": "herb"},
+        {"id": "bark-store", "kind": "source", "at": [1, 0], "reward": "bark"},
+        {"id": "plot", "kind": "plot", "at": [3, 1], "item": "seed", "reward": "root", "power": 4},
+        {"id": "kitchen", "kind": "kitchen", "at": [4, 1]},
+        {"id": "trail", "kind": "portal", "at": [2, 0], "target": "tide-terrace"}
+      ]
+    },
+    {
+      "id": "tide-terrace",
+      "habitat": "shore",
+      "width": 10,
+      "height": 7,
+      "spawn": [1, 1],
+      "sites": [
+        {"id": "return-path", "kind": "portal", "at": [1, 0], "target": "wind-garden"}
+      ]
+    }
+  ],
+  "workshop": {
+    "version": 1,
+    "bag_slots": 8,
+    "chest_slots": 1,
+    "items": {
+      "bark": {"limit": 8, "tags": []},
+      "seed": {"limit": 8, "tags": []},
+      "herb": {"limit": 8, "tags": ["harvest", "aromatic"], "spoilage": {"ticks": 16, "result": "mulch"}},
+      "mulch": {"limit": 8, "tags": []},
+      "root": {"limit": 8, "tags": ["harvest"]},
+      "stove": {"limit": 1, "tags": []},
+      "mash": {"limit": 8, "tags": ["food"]},
+      "stew": {"limit": 8, "tags": ["food"]},
+      "broth": {"limit": 8, "tags": ["food"]}
+    },
+    "recipes": {
+      "build-stove": {
+        "method": "craft", "unlocks": "hearth", "output": {"item": "stove", "count": 1},
+        "ingredients": [{"item": "bark", "count": 1}]
+      },
+      "field-mash": {
+        "method": "cook", "station": "hearth", "priority": 5,
+        "output": {"item": "mash", "count": 1},
+        "ingredients": [{"item": "#harvest", "count": 2}]
+      },
+      "garden-stew": {
+        "method": "cook", "station": "hearth", "priority": 10,
+        "output": {"item": "stew", "count": 1},
+        "ingredients": [{"item": "root", "count": 1}, {"item": "#aromatic", "count": 1}]
+      },
+      "root-broth": {
+        "method": "cook", "station": "hearth", "priority": 10,
+        "output": {"item": "broth", "count": 1},
+        "ingredients": [{"item": "root", "count": 1}, {"item": "herb", "count": 1}]
+      }
+    },
+    "sources": {
+      "seed-mat": {"yield": {"item": "seed", "count": 1}, "uses": 4},
+      "herbs": {"yield": {"item": "herb", "count": 1}, "uses": 4},
+      "bark-store": {"yield": {"item": "bark", "count": 1}, "uses": 4}
+    }
+  }
+}

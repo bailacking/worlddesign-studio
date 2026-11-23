@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "project_id": "weather-garden",
+  "revision": 0,
+  "entry_scene": "entry",
+  "resources": [
+    {"id": "entry", "kind": "scene", "path": "assets/entry.json", "refs": ["expedition"]},
+    {"id": "expedition", "kind": "data", "path": "assets/expedition.json", "refs": []}
+  ]
+}
