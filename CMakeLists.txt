@@ -95,6 +95,12 @@ if(EMSCRIPTEN)
       "${web_output}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${web_source}/wasm-runtime.mjs" "${web_output}/garden-runtime.mjs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${web_output}/WDS-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann/LICENSE.MIT" "${web_output}/JSON-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/LICENSE" "${web_output}/PNG-LICENSE.txt"
     DEPENDS wds_web_runtime
     VERBATIM)
 endif()
@@ -103,6 +109,8 @@ install(TARGETS wds_cli RUNTIME DESTINATION bin COMPONENT Tools)
 install(FILES src/plugin_host.hpp src/plugin_host.cpp
   DESTINATION share/wds/plugin-sdk/src COMPONENT PluginSDK)
 install(FILES examples/plugin-sdk/CMakeLists.txt examples/plugin-sdk/demo.cpp
+  examples/plugin-sdk/palette_abi.h examples/plugin-sdk/native_palette.cpp
+  examples/plugin-sdk/native_demo.cpp
   examples/plugin-sdk/README.md LICENSE DESTINATION share/wds/plugin-sdk COMPONENT PluginSDK)
 
 if(WIN32)
