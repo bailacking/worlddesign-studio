@@ -40,8 +40,9 @@ def verify(args):
         stage = root / "staging"
         installed = root / "relocated workbench"
         subprocess.run(
-            [args.cmake, "--install", build, "--component", "Workbench", "--prefix", stage,
+            [args.cmake, "--install", build, "--component", "Workbench", "--prefix", stage.name,
              "--config", args.config],
+            cwd=root,
             check=True,
             timeout=90,
         )

@@ -169,6 +169,11 @@ if(WDS_BUILD_MODERN_STUDIO)
     set_target_properties(wds_studio_modern PROPERTIES
       INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
   endif()
+  install(CODE [[
+    if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_PREFIX}")
+      get_filename_component(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}" ABSOLUTE)
+    endif()
+  ]] COMPONENT Workbench)
   install(TARGETS wds_studio_modern
     BUNDLE DESTINATION . COMPONENT Workbench
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
