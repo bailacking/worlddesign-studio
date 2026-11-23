@@ -12,7 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def build_program(args: argparse.Namespace, name: str) -> Path:
-    return args.build / (name + (".exe" if os.name == "nt" else ""))
+    filename = name + (".exe" if os.name == "nt" else "")
+    candidates = [args.build / filename, args.build / "bin" / filename]
+    if sys.platform == "darwin":
+        macos = args.build / "wds_studio_modern.app" / "Contents" / "MacOS"
+        candidates.append(macos / filename)
+    return next((path for path in candidates if path.is_file()), candidates[0])
 
 
 def workbench_environment(args: argparse.Namespace, program: Path) -> dict[str, str]:

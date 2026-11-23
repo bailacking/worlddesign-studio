@@ -297,6 +297,26 @@ class Workbench final : public QMainWindow {
     refresh();
   }
 
+  bool startEditSmoke() {
+    if (!scene_ready_ || project_id_ != "scene-editing" || revision_ != 0) return false;
+    selectEntity("drifter");
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      if (field_schema_.at(static_cast<qsizetype>(index)).toObject().value("id") != "vx") continue;
+      if (selectedIndex() < 0 || !fields_[index]->isEnabled() || committed_[index] != 8)
+        return false;
+      fields_[index]->setValue(31);
+      save_->trigger();
+      return busy_;
+    }
+    return false;
+  }
+
+  bool editSmokeSaved() const {
+    const auto index = selectedIndex();
+    return scene_ready_ && revision_ == 1 && index >= 0 &&
+           entities_.at(index).toObject().value("vx").toInt() == 31;
+  }
+
  signals:
   void inspectionFinished(bool ready);
 
@@ -1448,8 +1468,9 @@ int main(int argc, char** argv) {
   const auto arguments = app.arguments();
   const bool smoke =
       (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
+  const bool edit_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-edit";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName(smoke ? "WDS Studio Smoke" : "WDS Studio");
+  QCoreApplication::setApplicationName(smoke || edit_smoke ? "WDS Studio Smoke" : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
@@ -1458,6 +1479,18 @@ int main(int argc, char** argv) {
     QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
       const auto frame = ready ? window.centralWidget()->grab() : QPixmap{};
       app.exit(!frame.isNull() && (arguments.size() == 3 || frame.save(arguments.at(3))) ? 0 : 1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
+  } else if (edit_smoke) {
+    bool editing = false;
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      if (!ready || editing) {
+        app.exit(ready && window.editSmokeSaved() ? 0 : 1);
+        return;
+      }
+      editing = true;
+      if (!window.startEditSmoke()) app.exit(1);
     });
     QTimer::singleShot(20000, &app, [&] { app.exit(2); });
     window.openProject(arguments.at(2));

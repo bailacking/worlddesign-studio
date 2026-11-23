@@ -132,7 +132,8 @@ endif()
 
 if(WDS_BUILD_MODERN_STUDIO)
   find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets LinguistTools)
-  qt_add_executable(wds_studio_modern WIN32
+  include(GNUInstallDirs)
+  qt_add_executable(wds_studio_modern WIN32 MACOSX_BUNDLE
     src/studio/main.cpp
     src/studio/asset_preview.cpp
     src/studio/bridge.cpp
@@ -154,6 +155,39 @@ if(WDS_BUILD_MODERN_STUDIO)
     SOURCE_TARGETS wds_studio_modern
     TS_FILES src/studio/i18n/workbench_zh_CN.ts
     RESOURCE_PREFIX "/studio/i18n")
+  set(studio_deploy_options)
+  if(WIN32)
+    list(APPEND studio_deploy_options DEPLOY_TOOL_OPTIONS --include-plugins qoffscreen)
+  elseif(APPLE)
+    # The bundle uses the same sibling CLI lookup as the other standalone builds.
+    set_property(TARGET wds_studio_modern APPEND PROPERTY LINK_DEPENDS "$<TARGET_FILE:wds_cli>")
+    add_custom_command(TARGET wds_studio_modern POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE_DIR:wds_studio_modern>"
+      VERBATIM)
+  else()
+    set_target_properties(wds_studio_modern PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+  endif()
+  install(TARGETS wds_studio_modern
+    BUNDLE DESTINATION . COMPONENT Workbench
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+  if(APPLE)
+    install(PROGRAMS "$<TARGET_FILE:wds_cli>"
+      DESTINATION "wds_studio_modern.app/Contents/MacOS" COMPONENT Workbench)
+    install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+      DESTINATION "wds_studio_modern.app/Contents/PlugIns/platforms" COMPONENT Workbench)
+  else()
+    install(TARGETS wds_cli RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+  endif()
+  install(FILES LICENSE DESTINATION . COMPONENT Workbench)
+  install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION licenses
+    RENAME nlohmann-json.txt COMPONENT Workbench)
+  install(FILES third_party/lodepng/LICENSE DESTINATION licenses
+    RENAME lodepng.txt COMPONENT Workbench)
+  qt_generate_deploy_app_script(TARGET wds_studio_modern OUTPUT_SCRIPT studio_deploy
+    NO_UNSUPPORTED_PLATFORM_ERROR ${studio_deploy_options})
+  install(SCRIPT "${studio_deploy}" COMPONENT Workbench)
   add_test(NAME workbench_behavior_smoke COMMAND wds_studio_modern --smoke
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/shared-behavior"
     "${CMAKE_CURRENT_BINARY_DIR}/w11-workbench.png")
@@ -249,6 +283,14 @@ add_executable(wds_expedition_save tests/expedition_save.cpp)
 target_link_libraries(wds_expedition_save PRIVATE wds_project wds_compile_options)
 find_package(Python3 3.10 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  if(WDS_BUILD_MODERN_STUDIO)
+    add_test(NAME workbench_install COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/workbench_install.py"
+      --cmake "${CMAKE_COMMAND}" --build "${CMAKE_CURRENT_BINARY_DIR}"
+      --source "${CMAKE_CURRENT_SOURCE_DIR}/examples" --qt-config "${Qt6_DIR}"
+      --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>")
+    set_tests_properties(workbench_install PROPERTIES TIMEOUT 170)
+  endif()
   add_test(NAME expedition_replay COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/w24-expeditions/verify.py"
     --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>

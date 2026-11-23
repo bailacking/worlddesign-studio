@@ -220,6 +220,10 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 Windows、Ubuntu 和 macOS 共用工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure`。测试离屏打开「礁灯投递」「方块工坊」「块石工场」和行为场景并绘制视口。Ubuntu 和 macOS 也用 Qt 6.8.3 从源码构建，配置时用 `-DQt6_DIR=<Qt6Config.cmake 所在目录>` 指定已安装的桌面 SDK。
 
+工作台安装组件包含项目 CLI 和 Qt 运行依赖。用 `cmake --install build/studio --component Workbench --prefix build/studio-installed --config Release` 安装。Windows、Ubuntu 从安装目录的 `bin` 启动工作台。macOS 可打开安装目录下的 `wds_studio_modern.app`。也可以执行 `python scripts/launch.py studio --build build/studio-installed`。
+
+运行 `ctest --test-dir build/studio -R '^workbench_install$' --output-on-failure` 验证安装目录迁移。测试剥离构建时 Qt 路径，打开方块场景，在二维示例副本中将属性面板的 X 速度从 8 改为 31，并用安装后的 CLI 重新读取修订 1。
+
 ### 启动工作台与试玩
 
 在仓库根目录运行下列入口。默认读取 `build/native`，按上文构建在 `build/studio` 时，给命令加 `--build build/studio`。

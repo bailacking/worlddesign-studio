@@ -94,7 +94,7 @@ jobs:
           $env:PATH = "$qt/bin;$env:PATH"
           cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DCMAKE_PREFIX_PATH=$qt"
           cmake --build build/studio --target wds_studio_modern
-          ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure --no-tests=error
+          ctest --test-dir build/studio -R '^workbench_' --output-on-failure --no-tests=error
 
   posix-workbench:
     name: Workbench smoke (${{ matrix.os }})
@@ -135,4 +135,4 @@ jobs:
           test -n "$qt_config"
           cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DQt6_DIR=$(dirname "$qt_config")"
           cmake --build build/studio --target wds_studio_modern --parallel 2
-          ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure --no-tests=error
+          ctest --test-dir build/studio -R '^workbench_' --output-on-failure --no-tests=error
