@@ -107,7 +107,7 @@ void draw_map(const Expedition& run, const Site* selected, const Textures& icons
   for (const auto& site : region.sites) {
     const auto point = center(run.location(site), true);
     if (&site == selected) DrawCircleV(point, step * 0.43f, ink);
-    if (const auto icon = icons.find(site.kind); icon != icons.end()) {
+    if (const auto icon = icons.find(site.icon); icon != icons.end()) {
       const auto texture = icon->second;
       const auto size = step * 0.72f;
       DrawTexturePro(texture,

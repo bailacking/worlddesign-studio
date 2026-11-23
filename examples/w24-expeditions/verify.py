@@ -29,6 +29,7 @@ def attack(target, count=1):
 
 EAST = action("east")
 WEST = action("west")
+SOUTH = action("south")
 WAIT = action("wait")
 
 COPPER_TO_SKY = [
@@ -82,6 +83,24 @@ def causes(steps):
 
 def carry(step, item):
     return any(row["item"] == item for row in step["workshop"]["bag"])
+
+
+def supply_chain(cli, project, revision=0):
+    craft = action("craft", "refined-1")
+    trade, shelter = use("outpost-0-1"), use("shelter-0-1")
+    route = [SOUTH, SOUTH, SOUTH, *([EAST] * 4), *gather("deposit-0-1"), craft,
+             *gather("deposit-0-1"), EAST, trade, craft, trade, trade, EAST, shelter]
+    steps = replay(cli, project, route, revision)["steps"]
+    expected = {8: "missing_ingredients", 11: "trade_unavailable", 14: "trade_unavailable"}
+    for index, step in enumerate(steps):
+        assert step["code"] == expected.get(index, "ok"), (project.name, route[index], step)
+        if index in expected:
+            assert step["tick"] == steps[index - 1]["tick"]
+            assert step["workshop"] == steps[index - 1]["workshop"]
+    assert carry(steps[12], "refined-1") and not carry(steps[-1], "refined-1")
+    assert not carry(steps[12], "sample-1") and carry(steps[-1], "voucher-1")
+    assert "shelter" in causes(steps[-1:])
+    return len(steps)
 
 
 def journey(cli, projects):
@@ -169,6 +188,17 @@ def reauthor(cli, project, route):
     trial = call(cli, project, "expedition.replay", {"actions": []})
     assert trial["code"] == "invalid_expedition" and trial["location"].endswith("/icons/source"), trial
     icon.write_bytes(original)
+    area = data["regions"][0]
+    override = next((spot for spot in area["sites"] if "icon" in spot), None)
+    if override:
+        initial = override["icon"]
+        override["icon"] = "unlinked-icon"
+        write_json(path, data)
+        trial = call(cli, project, "expedition.replay", {"actions": []})
+        location = f"/regions/{area['id']}/sites/{override['id']}/icon"
+        assert trial["code"] == "invalid_expedition" and trial["location"].endswith(location), trial
+        override["icon"] = initial
+        write_json(path, data)
     repair_ms = (time.perf_counter() - start) * 1000
     rejected = call(cli, project, "resource.field.set",
                     {"resource_id": "expedition", "field": "hunger_interval", "value": 0},
@@ -203,7 +233,10 @@ def export(cli, source, destination, revision):
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     assert not result.returncode, (result.stdout, result.stderr)
     packed = time.perf_counter()
-    assert (destination / "game" / "assets" / "icon-portal.png").is_file()
+    images = list((source / "assets").glob("*.png"))
+    assert any(image.name == "icon-portal.png" for image in images)
+    for image in images:
+        assert (destination / "game" / "assets" / image.name).read_bytes() == image.read_bytes()
     env = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
     checks = {"pack_ms": (packed - start) * 1000}
     for mode, metric in (("--check", "check_ms"), ("--expedition-smoke", "graphics_ms")):
@@ -233,9 +266,12 @@ def main():
         metrics = generate(root / "projects", seed=args.seed, scale=args.scale)
         generation = time.perf_counter()
         reports = journey(args.cli.resolve(), root / "projects")
-        replayed = time.perf_counter()
         copper = root / "projects" / "copper-relay"
         drift = root / "projects" / "drift-naturalists"
+        supply_steps = []
+        if args.scale:
+            supply_steps.extend(supply_chain(args.cli.resolve(), p) for p in (copper, drift))
+        replayed = time.perf_counter()
         persistence(args.probe.resolve(), drift, root / "save.json")
         checkpoint = time.perf_counter()
         packages = {}
@@ -245,6 +281,8 @@ def main():
         first_packed = time.perf_counter()
         changes = {"copper": reauthor(args.cli.resolve(), copper, COPPER),
                    "drift": reauthor(args.cli.resolve(), drift, DRIFT)}
+        if args.scale:
+            supply_steps.extend(supply_chain(args.cli.resolve(), p, 2) for p in (copper, drift))
         before_pack = time.perf_counter()
         if args.runtime:
             packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised", 2)
@@ -256,6 +294,7 @@ def main():
                   "reauthor_ms": (before_pack - first_packed) * 1000,
                   "reauthor": changes, "packages": packages,
                   "route_steps": {key: len(value["steps"]) for key, value in reports.items()},
+                  "supply_steps_checked": supply_steps,
                   "independent_packages_checked": len(packages)}
         if args.report:
             write_json(args.report, result)

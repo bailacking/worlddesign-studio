@@ -107,6 +107,21 @@ def drift_regions():
     ]
 
 
+def add_supply_chains(regions, recipes, scale):
+    for index, area in enumerate(regions):
+        for slot in range(4 * scale):
+            key = f"{index}-{slot}"
+            sample, refined, voucher = (f"{name}-{slot}" for name in
+                                        ("sample", "refined", "voucher"))
+            recipes[refined] = [sample] * (slot % 3 + 1)
+            x, y = 3 + 3 * (slot % 4), 4 + slot // 4
+            area["sites"].extend([
+                site(f"deposit-{key}", "source", x, y, reward=sample, icon=f"icon-deposit-{key}"),
+                site(f"outpost-{key}", "trade", x + 1, y, item=refined, reward=voucher),
+                site(f"shelter-{key}", "rest", x + 2, y, item=voucher, power=3 + slot % 5),
+            ])
+
+
 def rules(plan, seed, scale):
     if plan == "copper-relay":
         result = copper_regions()
@@ -114,13 +129,7 @@ def rules(plan, seed, scale):
     else:
         result = drift_regions()
         recipes = {"spear": ["reed"], "lantern": ["reed"], "skiff": ["reed", "reed"]}
-    for index, area in enumerate(result):
-        if not scale:
-            continue
-        # Add optional, runtime-visible sites away from the acceptance route.
-        for n in range(12 * scale):
-            area["sites"].append(site(f"camp-{index}-{n}", "rest", 3 + n % 12,
-                                      4 + n // 12, power=3 + n % 5))
+    add_supply_chains(result, recipes, scale)
     return {
         "version": 1, "view": "voxel" if plan == "copper-relay" else "planar",
         "seed": seed, "permanent": plan != "copper-relay",
@@ -164,7 +173,7 @@ def png_chunk(key, data):
     return struct.pack(">I", len(data)) + key + data + struct.pack(">I", zlib.crc32(key + data))
 
 
-def icon_png(glyph):
+def icon_png(glyph, color=(255, 255, 255)):
     # Transparent square with 3 px cells and a 3 px border on either side.
     width = 21
     pixels = bytearray()
@@ -172,7 +181,7 @@ def icon_png(glyph):
         row = bytearray((0, 0, 0, 0) * 3)
         for bit in range(4, -1, -1):
             alpha = 255 if bits & (1 << bit) else 0
-            row.extend(bytes((255, 255, 255, alpha)) * 3)
+            row.extend(bytes((*color, alpha)) * 3)
         row.extend(bytes(12))
         pixels.extend((b"\x00" + row) * 3)
     header = struct.pack(">IIBBBBB", width, width, 8, 6, 0, 0, 0)
@@ -182,7 +191,16 @@ def icon_png(glyph):
 
 def create_icons(data):
     kinds = {spot["kind"] for area in data["regions"] for spot in area["sites"]}
-    return {kind: icon_png(GLYPHS[kind]) for kind in sorted(kinds)}
+    data["icons"] = {kind: f"icon-{kind}" for kind in sorted(kinds)}
+    images = {asset: icon_png(GLYPHS[kind]) for kind, asset in data["icons"].items()}
+    for area in data["regions"]:
+        assets = [spot["icon"] for spot in area["sites"] if "icon" in spot]
+        for variant, asset in enumerate(assets):
+            hue = (HUES[area["habitat"]] + ((data["seed"] + variant) % 17 - 8) * .01) % 1
+            color = tuple(round(channel * 255) for channel in colorsys.hsv_to_rgb(hue, .35, 1))
+            glyph = (0, 4, 14, 16 | variant, 14, 4, 0)
+            images[asset] = icon_png(glyph, color)
+    return images
 
 
 def write_json(path, data):
@@ -196,11 +214,9 @@ def resource(key, kind, filename, refs=()):
 def write_project(path, plan, data, icons):
     assets = path / "assets"
     assets.mkdir(parents=True)
-    data["icons"] = {kind: f"icon-{kind}" for kind in icons}
     resources = [resource("entry", "scene", "entry.json", ["expedition"]),
-                 resource("expedition", "data", "expedition.json", data["icons"].values())]
-    for kind, png in icons.items():
-        asset = data["icons"][kind]
+                 resource("expedition", "data", "expedition.json", icons)]
+    for asset, png in icons.items():
         (assets / f"{asset}.png").write_bytes(png)
         resources.append(resource(asset, "image", f"{asset}.png"))
     scene = {"format_version": 1, "entities": []}
@@ -239,6 +255,9 @@ def generate(root, seed=73021, scale=0):
         "icon_ms": (illustrated - colored) * 1000,
         "write_ms": (written - illustrated) * 1000,
         "icons": sum(len(batch) for batch in icons),
+        "site_icons": sum(len(batch) - len(data["icons"]) for (_, data), batch in zip(plans, icons)),
+        "recipes": sum(len(data["workshop"]["recipes"]) for _, data in plans),
+        "sources": sum(len(data["workshop"]["sources"]) for _, data in plans),
         "scenes": len(plans),
         "regions": sum(len(data["regions"]) for _, data in plans),
         "sites": sum(len(area["sites"]) for _, data in plans for area in data["regions"]),

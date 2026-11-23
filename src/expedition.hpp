@@ -26,6 +26,7 @@ struct Site {
   std::string reward;
   int power;
   int anchor_capacity = 3;
+  std::string icon{};
 };
 
 struct Region {

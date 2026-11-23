@@ -108,7 +108,7 @@ Region region(const Json& row, const std::string& location, std::set<std::string
     const auto capacity = entry.contains("capacity") ? integer(entry, "capacity", 1, 20, path) : 3;
     result.sites.push_back({key, kind, where, token(entry, "target", path, true),
                             token(entry, "item", path, true), token(entry, "reward", path, true),
-                            power, capacity});
+                            power, capacity, token(entry, "icon", path, true)});
   }
   return result;
 }
@@ -156,25 +156,31 @@ void validate_icons(const Json& document) {
   }
 }
 
-Icons load_icons(const Json& data, const platform::Project& project,
+Icons load_icons(const Json& data, const Rules& rules, const platform::Project& project,
                  const platform::Resource& document, const fs::path& root) {
   Icons result;
-  if (!data.contains("icons")) return result;
-  for (const auto& [kind, id] : data["icons"].items()) {
-    const auto& key = id.get_ref<const std::string&>();
+  const auto load_icon = [&](const std::string& key, const std::string& location) {
+    if (result.contains(key)) return;
     const auto asset = std::ranges::find(project.resources, key, &platform::Resource::id);
     const bool linked = std::ranges::find(document.refs, key) != document.refs.end();
     if (asset == project.resources.end() || !linked || asset->kind != "image")
-      throw Invalid{"/icons/" + kind};
+      throw Invalid{location};
     const auto bytes = io::read_bytes(root / asset->path, 64 * 1024);
-    if (!bytes) throw Invalid{"/icons/" + kind};
+    if (!bytes) throw Invalid{location};
     const auto info = assets::inspect_png(*bytes);
-    if (info.code != "ok" || info.width > 64 || info.height > 64) throw Invalid{"/icons/" + kind};
+    if (info.code != "ok" || info.width > 64 || info.height > 64) throw Invalid{location};
     auto image = assets::decode_png(*bytes);
-    if (image.info.code != "ok") throw Invalid{"/icons/" + kind};
-    result.emplace(kind, Icon{static_cast<int>(info.width), static_cast<int>(info.height),
-                              std::move(image.rgba)});
-  }
+    if (image.info.code != "ok") throw Invalid{location};
+    result.emplace(key, Icon{static_cast<int>(info.width), static_cast<int>(info.height),
+                             std::move(image.rgba)});
+  };
+  if (data.contains("icons"))
+    for (const auto& [kind, asset] : data["icons"].items())
+      load_icon(asset.get_ref<const std::string&>(), "/icons/" + kind);
+  for (const auto& area : rules.regions)
+    for (const auto& site : area.sites)
+      if (!site.icon.empty())
+        load_icon(site.icon, "/regions/" + area.id + "/sites/" + site.id + "/icon");
   return result;
 }
 
@@ -205,6 +211,11 @@ Expedition decode(const Json& data, std::string identity) {
   if (!items.workshop) throw Invalid{items.location};
   validate_references(rules, items.workshop->catalog(), region_ids);
   validate_icons(data);
+  if (data.contains("icons"))
+    for (auto& area : rules.regions)
+      for (auto& site : area.sites)
+        if (site.icon.empty() && data["icons"].contains(site.kind))
+          site.icon = data["icons"][site.kind].get<std::string>();
   return Expedition(std::move(rules), std::move(*items.workshop), std::move(identity));
 }
 
@@ -288,7 +299,7 @@ LoadResult load(const fs::path& root, std::uint64_t revision) {
     if (!bytes) return {{}, "invalid_expedition", resource->path};
     const auto data = io::parse_json(*bytes);
     auto expedition = decode(data, identity(project.id, revision, *bytes));
-    auto icons = load_icons(data, project, *resource, root);
+    auto icons = load_icons(data, expedition.rules(), project, *resource, root);
     const auto current = platform::open_project(root);
     if (!current.project) return {{}, current.code, current.location};
     if (current.project->revision != revision) return {{}, "revision_conflict", "/revision"};
