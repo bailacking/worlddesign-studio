@@ -735,24 +735,78 @@
             <translation>编辑(&amp;E)</translation>
         </message>
         <message>
-            <source>&amp;Undo Scene Change</source>
-            <translation>撤销场景改动(&amp;U)</translation>
+            <source>&amp;Undo Change</source>
+            <translation>撤销改动(&amp;U)</translation>
         </message>
         <message>
-            <source>&amp;Redo Scene Change</source>
-            <translation>重做场景改动(&amp;R)</translation>
+            <source>&amp;Redo Change</source>
+            <translation>重做改动(&amp;R)</translation>
         </message>
         <message>
-            <source>Scene change redone.</source>
-            <translation>已重做场景改动。</translation>
+            <source>Change redone.</source>
+            <translation>已重做改动。</translation>
         </message>
         <message>
-            <source>Scene change undone.</source>
-            <translation>已撤销场景改动。</translation>
+            <source>Change undone.</source>
+            <translation>已撤销改动。</translation>
         </message>
         <message>
             <source>Import Resource…</source>
             <translation>导入资源…</translation>
+        </message>
+        <message>
+            <source>Merge Resources…</source>
+            <translation>合并资源…</translation>
+        </message>
+        <message>
+            <source>Choose Common Ancestor</source>
+            <translation>选择共同基线工程</translation>
+        </message>
+        <message>
+            <source>Choose Incoming Project</source>
+            <translation>选择来件工程</translation>
+        </message>
+        <message>
+            <source>Merge Resources</source>
+            <translation>合并资源</translation>
+        </message>
+        <message>
+            <source>Select up to eight resources to compare.</source>
+            <translation>最多选择八项资源。</translation>
+        </message>
+        <message>
+            <source>Preview Merge</source>
+            <translation>预览合并</translation>
+        </message>
+        <message>
+            <source>Choose a checkout of the current project.</source>
+            <translation>请选择与当前工程 ID 相同的副本。</translation>
+        </message>
+        <message>
+            <source>The selected resources already agree.</source>
+            <translation>所选资源无需改动。</translation>
+        </message>
+        <message>
+            <source>Commit changes to these resources?
+%1</source>
+            <translation>提交以下资源的改动？
+%1</translation>
+        </message>
+        <message>
+            <source>Resource merge committed.</source>
+            <translation>已提交资源合并。</translation>
+        </message>
+        <message>
+            <source>Resource Conflicts</source>
+            <translation>资源冲突</translation>
+        </message>
+        <message>
+            <source>The listed resources contain changes on both sides.</source>
+            <translation>详情中列出的资源在双方工程中都有冲突改动。</translation>
+        </message>
+        <message>
+            <source>Keep Conflicting Resources and Continue</source>
+            <translation>保留本地冲突资源并继续</translation>
         </message>
         <message>
             <source>Export for Windows x64…</source>

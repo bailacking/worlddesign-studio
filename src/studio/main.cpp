@@ -16,6 +16,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -187,6 +188,7 @@ class Workbench final : public QMainWindow {
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
     import_ = project_menu_->addAction(QString{}, this, &Workbench::importResource);
+    merge_ = project_menu_->addAction(QString{}, this, &Workbench::mergeProjectResources);
     export_ = project_menu_->addAction(QString{}, this, &Workbench::exportGame);
 #ifndef Q_OS_WIN
     export_->setVisible(false);
@@ -372,8 +374,8 @@ class Workbench final : public QMainWindow {
   void retranslate() {
     project_menu_->setTitle(tr("&Project"));
     edit_menu_->setTitle(tr("&Edit"));
-    undo_->setText(tr("&Undo Scene Change"));
-    redo_->setText(tr("&Redo Scene Change"));
+    undo_->setText(tr("&Undo Change"));
+    redo_->setText(tr("&Redo Change"));
     scene_menu_->setTitle(tr("&Scene"));
     view_menu_->setTitle(tr("&View"));
     settings_menu_->setTitle(tr("Se&ttings"));
@@ -383,6 +385,7 @@ class Workbench final : public QMainWindow {
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
     import_->setText(tr("Import Resource…"));
+    merge_->setText(tr("Merge Resources…"));
     export_->setText(tr("Export for Windows x64…"));
     clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
@@ -515,6 +518,149 @@ class Workbench final : public QMainWindow {
                                      tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
                                      nullptr, QFileDialog::DontUseNativeDialog);
     if (!source.isEmpty()) importFile(source);
+  }
+
+  void mergeProjectResources() {
+    if (busy_ || playing() || hasDraft() || !revision_ || resources_model_.isEmpty()) return;
+    const auto parent = QFileInfo(root_).absolutePath();
+    const auto options = QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog;
+    const auto base =
+        QFileDialog::getExistingDirectory(this, tr("Choose Common Ancestor"), parent, options);
+    if (base.isEmpty()) return;
+    const auto incoming =
+        QFileDialog::getExistingDirectory(this, tr("Choose Incoming Project"), parent, options);
+    if (incoming.isEmpty()) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Merge Resources"));
+    dialog.resize(460, 360);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(tr("Select up to eight resources to compare."), &dialog));
+    auto* list = new QListWidget(&dialog);
+    list->setSelectionMode(QAbstractItemView::MultiSelection);
+    for (const auto row : resources_model_) {
+      const auto resource = row.toObject();
+      const auto id = resource.value("id").toString();
+      auto* item = new QListWidgetItem(
+          QStringLiteral("%1  ·  %2").arg(id, resource.value("path").toString()), list);
+      item->setData(Qt::UserRole, id);
+    }
+    layout->addWidget(list);
+    auto* actions = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto* preview = actions->button(QDialogButtonBox::Ok);
+    preview->setText(tr("Preview Merge"));
+    preview->setEnabled(false);
+    connect(list, &QListWidget::itemSelectionChanged, &dialog, [list, preview] {
+      const auto count = list->selectedItems().size();
+      preview->setEnabled(count > 0 && count <= 8);
+    });
+    connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(actions);
+    if (dialog.exec() != QDialog::Accepted) return;
+    QJsonArray selected;
+    for (const auto* item : list->selectedItems())
+      selected.append(item->data(Qt::UserRole).toString());
+    setBusy(true);
+    bridge_.request(
+        base, "project.open", "read", {}, {},
+        [this, base, incoming, selected](const QJsonObject& ancestor) {
+          if (!mergeSourceReady(ancestor)) return;
+          const auto base_revision = ancestor.value("revision");
+          bridge_.request(
+              incoming, "project.open", "read", {}, {},
+              [this, base, incoming, selected, base_revision](const QJsonObject& other) {
+                if (!mergeSourceReady(other)) return;
+                previewResourceMerge({{"base_directory", base},
+                                      {"base_revision", base_revision},
+                                      {"other_directory", incoming},
+                                      {"other_revision", other.value("revision")},
+                                      {"resources", selected}});
+              });
+        });
+  }
+
+  bool mergeSourceReady(const QJsonObject& result) {
+    if (result.value("code") == "ok" && result.value("revision").isDouble() &&
+        result.value("project_id") == project_id_)
+      return true;
+    if (result.value("code") == "ok")
+      setStatus(QT_TR_NOOP("Choose a checkout of the current project."));
+    else
+      report({nullptr, {}, result});
+    setBusy(false);
+    return false;
+  }
+
+  void previewResourceMerge(const QJsonObject& input) {
+    bridge_.request(root_, "project.merge", "preview", revision_, input,
+                    [this, input](const QJsonObject& result) {
+                      if (result.value("code") == "merge_conflict") {
+                        showMergeConflicts(input, result.value("conflicts").toArray());
+                        return;
+                      }
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      if (!result.value("changed").toBool()) {
+                        setStatus(QT_TR_NOOP("The selected resources already agree."));
+                        setBusy(false);
+                        return;
+                      }
+                      QStringList names;
+                      for (const auto id : result.value("resources").toArray())
+                        names.append(id.toString());
+                      if (QMessageBox::question(
+                              this, tr("Merge Resources"),
+                              tr("Commit changes to these resources?\n%1").arg(names.join(u'\n')),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+                        cancelPreview("project.merge", input);
+                        return;
+                      }
+                      bridge_.request(root_, "project.merge", "apply", revision_, input,
+                                      [this](const QJsonObject& applied) {
+                                        if (applied.value("code") != "ok") {
+                                          report({nullptr, {}, applied});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        recordHistory(applied, selected_);
+                                        revision_ = applied.value("revision").toInteger();
+                                        setStatus(QT_TR_NOOP("Resource merge committed."));
+                                        refresh(false);
+                                      });
+                    });
+  }
+
+  void showMergeConflicts(QJsonObject input, const QJsonArray& conflicts) {
+    QStringList ids, paths;
+    for (const auto conflict : conflicts) {
+      const auto entry = conflict.toObject();
+      const auto id = entry.value("resource").toString();
+      ids.append(id);
+      paths.append(id + entry.value("path").toString());
+    }
+    QJsonArray selected;
+    for (const auto id : input.value("resources").toArray())
+      if (!ids.contains(id.toString())) selected.append(id);
+    QMessageBox summary(QMessageBox::Warning, tr("Resource Conflicts"),
+                        tr("The listed resources contain changes on both sides."),
+                        QMessageBox::Cancel, this);
+    summary.setDetailedText(paths.join(u'\n'));
+    QPushButton* continue_merge = nullptr;
+    if (!selected.isEmpty())
+      continue_merge =
+          summary.addButton(tr("Keep Conflicting Resources and Continue"), QMessageBox::AcceptRole);
+    summary.exec();
+    if (continue_merge && summary.clickedButton() == continue_merge) {
+      input["resources"] = selected;
+      previewResourceMerge(input);
+    } else {
+      cancelPreview("project.merge", input);
+    }
   }
 
   void exportGame() {
@@ -897,7 +1043,8 @@ class Workbench final : public QMainWindow {
   void recordHistory(const QJsonObject& result, const QString& next_selection) {
     if (!result.value("changed").toBool()) return;
     redo_history_.clear();
-    const auto change = result.value("scene_change").toObject();
+    auto change = result.value("scene_change").toObject();
+    if (change.isEmpty()) change = result.value("change").toObject();
     if (change.isEmpty()) {
       undo_history_.clear();
       return;
@@ -912,15 +1059,27 @@ class Workbench final : public QMainWindow {
         source.empty())
       return;
     auto request = source.back().change;
+    const bool project = request.contains("resources");
     if (!redo) {
-      const auto before = request.value("before");
-      request["before"] = request.value("after");
-      request["after"] = before;
+      const auto reverse = [](QJsonObject resource) {
+        const auto before = resource.value("before");
+        resource["before"] = resource.value("after");
+        resource["after"] = before;
+        return resource;
+      };
+      if (project) {
+        QJsonArray reversed;
+        for (const auto row : request.value("resources").toArray())
+          reversed.append(reverse(row.toObject()));
+        request["resources"] = reversed;
+      } else {
+        request = reverse(request);
+      }
     }
     setBusy(true);
     bridge_.request(
-        root_, "scene.restore", "apply", revision_, {{"change", request}},
-        [this, redo](const QJsonObject& result) {
+        root_, project ? "project.restore" : "scene.restore", "apply", revision_,
+        {{"change", request}}, [this, redo, project](const QJsonObject& result) {
           if (result.value("code") != "ok" || !result.value("changed").toBool() ||
               !result.value("revision").isDouble()) {
             report({nullptr, {}, result});
@@ -933,10 +1092,11 @@ class Workbench final : public QMainWindow {
           to.push_back(std::move(from.back()));
           from.pop_back();
           revision_ = result.value("revision").toInteger();
-          report({redo ? QT_TR_NOOP("Scene change redone.") : QT_TR_NOOP("Scene change undone."),
-                  {},
-                  {}});
-          readScene(false);
+          report({redo ? QT_TR_NOOP("Change redone.") : QT_TR_NOOP("Change undone."), {}, {}});
+          if (project)
+            refresh(false);
+          else
+            readScene(false);
         });
   }
 
@@ -1345,6 +1505,7 @@ class Workbench final : public QMainWindow {
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
     import_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
+    merge_->setEnabled(import_->isEnabled() && !resources_model_.isEmpty());
     export_->setEnabled(!busy_ && !playing() && (scene_ready_ || voxel_scene_) && !hasDraft() &&
                         revision_.has_value());
     clear_cache_->setEnabled(!busy_ && revision_.has_value());
@@ -1420,6 +1581,7 @@ class Workbench final : public QMainWindow {
   QAction* create_;
   QAction* close_;
   QAction* import_;
+  QAction* merge_;
   QAction* export_;
   QAction* clear_cache_;
   QAction* recover_;
