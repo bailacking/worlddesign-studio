@@ -224,12 +224,19 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
   if (id == "scene.voxel.cart" || id == "scene.voxel.dynamics")
     return workyard(directory, revision, id, apply, input);
-  if (id == "expedition.replay") {
+  if (id == "expedition.replay" || id == "expedition.recipes") {
     auto loaded = expedition::load(directory, revision);
     if (!loaded.expedition) return fail(loaded.code, loaded.location);
+    if (id == "expedition.recipes")
+      return Json::parse(expedition::recipe_graph(*loaded.expedition));
     const auto actions = input.find("actions");
     if (actions == input.end()) return fail("invalid_argument", "/input/actions");
-    return Json::parse(expedition::replay(std::move(*loaded.expedition), actions->dump()));
+    const auto resume = input.find("resume");
+    if (resume != input.end() && !resume->is_object())
+      return fail("invalid_checkpoint", "/input/resume");
+    return Json::parse(expedition::replay(std::move(*loaded.expedition), actions->dump(),
+                                          resume == input.end() ? std::string{} : resume->dump(),
+                                          flag(input, "checkpoint")));
   }
   if (id == "circuit.replay") return voxel::replay_circuit(input);
   if (id == "behavior.convert") {

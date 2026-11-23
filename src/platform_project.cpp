@@ -2372,8 +2372,16 @@ Json build_operation_specs() {
        {"capture_change", "optional boolean"}},
       scene_errors);
   add("expedition.replay", "project request DIRECTORY", false,
-      {{"directory", "path"}, {"expected_revision", "integer"}, {"actions", "array of actions"}},
-      {"no_expedition", "invalid_expedition", "invalid_action", "revision_conflict", "io_error"});
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"actions", "array of actions"},
+       {"checkpoint", "optional boolean to return a portable save"},
+       {"resume", "optional checkpoint for the same project, revision and rule pack"}},
+      {"no_expedition", "invalid_expedition", "invalid_action", "invalid_checkpoint",
+       "revision_conflict", "io_error"});
+  add("expedition.recipes", "project request DIRECTORY", false,
+      {{"directory", "path"}, {"expected_revision", "integer"}},
+      {"no_expedition", "invalid_expedition", "revision_conflict", "io_error"});
   add("scene.landscape.sample", "project request DIRECTORY", false,
       {{"directory", "path"}, {"expected_revision", "integer"}, {"x", "block x"}, {"z", "block z"}},
       scene_errors);

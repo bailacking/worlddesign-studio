@@ -435,6 +435,30 @@ Json encode_action(const Action& action) {
   return value;
 }
 
+Json checkpoint_of(const Expedition& expedition) {
+  auto actions = Json::array();
+  for (const auto& action : expedition.history()) actions.push_back(encode_action(action));
+  return {{"version", 1}, {"identity", expedition.identity()}, {"actions", std::move(actions)}};
+}
+
+bool restore_checkpoint(Expedition& expedition, const Json& document) {
+  try {
+    if (!expedition.history().empty() || !document.is_object() ||
+        document.value("version", 0) != 1 ||
+        document.value("identity", "") != expedition.identity())
+      return false;
+    auto candidate = expedition;
+    for (const auto& action : array(document, "actions", 0, Expedition::max_actions, ""))
+      if (candidate.apply(decode_action(action)) != "ok") return false;
+    expedition = std::move(candidate);
+    return true;
+  } catch (const Invalid&) {
+    return false;
+  } catch (const Json::exception&) {
+    return false;
+  }
+}
+
 Json state(const Expedition& expedition) {
   const auto& current = expedition.state();
   auto receipts = Json::array();
@@ -590,8 +614,60 @@ std::optional<std::string> document_error(std::string_view bytes) {
 
 std::string snapshot(const Expedition& expedition) { return state(expedition).dump(); }
 
-std::string replay(Expedition expedition, std::string_view actions) {
+std::string recipe_graph(const Expedition& expedition) {
+  const auto& workshop = expedition.workshop();
+  const auto& catalog = workshop.catalog();
+  auto products = Json::object();
+  for (const auto& [id, item] : catalog.items)
+    products[id] = {{"tags", item.tags}, {"sources", Json::array()}, {"recipes", Json::array()}};
+  for (const auto& area : expedition.rules().regions)
+    for (const auto& site : area.sites) {
+      if (site.reward.empty()) continue;
+      Json source{{"id", site.id}, {"region", area.id}, {"kind", site.kind}};
+      if (!site.item.empty()) source["requires_item"] = site.item;
+      products[site.reward]["sources"].push_back(std::move(source));
+    }
+  auto recipes = Json::object();
+  auto stations = Json::object();
+  const auto ingredient = [](const items::Ingredient& part) {
+    return Json{{"selector", part.selector}, {"count", part.count}};
+  };
+  for (const auto& [id, recipe] : catalog.recipes) {
+    auto& entry = recipes[id];
+    entry = {{"method", recipe.method},
+             {"output", {{"id", recipe.output.id}, {"count", recipe.output.count}}},
+             {"command_allowed",
+              expedition.allows(recipe.method == "cook" ? Command::cook : Command::craft)}};
+    products[recipe.output.id]["recipes"].push_back(id);
+    if (recipe.priority) entry["priority"] = *recipe.priority;
+    if (!recipe.requires_station.empty()) entry["station"] = recipe.requires_station;
+    if (!recipe.unlocks.empty()) {
+      entry["unlocks"] = recipe.unlocks;
+      stations[recipe.unlocks].push_back(id);
+    }
+    if (recipe.pattern.empty()) {
+      entry["ingredients"] = Json::array();
+      for (const auto& part : recipe.ingredients) entry["ingredients"].push_back(ingredient(part));
+    } else {
+      entry["pattern"] = Json::array();
+      for (const auto& part : recipe.pattern)
+        entry["pattern"].push_back(part ? ingredient(*part) : Json(nullptr));
+    }
+  }
+  return Json{{"code", "ok"},
+              {"mode", play_mode_name(expedition.mode())},
+              {"items", std::move(products)},
+              {"recipes", std::move(recipes)},
+              {"station_unlocks", std::move(stations)},
+              {"unlocked_stations", workshop.state().unlocked}}
+      .dump();
+}
+
+std::string replay(Expedition expedition, std::string_view actions, std::string_view resume,
+                   bool checkpoint) {
   try {
+    if (!resume.empty() && !restore_checkpoint(expedition, io::parse_json(resume)))
+      return Json{{"code", "invalid_checkpoint"}, {"location", "/input/resume"}}.dump();
     const auto input = io::parse_json(actions);
     if (!input.is_array() || input.size() > Expedition::max_actions)
       return Json{{"code", "invalid_action"}, {"location", "/input/actions"}}.dump();
@@ -602,7 +678,9 @@ std::string replay(Expedition expedition, std::string_view actions) {
       current["code"] = result;
       steps.push_back(std::move(current));
     }
-    return Json{{"code", "ok"}, {"state", state(expedition)}, {"steps", steps}}.dump();
+    Json result{{"code", "ok"}, {"state", state(expedition)}, {"steps", std::move(steps)}};
+    if (checkpoint) result["checkpoint"] = checkpoint_of(expedition);
+    return result.dump();
   } catch (const Invalid& error) {
     return Json{{"code", "invalid_action"}, {"location", "/input" + error.location}}.dump();
   } catch (const Json::exception&) {
@@ -615,18 +693,7 @@ bool restore(Expedition& expedition, const fs::path& file) {
   try {
     if (io::node(file, false) != io::PathState::ok) return false;
     const auto bytes = io::read_bytes(file, 1024 * 1024);
-    if (!bytes) return false;
-    const auto document = io::parse_json(*bytes);
-    if (!document.is_object() || document.value("version", 0) != 1 ||
-        document.value("identity", "") != expedition.identity())
-      return false;
-    auto candidate = expedition;
-    for (const auto& value : array(document, "actions", 0, Expedition::max_actions, ""))
-      if (candidate.apply(decode_action(value)) != "ok") return false;
-    expedition = std::move(candidate);
-    return true;
-  } catch (const Invalid&) {
-    return false;
+    return bytes && restore_checkpoint(expedition, io::parse_json(*bytes));
   } catch (const Json::exception&) {
     return false;
   } catch (const fs::filesystem_error&) {
@@ -655,13 +722,10 @@ bool save(const Expedition& expedition, const fs::path& file,
       }
     }
     if (staging.empty()) return false;
-    auto actions = Json::array();
-    for (const auto& action : expedition.history()) actions.push_back(encode_action(action));
     const auto staged = staging / "save.json";
     {
       std::ofstream output(staged, std::ios::binary);
-      output
-          << Json{{"version", 1}, {"identity", expedition.identity()}, {"actions", actions}}.dump();
+      output << checkpoint_of(expedition).dump();
       output.close();
       if (!output) {
         cleanup();

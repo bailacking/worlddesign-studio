@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -296,6 +297,41 @@ def persistence(probe, project, save):
         assert result.returncode == expected, (stage, result.returncode)
 
 
+def checkpoint_handoff(cli, project, relocated):
+    route = [*DRIFT, WEST, WEST, *([use("spring-haven")] * 12), use("to-mainland")]
+    uninterrupted = replay(cli, project, route)
+    assert all(step["code"] == "ok" for step in uninterrupted["steps"])
+    assert uninterrupted["state"]["ending"] and uninterrupted["state"]["region"] == "reed-bank"
+    assert uninterrupted["state"]["season"] == 1 and carry(uninterrupted["state"], "naturalist")
+
+    copies = [index + 1 for index, command in enumerate(route)
+              if command in (use("cave-mouth"), use("to-vault"), use("repair-deck"), use("landfall"))]
+    shutil.copytree(project, relocated)
+    begin, checkpoint = 0, None
+    for end in [*copies, len(route)]:
+        options = {"actions": route[begin:end], "checkpoint": True}
+        if checkpoint:
+            options["resume"] = checkpoint
+        result = call(cli, relocated if checkpoint else project, "expedition.replay", options)
+        assert result["code"] == "ok", result
+        assert result["steps"] == uninterrupted["steps"][begin:end]
+        expected_state = uninterrupted["steps"][end - 1].copy()
+        expected_state.pop("code")
+        assert result["state"] == expected_state
+        checkpoint = result["checkpoint"]
+        assert checkpoint["actions"] == route[:end]
+        begin = end
+
+    for invalid in (
+        {**checkpoint, "version": 2},
+        {**checkpoint, "identity": "another-project:0:0000"},
+        {**checkpoint, "actions": [use("dock-outside-reach")]},
+    ):
+        result = call(cli, relocated, "expedition.replay", {"resume": invalid, "actions": []})
+        assert result["code"] == "invalid_checkpoint" and result["location"] == "/input/resume"
+    return len(copies)
+
+
 def reauthor(cli, project, route):
     path = project / "assets" / "expedition.json"
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -419,6 +455,7 @@ def main():
             supply_steps.extend(supply_chain(args.cli.resolve(), p) for p in (copper, drift))
         replayed = time.perf_counter()
         persistence(args.probe.resolve(), drift, root / "save.json")
+        checkpoints = checkpoint_handoff(args.cli.resolve(), drift, root / "relocated-drift")
         checkpoint = time.perf_counter()
         packages = {}
         if args.runtime:
@@ -437,6 +474,7 @@ def main():
                   "total_generation_ms": (generation - start) * 1000,
                   "replay_and_coverage_ms": (replayed - generation) * 1000,
                   "checkpoint_ms": (checkpoint - replayed) * 1000,
+                  "checkpoint_handoffs": checkpoints,
                   "reauthor_ms": (before_pack - first_packed) * 1000,
                   "reauthor": changes, "packages": packages,
                   "route_steps": {key: len(value["steps"]) for key, value in reports.items()},

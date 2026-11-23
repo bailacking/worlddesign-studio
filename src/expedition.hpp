@@ -229,7 +229,9 @@ struct LoadResult {
 LoadResult load(const std::filesystem::path& root, std::uint64_t revision);
 std::optional<std::string> document_error(std::string_view bytes);
 std::string snapshot(const Expedition& expedition);
-std::string replay(Expedition expedition, std::string_view actions);
+std::string recipe_graph(const Expedition& expedition);
+std::string replay(Expedition expedition, std::string_view actions, std::string_view resume = {},
+                   bool checkpoint = false);
 bool restore(Expedition& expedition, const std::filesystem::path& file);
 bool save(const Expedition& expedition, const std::filesystem::path& file,
           const std::function<void()>& before_publish = {});

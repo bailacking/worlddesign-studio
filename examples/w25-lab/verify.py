@@ -652,6 +652,21 @@ def play_modes(cli, probe, project, root):
         assert ("supply" in state["play_rules"]["commands"]) == (mode == "build")
         assert ("survey-region" in state["play_rules"]["commands"]) == (mode == "survey")
         assert ("revive" in state["play_rules"]["commands"]) == (mode in ("journey", "build"))
+        recipes = request(cli, destination, "expedition.recipes", {})
+        assert recipes["mode"] == mode
+        assert recipes["recipes"]["build-stove"]["command_allowed"] == (mode in ("build", "trial"))
+        stew = recipes["recipes"]["garden-stew"]
+        assert stew["command_allowed"] == (mode != "survey")
+        assert stew["station"] == "hearth" and stew["output"] == {"id": "stew", "count": 1}
+        assert stew["ingredients"] == [
+            {"selector": "root", "count": 1}, {"selector": "#aromatic", "count": 1},
+        ]
+        assert recipes["station_unlocks"]["hearth"] == ["build-stove"]
+        assert recipes["items"]["stew"]["recipes"] == ["garden-stew"]
+        assert "aromatic" in recipes["items"]["herb"]["tags"]
+        assert recipes["items"]["root"]["sources"] == [
+            {"id": "plot", "region": "wind-garden", "kind": "plot", "requires_item": "seed"},
+        ]
         assert state["tick"] == (0 if mode == "survey" else 2 if mode == "build" else 1)
         assert state["hunger"] == (20 if mode in ("build", "survey") else 19)
         if mode == "survey":
