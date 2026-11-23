@@ -200,7 +200,54 @@ def actuate(cli, project):
     operation("immovable", mode="apply", revision=1)
     checked = request(cli, project, "scene.inspect", {}, revision=1)
     assert checked["revision"] == 1 and checked["kind"] == "voxel"
-    print("Cross-chunk actuation and reopen, with seeded weather and changing sky coverage")
+
+    # Place a three-block chain across the chunk seam in a separate circuit bench.
+    chain = project.with_name("chain-bench")
+    shutil.copytree(project, chain)
+    (chain / "wds.project.json").write_text(json.dumps(manifest), encoding="utf-8")
+    chain_source = chain / "assets" / "test.json"
+    chain_source.write_text(json.dumps({
+        **document, "world": document["world"] + "16 11 1 1\n17 11 1 2\n",
+    }), encoding="utf-8")
+    before = chain_source.read_bytes()
+    nodes = {name: {"kind": "lever", "inputs": []} for name in ("clock", "enable")}
+    events = [
+        {"tick": 0, "id": "clock", "level": 15},
+        {"tick": 1, "id": "clock", "level": 0},
+        {"tick": 1, "id": "enable", "level": 15},
+        {"tick": 2, "id": "clock", "level": 15},
+        {"tick": 2, "id": "enable", "level": 0},
+        {"tick": 3, "id": "clock", "level": 0},
+        {"tick": 4, "id": "clock", "level": 15},
+        {"tick": 4, "id": "enable", "level": 15},
+    ]
+    chain_input = {
+        **values, "capacity": 3, "trigger": "clock", "requires_high": "enable",
+        "circuit": {"ticks": 5, "nodes": nodes, "events": events},
+    }
+
+    def push(**options):
+        return request(cli, chain, "scene.voxel.actuate", options.pop("inputs", chain_input),
+                       **options)
+
+    dry = push(mode="preview")
+    assert dry["tick"] == 4 and dry["moved"] == 3 and dry["changed"]
+    push(inputs={**chain_input, "capacity": 2}, expected="push_limit", mode="apply")
+    assert chain_source.read_bytes() == before
+    checkpoint = request(cli, chain, "circuit.replay", {
+        "ticks": 1, "nodes": nodes, "events": [{"tick": 0, "id": "enable", "level": 15}],
+        "checkpoint": True,
+    })["checkpoint"]
+    resumed = {**chain_input, "circuit": {
+        "ticks": 1, "nodes": nodes, "events": [events[0]], "resume": checkpoint,
+    }}
+    assert push(inputs=resumed, mode="preview")["tick"] == 1
+    result = push(mode="apply")
+    assert result["tick"] == dry["tick"] and result["moved"] == 3 and result["revision"] == 1
+    assert json.loads(chain_source.read_text(encoding="utf-8"))["world"] == (
+        "wds-voxel-seeded-v1\n16 11 1 3\n17 11 1 1\n18 11 1 2\n"
+    )
+    print("Gated piston pushes a contiguous chain across chunks and rejects over-capacity moves")
 
 
 def garden(cli, project, probe, save):
@@ -493,6 +540,11 @@ def package(cli, project, root, capability, probe=None, *, graphics=True):
         preserved = save_slot.read_bytes()
         result = subprocess.run([destination / "Play.exe", "--check-save=2"], env=runtime, timeout=20)
         assert result.returncode == 0 and save_slot.read_bytes() == preserved
+        switch = [destination / "Play.exe", "--check-slot-switch"]
+        result = subprocess.run(switch, env=runtime, timeout=20)
+        assert (result.returncode == 0 and save_slot.read_bytes() == preserved
+                and not (destination / "expedition.save.json").exists()
+                and not (destination / "expedition.slot-3.json").exists())
         for invalid in ("--check-save=1", "--check-save=4"):
             result = subprocess.run([destination / "Play.exe", invalid], env=runtime, timeout=20)
             assert result.returncode == 2 and save_slot.read_bytes() == preserved
@@ -500,6 +552,9 @@ def package(cli, project, root, capability, probe=None, *, graphics=True):
         damaged.write_bytes(b"{broken")
         result = subprocess.run([destination / "Play.exe", "--check-save=3"], env=runtime, timeout=20)
         assert result.returncode == 1 and damaged.read_bytes() == b"{broken"
+        result = subprocess.run(switch, env=runtime, timeout=20)
+        assert (result.returncode == 1 and damaged.read_bytes() == b"{broken"
+                and save_slot.read_bytes() == preserved)
 
     prior = root / "without-living-format"
     prior.mkdir()

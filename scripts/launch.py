@@ -30,9 +30,8 @@ def workbench_environment(args: argparse.Namespace, program: Path) -> dict[str, 
                     qt = cmake_dir.parents[2]
                 break
     if qt is not None and (qt / "bin" / "Qt6Core.dll").is_file():
-        environment["PATH"] = os.pathsep.join(
-            [str(qt / "bin"), environment.get("PATH", "")]
-        )
+        existing_path = environment.get("PATH", "")
+        environment["PATH"] = os.pathsep.join([str(qt / "bin"), existing_path])
         environment["QT_PLUGIN_PATH"] = str(qt / "plugins")
     return environment
 
@@ -45,8 +44,8 @@ def main() -> int:
     parser.add_argument("--project", type=Path, help="project folder to open")
     parser.add_argument("--package", type=Path, help="existing Windows package")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--no-browser", action="store_true", help="print planar URL only")
-    parser.add_argument("--check", action="store_true", help="check paths without starting")
+    parser.add_argument("--no-browser", action="store_true", help="print URL only")
+    parser.add_argument("--check", action="store_true", help="check paths")
     args = parser.parse_args()
     args.build = args.build.resolve()
     if args.mode == "studio" and args.package:
@@ -83,9 +82,9 @@ def main() -> int:
     else:
         program = build_program(args, "wds_studio_modern")
         command = [str(program)]
-        project = args.project or (
-            ROOT / "examples" / "voxel-workyard" if args.mode == "voxel" else None
-        )
+        project = args.project
+        if project is None and args.mode == "voxel":
+            project = ROOT / "examples" / "voxel-workyard"
         if project:
             project = project.resolve()
             if not (project / "wds.project.json").is_file():

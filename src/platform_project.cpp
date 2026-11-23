@@ -1985,13 +1985,15 @@ Json build_operation_specs() {
       scene_errors);
   auto actuator_errors = scene_errors;
   for (const auto code : {"invalid_circuit", "invalid_direction", "outside_world", "immovable",
-                          "target_occupied", "edit_limit", "spawn_blocked"})
+                          "target_occupied", "push_limit", "edit_limit", "spawn_blocked"})
     actuator_errors.push_back(code);
   add("scene.voxel.actuate", "project request DIRECTORY", true,
       {{"directory", "path"},
        {"expected_revision", "integer"},
        {"circuit", "circuit.replay input"},
        {"trigger", "signal node that must rise from zero"},
+       {"requires_high", "optional signal node sampled after the trigger tick"},
+       {"capacity", "optional number of contiguous blocks to push, 1 to 8, default 1"},
        {"x", "source block x"},
        {"y", "source block y"},
        {"z", "source block z"},

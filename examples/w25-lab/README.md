@@ -11,7 +11,7 @@ Windows 可导出并打开独立包。在仓库根目录运行以下命令。
 
 用 WASD 移动，Tab 选附近地点，G 采集，Q 选配方，C 制作，F 播种或收获，句点等待。在厨房用 Z 选择食材、X 加入锅中、退格移除最后一份、F 烹饪。成功操作后自动保存。
 
-直接启动使用第 1 个存档槽。传入 `--slot=2` 或 `--slot=3` 可分开游玩。 `--check-save=2` 校验第 2 槽并退出，返回值 0 表示有效，1 表示无法读取或验证，2 表示槽位不存在或参数超出范围。
+直接启动使用第 1 个存档槽。传入 `--slot=2` 或 `--slot=3` 可选择启动槽。进入游戏后按 **F1** 打开菜单，按 **1**、**2** 或 **3** 切换，按 **Esc** 返回。目标槽被占用或损坏时保留当前进度。 `--check-save=2` 校验第 2 槽并退出，返回值 0 表示有效，1 表示无法读取或验证，2 表示槽位不存在或参数超出范围。
 
 ```powershell
 python examples/w25-lab/verify.py --cli build/native/wds_cli.exe --probe build/native/wds_expedition_save.exe --runtime build/runtime/wds_cli.exe --work build/w25-check

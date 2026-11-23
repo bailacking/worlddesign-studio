@@ -37,6 +37,11 @@ struct EnvironmentSample {
 
 using Cell = std::array<int, 3>;
 
+struct BlockShift {
+  std::string_view code;
+  int moved = 0;
+};
+
 struct CartRoute {
   std::string_view code;
   std::vector<Cell> positions;
@@ -56,13 +61,14 @@ class World {
   static constexpr int width = 24;
   static constexpr int height = 12;
   static constexpr int depth = 24;
+  static constexpr int push_capacity = 8;
   explicit World(Content content = {});
 
   [[nodiscard]] Block block(int x, int y, int z) const;
   [[nodiscard]] bool collides(Vec3 feet) const;
   [[nodiscard]] Hit cast(Vec3 origin, Vec3 direction, double limit) const;
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
-  std::string_view shift_block(int x, int y, int z, int dx, int dz);
+  [[nodiscard]] BlockShift shift_blocks(int x, int y, int z, int dx, int dz, int capacity);
   [[nodiscard]] bool cart_track(Cell position) const;
   [[nodiscard]] CartRoute cart_route(Cell start, int dx, int dz, int steps) const;
   [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps);

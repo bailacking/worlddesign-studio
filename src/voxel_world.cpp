@@ -201,37 +201,55 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
   return true;
 }
 
-std::string_view World::shift_block(int x, int y, int z, int dx, int dz) {
+BlockShift World::shift_blocks(int x, int y, int z, int dx, int dz, int capacity) {
   if (!((dx == 0 && (dz == -1 || dz == 1)) || (dz == 0 && (dx == -1 || dx == 1))))
-    return "invalid_direction";
+    return {"invalid_direction"};
+  if (capacity < 1 || capacity > push_capacity) return {"invalid_argument"};
   const auto valid = [&](int column, int row) {
     if (y <= 0 || y >= height) return false;
     if (!terrain_) return inside(column, y, row);
     return column >= -SeededTerrain::limit && column < SeededTerrain::limit &&
            row >= -SeededTerrain::limit && row < SeededTerrain::limit;
   };
-  if (!valid(x, z) || !valid(x + dx, z + dz)) return "outside_world";
-  const int target_x = x + dx;
-  const int target_z = z + dz;
+  if (!valid(x, z) || !valid(x + dx, z + dz)) return {"outside_world"};
   auto candidate = *this;
   candidate.stream({static_cast<double>(x), 0, static_cast<double>(z)});
   const auto source = candidate.block(x, y, z);
-  if (source == Block::air || !content_.style(source).breakable) return "immovable";
-  if (candidate.block(target_x, y, target_z) != Block::air) return "target_occupied";
+  if (source == Block::air || !content_.style(source).breakable) return {"immovable"};
+  std::array<Block, push_capacity + 1> replacement{};
+  replacement[1] = source;
+  int moved = 1;
+  for (; moved <= capacity; ++moved) {
+    const int at_x = x + dx * moved, at_z = z + dz * moved;
+    if (!valid(at_x, at_z)) return {"outside_world"};
+    const auto next = candidate.block(at_x, y, at_z);
+    if (next == Block::air) break;
+    if (moved == capacity) return {capacity == 1 ? "target_occupied" : "push_limit"};
+    if (!content_.style(next).breakable) return {"immovable"};
+    replacement[static_cast<std::size_t>(moved + 1)] = next;
+  }
   if (candidate.terrain_) {
-    if (!candidate.terrain_->set(x, y, z, Block::air) ||
-        !candidate.terrain_->set(target_x, y, target_z, source))
-      return "edit_limit";
+    // Make room for new edits by clearing overrides that return to their generated state.
+    for (const bool resets : {true, false}) {
+      for (int offset = 0; offset <= moved; ++offset) {
+        const int at_x = x + dx * offset, at_z = z + dz * offset;
+        const auto next = replacement[static_cast<std::size_t>(offset)];
+        if (resets == candidate.terrain_->matches_generated(at_x, y, at_z, next) &&
+            !candidate.terrain_->set(at_x, y, at_z, next))
+          return {"edit_limit"};
+      }
+    }
   } else {
-    candidate.blocks_[index(x, y, z)] = Block::air;
-    candidate.blocks_[index(target_x, y, target_z)] = source;
+    for (int offset = 0; offset <= moved; ++offset)
+      candidate.blocks_[index(x + dx * offset, y, z + dz * offset)] =
+          replacement[static_cast<std::size_t>(offset)];
   }
   const auto spawn = Player{}.feet;
   const bool spawn_loaded =
       !candidate.terrain_ || candidate.terrain_->resident(cell(spawn.x), cell(spawn.z));
-  if (spawn_loaded && candidate.collides(spawn)) return "spawn_blocked";
+  if (spawn_loaded && candidate.collides(spawn)) return {"spawn_blocked"};
   *this = std::move(candidate);
-  return "ok";
+  return {"ok", moved};
 }
 
 std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::uint32_t tick) const {
