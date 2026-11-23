@@ -32,8 +32,11 @@
 - [质量与验证](engineering/quality.md)：契约测试、故障矩阵、平台证据和可玩性验收。
 - [技术评估](engineering/technical-evaluation.md)：C++ 核心的选定理由、工具链与依赖调研、进入编码的条件。
 - [平台建设总纲](project/platform-plan.md)：平台边界、优先级和首个可用版本。
-- [实施路线](project/roadmap.md)汇总 W1–W16 交付和各阶段放行条件。
+- [实施路线](project/roadmap.md)汇总 W1–W24 交付和各阶段放行条件。
 - [W16 双类型交付](project/w16-shared-delivery.md)记录 Windows 独立试玩、人工续编、插件回退和 AI 接手。
+- [W17 世界与生态](project/w17-world-ecology.md)记录群系、村落、生态刷新和角色重放。
+- [W18–W24 原创远征](project/w18-w24-expeditions.md)记录连续玩法、跨世界存档、规模试演和平台验证。
+- [W17–W24 参考验收台账](project/w17-w24-reference-audit.md)记录 Java 原版实测、《饥荒》历史版缺证和限时验收的分段用时。
 - [W8 礁灯投递验收](project/w8-acceptance.md)：独立游戏试玩、创作者接手和第二台机器签收。
 - [最终版 50 周开发计划](project/50-week-plan.md)：逐周目标和验收、零资产计时、共同调研与产能复核。
 - [W1 基线与需求台账](project/w1-baseline.md)：Windows 实测、核心需求与任务映射、验收机器与本周投入。

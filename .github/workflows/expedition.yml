@@ -1,0 +1,34 @@
+name: Expedition replay
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'examples/w24-expeditions/**'
+      - 'tests/expedition_save.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/expedition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: cmake --preset dev
+      - run: cmake --build --preset dev --target wds_cli wds_expedition_save --parallel 2
+      - run: ctest --preset dev -R '^expedition_replay$' --verbose --no-tests=error

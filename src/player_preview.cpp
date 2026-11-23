@@ -8,6 +8,7 @@
 #include <map>
 #include <numbers>
 
+#include "expedition.hpp"
 #include "platform_project.hpp"
 #include "player_view.hpp"
 
@@ -232,7 +233,19 @@ void draw(const SceneSession& session, const Sprites& sprites, const SceneBounds
   const auto top = height * 0.5f + origin_y * scale;
   BeginDrawing();
   ClearBackground({22, 30, 40, 255});
-  if (terrain) draw_tiles(*terrain, scale, left, top, false);
+  if (terrain) {
+    draw_tiles(*terrain, scale, left, top, false);
+    constexpr auto units = static_cast<float>(TileWorld::tile_size);
+    for (const auto& site : session.populations()) {
+      const auto color = species_color(site.species);
+      const Color tint{static_cast<unsigned char>(color >> 16),
+                       static_cast<unsigned char>(color >> 8), static_cast<unsigned char>(color),
+                       255};
+      DrawCircleV({left + (static_cast<float>(site.point.x) + 0.5f) * units * scale,
+                   top - (static_cast<float>(site.point.y) + 0.5f) * units * scale},
+                  3 * scale, tint);
+    }
+  }
   for (const auto& entity : scene.entities) {
     const Vector2 center{left + static_cast<float>(entity.x) * scale,
                          top - static_cast<float>(entity.y) * scale};
@@ -453,6 +466,13 @@ int main(int argc, char** argv) {
   auto result = start_scene(path, opened.project->revision, true);
   if (!result.session && !result.voxel_scene) {
     std::cerr << scene_result_json(result) << '\n';
+    return 1;
+  }
+  auto journey = wds::expedition::load(path, opened.project->revision);
+  if (journey.expedition)
+    return wds::player::play_expedition(*journey.expedition, journey.icons, {}) ? 0 : 1;
+  if (journey.code != "no_expedition") {
+    std::cerr << journey.code << ": " << journey.location << '\n';
     return 1;
   }
   if (result.voxel_scene)

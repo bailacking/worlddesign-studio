@@ -43,7 +43,11 @@ WDS 是面向人类与 AI 共同创作的开放式游戏引擎与开发平台。
 
 项目在 [GitHub 仓库](https://github.com/bailacking/worlddesign-studio) 维护。构建、测试及运行样例见 [开发指南](docs/engineering/development.md#运行-m0-样例)。
 
-周交付记录已更新至 W16。Windows 本机已验收二维与三维方块项目从创建到独立导出和续编的流程。Linux x64 与 macOS arm64 已有 W11 原生工作台验证。W8 的第二台 Windows 机器与创作者签收、W12–W16 的发起人亲手验收仍待完成。 [周交付记录](docs/project/roadmap.md#周交付记录) · [W16 验收](docs/project/w16-shared-delivery.md)
+周交付记录已更新至 W24。种子方块场景包含群系、矿脉和村落，二维地块场景包含生态刷新和角色档案。两条原创远征可从空目录生成，修改规则后重新导出独立试玩。 [周交付记录](docs/project/roadmap.md#周交付记录) · [W17 样例](examples/w17-worlds/README.md) · [远征试玩步骤](examples/w24-expeditions/README.md)
+
+W24 在 Windows 通过 20 项回归和 16 份独立包检查，在 Ubuntu 24.04 与 macOS 15 通过无界面远征回放。Java 1.16.5 已补验主世界到下界的单向门户，《饥荒》历史版实测与两款参考的完整规模计时仍待补证。 [工程验收](docs/project/w18-w24-expeditions.md) · [参考验收台账](docs/project/w17-w24-reference-audit.md)
+
+W8 的第二台 Windows 机器与创作者签收、W12–W16 的发起人亲手验收仍待完成。 [W8 验收](docs/project/w8-acceptance.md) · [W16 验收](docs/project/w16-shared-delivery.md)
 
 ## 开源与协作
 

@@ -1,0 +1,27 @@
+{
+  "format_version": 1,
+  "terrain": {
+    "seed": 16431,
+    "day_ticks": 240,
+    "day_start": 120,
+    "tiles": [
+      {"x": 3, "y": 2, "kind": "canopy"},
+      {"x": 3, "y": 3, "kind": "canopy"},
+      {"x": 5, "y": -2, "kind": "rock"},
+      {"x": 5, "y": -3, "kind": "rock"}
+    ],
+    "ecology": {
+      "refresh_ticks": 36,
+      "active": "observer",
+      "characters": [
+        {"id": "observer", "speed": 4, "sight": 15},
+        {"id": "courier", "speed": 10, "sight": 6}
+      ]
+    }
+  },
+  "entities": [
+    {"id": "surveyor", "x": 8, "y": 8, "box": {"half_width": 5, "half_height": 5}},
+    {"id": "station", "x": 488, "y": 8, "box": {"half_width": 7, "half_height": 7}}
+  ],
+  "play": {"player": "surveyor", "speed": 4, "walls": [], "goals": ["station"], "hazards": []}
+}

@@ -62,7 +62,7 @@ add_library(wds_project STATIC
   src/asset_import.cpp
   src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/voxel_palette.cpp
   src/workshop.cpp src/workshop_document.cpp
-  src/scene_play.cpp)
+  src/scene_play.cpp src/expedition.cpp src/expedition_document.cpp)
 target_include_directories(wds_project PUBLIC src)
 target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png wds_m0)
@@ -95,14 +95,14 @@ if(WDS_BUILD_RAYLIB_PREVIEW OR WDS_BUILD_WINDOWS_PLAYER)
   include(cmake/raylib.cmake)
 endif()
 if(WDS_BUILD_RAYLIB_PREVIEW)
-  add_executable(wds_player_preview src/player_preview.cpp)
+  add_executable(wds_player_preview src/player_preview.cpp src/expedition_view.cpp)
   target_link_libraries(wds_player_preview PRIVATE raylib wds_project wds_compile_options)
   if(MINGW)
     target_link_options(wds_player_preview PRIVATE -municode)
   endif()
 endif()
 if(WDS_BUILD_WINDOWS_PLAYER)
-  add_executable(wds_player WIN32 src/player_preview.cpp src/player_windows.cpp)
+  add_executable(wds_player WIN32 src/player_preview.cpp src/player_windows.cpp src/expedition_view.cpp)
   target_compile_definitions(wds_player PRIVATE WDS_PACKAGED_PLAYER)
   target_link_libraries(wds_player PRIVATE raylib wds_project wds_compile_options user32)
   set(kit_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-player-kit.cmake")
@@ -228,6 +228,25 @@ add_test(NAME seeded_worlds COMMAND "${CMAKE_COMMAND}"
   -DROOT=${CMAKE_CURRENT_BINARY_DIR}/seeded-worlds
   -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples
   -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/seeded_worlds.cmake")
+
+add_executable(wds_w17_probe tests/world_ecology.cpp)
+target_link_libraries(wds_w17_probe PRIVATE wds_project wds_compile_options)
+add_test(NAME world_ecology COMMAND "${CMAKE_COMMAND}"
+  -DPROBE=$<TARGET_FILE:wds_w17_probe>
+  -DCLI=$<TARGET_FILE:wds_cli>
+  -DROOT=${CMAKE_CURRENT_BINARY_DIR}/world-ecology
+  -DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/examples/w17-worlds
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/world_ecology.cmake")
+
+add_executable(wds_expedition_save tests/expedition_save.cpp)
+target_link_libraries(wds_expedition_save PRIVATE wds_project wds_compile_options)
+find_package(Python3 3.10 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME expedition_replay COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/w24-expeditions/verify.py"
+    --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>
+    --work "${CMAKE_CURRENT_BINARY_DIR}/expedition-tests")
+endif()
 
 add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)
 target_link_libraries(wds_w12_probe PRIVATE wds_project wds_compile_options)

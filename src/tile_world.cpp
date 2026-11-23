@@ -30,8 +30,37 @@ std::uint32_t tile_color(Tile tile) {
   return 0x000000;
 }
 
-TileWorld::TileWorld(std::uint32_t seed, int day_ticks, int day_start, Edits edits)
-    : seed_(seed), day_ticks_(day_ticks), day_start_(day_start), edits_(std::move(edits)) {}
+std::string_view species_name(Species species) {
+  switch (species) {
+    case Species::reed:
+      return "reed";
+    case Species::hare:
+      return "hare";
+    case Species::moth:
+      return "moth";
+  }
+  return {};
+}
+
+std::uint32_t species_color(Species species) {
+  switch (species) {
+    case Species::reed:
+      return 0xcfe88d;
+    case Species::hare:
+      return 0xeec4a1;
+    case Species::moth:
+      return 0xead7ff;
+  }
+  return 0;
+}
+
+TileWorld::TileWorld(std::uint32_t seed, int day_ticks, int day_start, Edits edits,
+                     std::optional<EcologyRules> ecology)
+    : seed_(seed),
+      day_ticks_(day_ticks),
+      day_start_(day_start),
+      edits_(std::move(edits)),
+      ecology_(std::move(ecology)) {}
 
 TilePoint TileWorld::cell(std::int64_t x, std::int64_t y) {
   constexpr std::int64_t edge = limit * tile_size;
@@ -73,6 +102,36 @@ int TileWorld::daylight(std::uint64_t ticks) const {
   const auto phase = (day_start_ + static_cast<int>(ticks % day_ticks_)) % day_ticks_;
   const auto rise = std::min(phase, day_ticks_ - phase);
   return 72 + 183 * (2 * rise) / day_ticks_;
+}
+
+std::vector<EcologySite> TileWorld::populations(TilePoint viewer, std::uint64_t ticks) const {
+  std::vector<EcologySite> result;
+  if (!ecology_ || !resident(viewer)) return result;
+  constexpr int spacing = 4;
+  const int radius = ecology_->character.sight;
+  const auto period = static_cast<unsigned>(ecology_->refresh_ticks);
+  const auto time = static_cast<unsigned>(ticks % period);
+  for (int y = floor_div(viewer.y - radius, spacing); y <= floor_div(viewer.y + radius, spacing);
+       ++y) {
+    for (int x = floor_div(viewer.x - radius, spacing); x <= floor_div(viewer.x + radius, spacing);
+         ++x) {
+      const auto site = coordinate_hash(seed_ ^ 0x53833e2bU, x, y);
+      const TilePoint point{x * spacing + static_cast<int>(site & 3U),
+                            y * spacing + static_cast<int>((site >> 2U) & 3U)};
+      const int dx = point.x - viewer.x;
+      const int dy = point.y - viewer.y;
+      if (dx * dx + dy * dy > radius * radius || !resident(point)) continue;
+      const auto habitat = tile(point);
+      if (habitat != Tile::grass && habitat != Tile::soil) continue;
+      const auto phase = (time + (site >> 8U) % period) % period;
+      if (phase >= 2 * period / 3 || !visible(viewer, point)) continue;
+      const auto species = habitat == Tile::soil ? Species::reed
+                           : (site & 16U) != 0   ? Species::hare
+                                                 : Species::moth;
+      result.push_back({point, species});
+    }
+  }
+  return result;
 }
 
 bool TileWorld::resident(TilePoint point) const {

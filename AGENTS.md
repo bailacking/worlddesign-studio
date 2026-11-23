@@ -1,6 +1,7 @@
 # WDS 协作入口
 
 - 开工前确认当前分支和工作区，阅读 [平台建设总纲](docs/project/platform-plan.md)、[并行开发计划](docs/project/parallel-delivery.md) 中的任务及涉及的主题规格。逐周交付以[最终版 50 周计划](docs/project/50-week-plan.md)为准。《我的世界》Java 1.16.5、《饥荒》指定历史内容和两道原创盲题用于验收平台能力。认领时记录范围、依赖与验收条件。
+- 核验参考游戏规则前，先联网查目标版本的官方资料，再核对已有数据和实测记录。仅对资料查不清、互相冲突或验收明确要求实跑的条目启动游戏。按[参考游戏先查资料再实测](docs/engineering/quality.md#参考游戏先查资料再实测)记下查证结果和启动理由。
 - 每项工作使用独立分支。多人或多个 Agent 在同一台机器上同时工作时，为每项任务使用独立工作树。保留其他贡献者的未提交修改。
 - 共享接口由对应契约任务先约定。跨任务修改接口时，先同步调用方与验收条件。实现按 [技术评估](docs/engineering/technical-evaluation.md) 的证据推进。
 - 实现前用 [模块入口](docs/engineering/development.md#模块入口) 和代码搜索核对已有调用。工作台沿用 [组件与交互规范](docs/architecture/workbench.md#组件与交互规范)，业务校验、修订和事务由项目服务负责。

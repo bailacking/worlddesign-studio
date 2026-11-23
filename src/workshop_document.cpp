@@ -194,7 +194,9 @@ LoadResult read_workshop(const Json& document, bool voxel) {
     for (const auto& [id, value] : sources.items()) {
       const auto where = "/workshop/sources/" + id;
       if (!symbol(id) || !shape(value, {"yield", "uses"})) throw Invalid{where};
-      if (voxel && id != "grass" && id != "dirt" && id != "stone") throw Invalid{where};
+      if (voxel && id != "grass" && id != "dirt" && id != "stone" && id != "copper" &&
+          id != "quartz" && id != "timber")
+        throw Invalid{where};
       catalog.sources.emplace(
           id, Source{stack(catalog, value["yield"], where + "/yield"),
                      number(value["uses"], voxel ? 0 : 1, voxel ? 0 : 64, where + "/uses")});

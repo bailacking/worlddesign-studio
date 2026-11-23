@@ -177,6 +177,24 @@ void Viewport::paintEvent(QPaintEvent*) {
   const bool terrain = playback_ && playback_->terrain();
   if (terrain) {
     drawTiles(painter, false);
+    painter.setPen(Qt::NoPen);
+    const auto units = platform::TileWorld::tile_size;
+    for (const auto& site : playback_->populations()) {
+      switch (site.species) {
+        case platform::Species::reed:
+          painter.setBrush(theme::color::scene_reed);
+          break;
+        case platform::Species::hare:
+          painter.setBrush(theme::color::scene_hare);
+          break;
+        case platform::Species::moth:
+          painter.setBrush(theme::color::scene_moth);
+          break;
+      }
+      const auto position =
+          screenPosition((site.point.x + 0.5) * units, (site.point.y + 0.5) * units);
+      painter.drawEllipse(position, 3.0 * viewScale(), 3.0 * viewScale());
+    }
   } else {
     const auto origin = screenPosition(0, 0);
     const int grid = std::max(4, static_cast<int>(std::lround(24.0 * viewScale() / kDefaultScale)));
