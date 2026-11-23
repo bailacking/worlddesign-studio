@@ -85,6 +85,46 @@ def carry(step, item):
     return any(row["item"] == item for row in step["workshop"]["bag"])
 
 
+def observed(authored, seen):
+    covered = authored & seen
+    return {
+        "total": len(authored), "covered": len(covered),
+        "missing": sorted(authored - covered),
+    }
+
+
+def route_coverage(project, route, report):
+    data = json.loads((project / "assets" / "expedition.json").read_text(encoding="utf-8"))
+    regions = {area["id"]: area for area in data["regions"]}
+    sites = {spot["id"]: spot for area in regions.values() for spot in area["sites"]}
+    successful = [(command, state) for command, state in zip(route, report["steps"], strict=True)
+                  if state["code"] == "ok"]
+    visited = {state["region"] for _, state in successful}
+    reached_sites = {cmd.get("target") for cmd, _ in successful
+                     if cmd["command"] in ("use", "gather", "attack")} & sites.keys()
+    crafted = {cmd["target"] for cmd, _ in successful if cmd["command"] == "craft"}
+    held = {item["item"] for _, state in successful
+            for container in ("bag", "chest", "loot") for item in state["workshop"][container]}
+    icons = set(data.get("icons", {}).values())
+    icons.update(spot["icon"] for spot in sites.values() if "icon" in spot)
+    return {
+        "regions": observed(regions.keys(), visited),
+        "habitats": observed({area["habitat"] for area in regions.values()},
+                             {regions[key]["habitat"] for key in visited}),
+        "sites": observed(sites.keys(), reached_sites),
+        "site_kinds": observed({spot["kind"] for spot in sites.values()},
+                               {sites[key]["kind"] for key in reached_sites}),
+        "recipes": observed(data["workshop"]["recipes"].keys(), crafted),
+        "inventory_items": observed(data["workshop"]["items"].keys(), held),
+        "decoded_icons": observed(icons, icons if report["code"] == "ok" else set()),
+        "failed_steps": [
+            {"step": index, "action": command, "code": state["code"], "region": state["region"]}
+            for index, (command, state) in enumerate(zip(route, report["steps"], strict=True), 1)
+            if state["code"] != "ok"
+        ],
+    }
+
+
 def supply_chain(cli, project, revision=0):
     craft = action("craft", "refined-1")
     trade, shelter = use("outpost-0-1"), use("shelter-0-1")
@@ -103,18 +143,23 @@ def supply_chain(cli, project, revision=0):
     return len(steps)
 
 
-def journey(cli, projects):
+def journey(cli, projects, coverage):
     copper = projects / "copper-relay"
     drift = projects / "drift-naturalists"
     reports = {}
+    failures = {}
     for name, project, path in (("copper", copper, COPPER), ("drift", drift, DRIFT)):
         result = replay(cli, project, path)
-        failures = [(index, path[index], step["code"], step["region"], step["positions"])
-                    for index, step in enumerate(result["steps"]) if step["code"] != "ok"]
-        assert not failures, failures
+        counts = route_coverage(project, path, result)
+        coverage[project.name] = counts
+        if counts["failed_steps"]:
+            failures[project.name] = counts["failed_steps"]
+        reports[name] = result
+    assert not failures, failures
+    for name, project, path in (("copper", copper, COPPER), ("drift", drift, DRIFT)):
+        result = reports[name]
         assert result["state"]["ending"], result["state"]
         assert replay(cli, project, path) == result
-        reports[name] = result
     a = reports["copper"]
     assert a["state"]["positions"] == {"cloud-ring": [1, 1], "meadow": [9, 1],
                                       "slag-field": [4, 1]}, a["state"]
@@ -265,9 +310,21 @@ def main():
         start = time.perf_counter()
         metrics = generate(root / "projects", seed=args.seed, scale=args.scale)
         generation = time.perf_counter()
-        reports = journey(args.cli.resolve(), root / "projects")
+        coverage = {}
+        try:
+            reports = journey(args.cli.resolve(), root / "projects", coverage)
+        except (AssertionError, subprocess.SubprocessError) as error:
+            if args.report:
+                write_json(args.report, {
+                    "seed": args.seed, "scale": args.scale, "route_validation": "failed",
+                    "detail": str(error), "candidate_coverage": coverage,
+                })
+            raise
         copper = root / "projects" / "copper-relay"
         drift = root / "projects" / "drift-naturalists"
+        for counts in coverage.values():
+            assert not counts["failed_steps"] and not counts["regions"]["missing"], counts
+            assert counts["sites"]["covered"] and counts["decoded_icons"]["covered"], counts
         supply_steps = []
         if args.scale:
             supply_steps.extend(supply_chain(args.cli.resolve(), p) for p in (copper, drift))
@@ -287,7 +344,7 @@ def main():
         if args.runtime:
             packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised", 2)
             packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised", 2)
-        result = {**metrics, "seed": args.seed, "scale": args.scale,
+        result = {**metrics, "seed": args.seed, "scale": args.scale, "route_validation": "ok",
                   "total_generation_ms": (generation - start) * 1000,
                   "replay_and_coverage_ms": (replayed - generation) * 1000,
                   "checkpoint_ms": (checkpoint - replayed) * 1000,
@@ -297,7 +354,12 @@ def main():
                   "supply_steps_checked": supply_steps,
                   "independent_packages_checked": len(packages)}
         if args.report:
-            write_json(args.report, result)
+            write_json(args.report, {**result, "candidate_coverage": coverage})
+        result["candidate_coverage"] = {
+            name: {group: value if group == "failed_steps" else {
+                "covered": value["covered"], "total": value["total"],
+            } for group, value in counts.items()} for name, counts in coverage.items()
+        }
         print(json.dumps(result, indent=2))
 
 
