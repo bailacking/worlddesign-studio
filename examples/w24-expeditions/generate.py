@@ -211,11 +211,16 @@ def resource(key, kind, filename, refs=()):
     return {"id": key, "kind": kind, "path": f"assets/{filename}", "refs": list(refs)}
 
 
-def write_project(path, plan, data, icons):
+def write_project(path, plan, data, icons, mode=None):
     assets = path / "assets"
     assets.mkdir(parents=True)
     resources = [resource("entry", "scene", "entry.json", ["expedition"]),
                  resource("expedition", "data", "expedition.json", icons)]
+    if mode is not None:
+        data["rule_pack"] = "play-rules"
+        resources[1]["refs"].append("play-rules")
+        resources.append(resource("play-rules", "data", "play-rules.json"))
+        write_json(assets / "play-rules.json", {"version": 1, "mode": mode})
     for asset, png in icons.items():
         (assets / f"{asset}.png").write_bytes(png)
         resources.append(resource(asset, "image", f"{asset}.png"))
@@ -236,7 +241,7 @@ def write_project(path, plan, data, icons):
                "revision": 0, "entry_scene": "entry", "resources": resources})
 
 
-def generate(root, seed=73021, scale=0):
+def generate(root, seed=73021, scale=0, mode=None):
     root.mkdir(parents=True)
     start = time.perf_counter()
     plans = [(plan, rules(plan, seed, scale)) for plan in ("copper-relay", "drift-naturalists")]
@@ -247,7 +252,7 @@ def generate(root, seed=73021, scale=0):
     icons = [create_icons(data) for _, data in plans]
     illustrated = time.perf_counter()
     for (plan, data), batch in zip(plans, icons):
-        write_project(root / plan, plan, data, batch)
+        write_project(root / plan, plan, data, batch, mode if plan == "copper-relay" else None)
     written = time.perf_counter()
     return {
         "expand_ms": (expanded - start) * 1000,
@@ -270,10 +275,12 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--seed", type=int, default=73021)
     parser.add_argument("--scale", type=int, default=0, choices=range(5))
+    parser.add_argument("--mode", choices=("journey", "build", "trial", "survey"),
+                        help="attach a rules pack to Copper Relay")
     args = parser.parse_args()
     if not 0 <= args.seed < 2**32:
         parser.error("--seed must be an unsigned 32-bit integer")
-    print(json.dumps(generate(args.output, args.seed, args.scale), indent=2))
+    print(json.dumps(generate(args.output, args.seed, args.scale, args.mode), indent=2))
 
 
 if __name__ == "__main__":

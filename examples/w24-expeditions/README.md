@@ -22,6 +22,8 @@ $cli = '.\build\runtime\wds_cli.exe'
 
 ## 从项目复跑
 
+可为铜脊接力生成四种模式的独立工程。每次指定一个新的生成目录。例如 `python examples/w24-expeditions/generate.py build/copper-survey --mode survey`，生成的铜脊接力工程位于 `build/copper-survey/copper-relay`。构建模式用 **Y** 选补给、**I** 领取。勘察模式用 **N** 访问下一地区。 [模式和规则包](../../docs/project/w25-w32-systems.md#w28-分支章节)
+
 ```powershell
 $cli = '.\build\native\wds_cli.exe'
 '{"version":1,"operation":"expedition.replay","mode":"read","expected_revision":0,"input":{"actions":[{"command":"gather","target":"copper-vein"},{"command":"craft","target":"spear"}]}}' |

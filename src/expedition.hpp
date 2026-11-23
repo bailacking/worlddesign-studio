@@ -57,16 +57,6 @@ struct Region {
   std::optional<Climate> climate{};
 };
 
-struct Rules {
-  bool voxel;
-  bool permanent;
-  std::uint32_t seed;
-  int season_ticks;
-  int initial_hunger;
-  int hunger_interval;
-  std::vector<Region> regions;
-};
-
 enum class Command {
   north,
   south,
@@ -80,7 +70,30 @@ enum class Command {
   eat,
   revive,
   cook,
-  treat
+  treat,
+  supply,
+  survey_region
+};
+
+enum class PlayMode { journey, build, trial, survey };
+
+struct RulePack {
+  std::string resource;
+  PlayMode mode;
+  std::vector<Command> denied;
+  std::optional<int> season_ticks{};
+  std::optional<int> hunger_interval{};
+};
+
+struct Rules {
+  bool voxel;
+  bool permanent;
+  std::uint32_t seed;
+  int season_ticks;
+  int initial_hunger;
+  int hunger_interval;
+  std::vector<Region> regions;
+  std::optional<RulePack> pack{};
 };
 
 struct Action {
@@ -91,6 +104,8 @@ struct Action {
 
 std::optional<Command> command(std::string_view name);
 std::string_view command_name(Command command);
+std::optional<PlayMode> play_mode(std::string_view name);
+std::string_view play_mode_name(PlayMode mode);
 
 struct Receipt {
   std::string cause;
@@ -143,6 +158,9 @@ class Expedition {
   unsigned season() const { return (state_.tick / rules_.season_ticks) % 4; }
   unsigned tide() const { return (state_.tick / 4) % 4; }
   std::string_view apply(Action action);
+  PlayMode mode() const { return rules_.pack ? rules_.pack->mode : PlayMode::journey; }
+  bool allows(Command command) const;
+  std::vector<std::string_view> permitted_commands() const;
   const Site* nearby(std::string_view target) const;
   std::vector<const Site*> nearby_sites() const;
   int terrain(TilePoint point) const;

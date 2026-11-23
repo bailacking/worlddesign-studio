@@ -10,8 +10,10 @@
 namespace wds::expedition {
 namespace {
 
-constexpr std::array commands{"north",  "south", "west", "east",   "wait", "use",  "attack",
-                              "gather", "craft", "eat",  "revive", "cook", "treat"};
+constexpr std::array commands{"north",  "south",  "west",   "east",   "wait",
+                              "use",    "attack", "gather", "craft",  "eat",
+                              "revive", "cook",   "treat",  "supply", "survey-region"};
+constexpr std::array modes{"journey", "build", "trial", "survey"};
 
 int distance(TilePoint a, TilePoint b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 
@@ -25,6 +27,33 @@ std::optional<Command> command(std::string_view name) {
 
 std::string_view command_name(Command value) {
   return commands.at(static_cast<std::size_t>(value));
+}
+
+std::optional<PlayMode> play_mode(std::string_view name) {
+  const auto found = std::ranges::find(modes, name);
+  if (found == modes.end()) return {};
+  return static_cast<PlayMode>(found - modes.begin());
+}
+
+std::string_view play_mode_name(PlayMode value) {
+  return modes.at(static_cast<std::size_t>(value));
+}
+
+bool Expedition::allows(Command cmd) const {
+  if (rules_.pack && std::ranges::find(rules_.pack->denied, cmd) != rules_.pack->denied.end())
+    return false;
+  const auto profile = mode();
+  if (profile == PlayMode::survey) return cmd <= Command::east || cmd == Command::survey_region;
+  if (cmd == Command::survey_region) return false;
+  if (cmd == Command::supply) return profile == PlayMode::build;
+  return profile != PlayMode::trial || cmd != Command::revive;
+}
+
+std::vector<std::string_view> Expedition::permitted_commands() const {
+  std::vector<std::string_view> available;
+  for (std::size_t index = 0; index < commands.size(); ++index)
+    if (allows(static_cast<Command>(index))) available.push_back(commands[index]);
+  return available;
 }
 
 Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identity)
@@ -114,6 +143,10 @@ int Expedition::terrain(TilePoint point) const {
 }
 
 void Expedition::change(std::string_view cause, int health, int hunger, int morale) {
+  if (mode() == PlayMode::build) {
+    health = std::max(0, health);
+    hunger = std::max(0, hunger);
+  }
   state_.health = std::clamp(state_.health + health, 0, 20);
   state_.hunger = std::clamp(state_.hunger + hunger, 0, 20);
   state_.morale = std::clamp(state_.morale + morale, 0, 20);
@@ -216,14 +249,17 @@ std::string_view Expedition::move(int x, int y) {
   auto point = position();
   point.x += x;
   point.y += y;
-  if (point.x < 0 || point.y < 0 || point.x >= region().width || point.y >= region().height ||
-      terrain(point) == 3)
+  if (point.x < 0 || point.y < 0 || point.x >= region().width || point.y >= region().height)
     return "blocked";
-  if (region().habitat == "ocean") {
-    if (!state_.boat) return "boat_required";
-    if (terrain(point) == 2 || tide() == 2) {
-      --state_.boat;
-      change("wave", -1);
+  if (mode() != PlayMode::survey) {
+    const auto tile = terrain(point);
+    if (tile == 3) return "blocked";
+    if (region().habitat == "ocean") {
+      if (!state_.boat) return "boat_required";
+      if (tile == 2 || tide() == 2) {
+        --state_.boat;
+        change("wave", -1);
+      }
     }
   }
   state_.positions[state_.region] = point;
@@ -323,9 +359,11 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
 std::string_view Expedition::apply(Action action) {
   if (history_.size() == max_actions) return "action_limit";
   const auto cmd = action.command;
+  if (!allows(cmd)) return "command_forbidden";
   if (state_.dead && cmd != Command::revive) return "dead";
   const bool needs_target = cmd == Command::gather || cmd == Command::craft ||
-                            cmd == Command::eat || cmd == Command::cook || cmd == Command::treat;
+                            cmd == Command::eat || cmd == Command::cook || cmd == Command::treat ||
+                            cmd == Command::supply || cmd == Command::survey_region;
   const bool uses_target = needs_target || cmd == Command::use || cmd == Command::attack;
   if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()) ||
       (cmd == Command::cook) != !action.ingredients.empty())
@@ -393,6 +431,15 @@ std::string_view Expedition::apply(Action action) {
         state_.positions[state_.region] = region().spawn;
         change("revival", 12, 0, 6);
         return "ok";
+      case Command::supply:
+        if (!workshop_.catalog().items.contains(action.target)) return "unknown_item";
+        return award(action.target) ? "ok" : "capacity";
+      case Command::survey_region: {
+        const auto region = std::ranges::find(rules_.regions, action.target, &Region::id);
+        if (region == rules_.regions.end()) return "unknown_region";
+        go_to(static_cast<std::size_t>(region - rules_.regions.begin()));
+        return "ok";
+      }
     }
     return "invalid_action";
   };
@@ -403,7 +450,7 @@ std::string_view Expedition::apply(Action action) {
     state_.receipts = std::move(previous);
     return result;
   }
-  if (!state_.dead) advance();
+  if (!state_.dead && mode() != PlayMode::survey) advance();
   history_.push_back(std::move(action));
   return "ok";
 }

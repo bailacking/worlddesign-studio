@@ -12,6 +12,7 @@
   "exposure_format": 1,
   "processing_format": 1,
   "inscription_format": 1,
+  "expedition_rules_format": 1,
   "story_format": 1,
   "interaction_format": 1,
   "voxel_dynamics_format": 1,

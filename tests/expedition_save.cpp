@@ -54,6 +54,17 @@ int main(int argc, char** argv) {
   auto& run = *loaded.expedition;
   const std::string_view stage(argv[3]);
   if (stage.starts_with("farm-")) return farm(run, path, stage);
+  if (stage == "rules-save") {
+    if (run.apply({Command::supply, "herb"}) != "ok" || run.apply({Command::wait}) != "ok")
+      return 19;
+    return save(run, path) ? 0 : 20;
+  }
+  if (stage == "rules-open") {
+    return restore(run, path) && run.state().tick == 2 && run.state().hunger == 20 &&
+                   run.workshop().has_item("herb")
+               ? 0
+               : 21;
+  }
   if (stage == "start") {
     if (run.apply({Command::gather, "driftwood"}) != "ok" || run.apply({Command::east}) != "ok" ||
         run.apply({Command::use, "rising"}) != "ok" || run.apply({Command::east}) != "ok")

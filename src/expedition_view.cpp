@@ -125,11 +125,16 @@ void ui_text(int x, int y, std::string text, int size = 17, Color color = ink) {
 }
 
 std::optional<Action> input(const Expedition& run, const Site* selected, std::string recipe,
-                            const std::vector<std::string>& ingredients) {
+                            const std::vector<std::string>& ingredients, std::string supply) {
   if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)) return Action{Command::north};
   if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) return Action{Command::south};
   if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT)) return Action{Command::west};
   if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT)) return Action{Command::east};
+  if (IsKeyPressed(KEY_I) && !supply.empty()) return Action{Command::supply, std::move(supply)};
+  if (IsKeyPressed(KEY_N) && run.allows(Command::survey_region)) {
+    const auto& regions = run.rules().regions;
+    return Action{Command::survey_region, regions[(run.state().region + 1) % regions.size()].id};
+  }
   if (IsKeyPressed(KEY_PERIOD)) return Action{Command::wait};
   if (IsKeyPressed(KEY_R)) return Action{Command::revive};
   if (IsKeyPressed(KEY_C) && !recipe.empty()) return Action{Command::craft, std::move(recipe)};
@@ -177,6 +182,7 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
   std::size_t selected = 0;
   std::size_t recipe_index = 0;
   std::size_t ingredient_index = 0;
+  std::size_t supply_index = 0;
   std::vector<std::string> ingredients;
   bool show_slots = false;
   std::string slot_error;
@@ -198,7 +204,7 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
         slot_error = slots.select(slot, run, save_file);
         if (slot_error.empty()) {
           slots.active = slot;
-          selected = recipe_index = ingredient_index = 0;
+          selected = recipe_index = ingredient_index = supply_index = 0;
           ingredients.clear();
           status = "Save slot " + std::to_string(slot);
           show_slots = false;
@@ -239,11 +245,21 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
             ? std::string{}
             : std::next(recipes.begin(), static_cast<std::ptrdiff_t>(recipe_index % recipes.size()))
                   ->first;
-    auto action = suspended ? std::nullopt : input(run, site, recipe, ingredients);
+    std::string supply;
+    const auto& catalog = run.workshop().catalog().items;
+    if (run.allows(Command::supply) && !catalog.empty()) {
+      if (!suspended && IsKeyPressed(KEY_Y)) ++supply_index;
+      supply =
+          std::next(catalog.begin(), static_cast<std::ptrdiff_t>(supply_index % catalog.size()))
+              ->first;
+    }
+    auto action = suspended ? std::nullopt : input(run, site, recipe, ingredients, supply);
     BeginDrawing();
     ClearBackground(background);
     ui_text(30, 28, run.rules().voxel ? "COPPER RELAY" : "DRIFT NATURALISTS", 30);
-    ui_text(31, 67, run.region().id + "   /   " + run.state().chapter, 20, accent);
+    auto location = run.region().id + "   /   " + run.state().chapter;
+    if (run.rules().pack) location += "   /   " + std::string(play_mode_name(run.mode()));
+    ui_text(31, 67, std::move(location), 20, accent);
     draw_map(run, site, textures);
     const auto& state = run.state();
     const auto line = [&](int y, const char* label, int amount) {
@@ -284,7 +300,10 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
       if (row >= 535) break;
     }
     if (state.dead)
-      ui_text(31, 534, "Expedition ended. R attempts recovery.", 19, accent);
+      ui_text(31, 534,
+              run.allows(Command::revive) ? "Expedition ended. R attempts recovery."
+                                          : "Expedition ended.",
+              19, accent);
     else if (state.ending)
       ui_text(31, 534, "Expedition complete", 19, accent);
     else if (!status.empty())
@@ -294,12 +313,21 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
       for (const auto& id : ingredients) selected_food += "  " + id;
       ui_text(31, 511, selected_food, 15, subdued);
     }
-    ui_text(31, 570, "WASD move    Tab select site    F use    G gather    Space fight    . wait",
-            17, subdued);
-    ui_text(31, 597,
-            kitchen ? "Z select food    X add    Backspace remove    F cook    Esc quit"
-                    : "Q select recipe    C craft    E eat    R revive    Esc quit",
-            17, subdued);
+    if (run.mode() == expedition::PlayMode::survey) {
+      ui_text(31, 570, "WASD survey the region", 17, subdued);
+      ui_text(31, 597,
+              run.allows(Command::survey_region) ? "N next region    Esc quit" : "Esc quit", 17,
+              subdued);
+    } else {
+      if (!supply.empty()) ui_text(31, 553, "Y select supply    I take " + supply, 15, accent);
+      ui_text(31, 570, "WASD move    Tab select site    F use    G gather    Space fight    . wait",
+              17, subdued);
+      const auto hint = kitchen ? "Z select food    X add    Backspace remove    F cook    Esc quit"
+                        : run.allows(Command::revive)
+                            ? "Q select recipe    C craft    E eat    R revive    Esc quit"
+                            : "Q select recipe    C craft    E eat    Esc quit";
+      ui_text(31, 597, hint, 17, subdued);
+    }
     if (slots.select)
       ui_text(760, 597, "F1 saves   Slot " + std::to_string(slots.active), 17, subdued);
     EndDrawing();

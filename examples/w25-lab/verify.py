@@ -562,6 +562,86 @@ def controls(cli, project, destination):
     print("Interaction priority overrides proximity until a specific target is selected")
 
 
+def play_modes(cli, probe, project, root):
+    project = Path(project)
+    modes = ("journey", "build", "trial", "survey")
+    for mode in modes:
+        destination = root / mode
+        shutil.copytree(project, destination)
+        assets = destination / "assets"
+        pack_file = assets / "play-rules.json"
+        manifest_file = destination / "wds.project.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        expedition = next(item for item in manifest["resources"] if item["id"] == "expedition")
+        expedition["refs"].append("play-rules")
+        manifest["resources"].append({
+            "id": "play-rules", "kind": "data", "path": "assets/play-rules.json", "refs": [],
+        })
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        path = assets / "expedition.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document.update(view="voxel", rule_pack="play-rules")
+        if mode == "survey":
+            document["regions"][1]["habitat"] = "ocean"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        pack = {"version": 1, "mode": mode, "hunger_interval": 1}
+        if mode == "journey":
+            pack["deny"] = ["craft"]
+        pack_file.write_text(json.dumps(pack), encoding="utf-8")
+
+        def replay(actions, expected="ok"):
+            return request(cli, destination, "expedition.replay", {"actions": actions}, expected)
+
+        supply = action("supply", "herb")
+        visit = action("survey-region", "tide-terrace")
+        cases = {
+            "journey": ([supply, visit, action("craft", "build-stove"), action("wait")],
+                        ["command_forbidden"] * 3 + ["ok"]),
+            "build": ([action("supply", "missing"), visit, supply, action("wait")],
+                      ["unknown_item", "command_forbidden", "ok", "ok"]),
+            "trial": ([action("revive"), supply, action("wait")],
+                      ["command_forbidden", "command_forbidden", "ok"]),
+            "survey": ([action("survey-region", "missing"), visit, action("east"),
+                        action("wait"), supply, action("use", "return-path")],
+                       ["unknown_region", "ok", "ok", "command_forbidden",
+                        "command_forbidden", "command_forbidden"]),
+        }
+        actions, codes = cases[mode]
+        result = replay(actions)
+        assert [step["code"] for step in result["steps"]] == codes, result
+        state = result["state"]
+        assert state["play_rules"]["mode"] == mode and state["play_rules"]["hunger_interval"] == 1
+        assert ("supply" in state["play_rules"]["commands"]) == (mode == "build")
+        assert ("survey-region" in state["play_rules"]["commands"]) == (mode == "survey")
+        assert ("revive" in state["play_rules"]["commands"]) == (mode in ("journey", "build"))
+        assert state["tick"] == (0 if mode == "survey" else 2 if mode == "build" else 1)
+        assert state["hunger"] == (20 if mode in ("build", "survey") else 19)
+        if mode == "survey":
+            assert state["region"] == "tide-terrace" and state["boat"] == 0
+            assert not state["workshop"]["bag"]
+            assert state["positions"]["tide-terrace"] != document["regions"][1]["spawn"]
+        if mode == "build":
+            save = destination / "mode.save.json"
+            subprocess.run([probe, destination, save, "rules-save"], check=True, timeout=20)
+            subprocess.run([probe, destination, save, "rules-open"], check=True, timeout=20)
+            saved = save.read_bytes()
+            pack_file.write_text(json.dumps({**pack, "season_ticks": 12}), encoding="utf-8")
+            changed = subprocess.run([probe, destination, save, "rules-open"], timeout=20)
+            assert changed.returncode == 21 and save.read_bytes() == saved
+            pack_file.write_text(json.dumps(pack), encoding="utf-8")
+        if mode == "journey":
+            assert "craft" not in state["play_rules"]["commands"]
+            expedition["refs"].remove("play-rules")
+            manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+            assert replay([], "invalid_expedition")["location"].endswith("/rule_pack")
+            expedition["refs"].append("play-rules")
+            manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+            pack_file.write_text(json.dumps({**pack, "deny": ["craft", "craft"]}), encoding="utf-8")
+            assert replay([], "invalid_expedition")["location"].endswith("/rule_pack/deny")
+            pack_file.write_text(json.dumps(pack), encoding="utf-8")
+    print("Four rule packs enforce commands, movement and metabolism, with save identity checks")
+
+
 def package(cli, project, root, capability, probe=None, *, graphics=True):
     root.mkdir()
     destination = root / "release"
@@ -645,6 +725,8 @@ def main():
         combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
         control = root / "controls"
         controls(args.cli.resolve(), project, control)
+        modes = root / "modes"
+        play_modes(args.cli.resolve(), args.probe.resolve(), project, modes)
         if args.runtime:
             runtime = args.runtime.resolve()
             graphics = not args.no_graphics
@@ -659,6 +741,8 @@ def main():
                     graphics=graphics)
             package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
                     graphics=False)
+            package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
+                    graphics=graphics)
 
 
 if __name__ == "__main__":

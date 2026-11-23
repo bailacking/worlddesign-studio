@@ -263,12 +263,38 @@ Icons load_icons(const Json& data, const Rules& rules, const platform::Project& 
   return result;
 }
 
-Expedition decode(const Json& data, std::string identity) {
+RulePack read_pack(const Json& data, std::string resource) {
+  const std::string path = "/rule_pack";
+  if (!data.is_object() || data.size() != 2U + data.count("deny") + data.count("season_ticks") +
+                                              data.count("hunger_interval"))
+    throw Invalid{path};
+  integer(data, "version", 1, 1, path);
+  const auto mode = play_mode(token(data, "mode", path));
+  if (!mode) throw Invalid{path + "/mode"};
+  RulePack result{std::move(resource), *mode, {}};
+  if (data.contains("deny")) {
+    for (const auto& name : array(data, "deny", 0, 15, path)) {
+      const auto entry =
+          name.is_string() ? command(name.get_ref<const std::string&>()) : std::nullopt;
+      if (!entry || std::ranges::find(result.denied, *entry) != result.denied.end())
+        throw Invalid{path + "/deny"};
+      result.denied.push_back(*entry);
+    }
+  }
+  if (data.contains("season_ticks"))
+    result.season_ticks = integer(data, "season_ticks", 4, 300, path);
+  if (data.contains("hunger_interval"))
+    result.hunger_interval = integer(data, "hunger_interval", 1, 300, path);
+  return result;
+}
+
+Expedition decode(const Json& data, std::string identity, std::optional<RulePack> pack = {}) {
   if (!data.is_object() || data.value("version", 0) != 1 || !data.contains("permanent") ||
       !data["permanent"].is_boolean() || !data.contains("seed"))
     throw Invalid{"/"};
   const auto view = token(data, "view", "");
   if (view != "voxel" && view != "planar") throw Invalid{"/view"};
+  token(data, "rule_pack", "", true);
   Rules rules{view == "voxel",
               data["permanent"].get<bool>(),
               static_cast<std::uint32_t>(number(data["seed"], 0, UINT32_MAX, "/seed")),
@@ -276,6 +302,11 @@ Expedition decode(const Json& data, std::string identity) {
               integer(data, "initial_hunger", 1, 20, ""),
               integer(data, "hunger_interval", 1, 300, ""),
               {}};
+  if (pack) {
+    rules.season_ticks = pack->season_ticks.value_or(rules.season_ticks);
+    rules.hunger_interval = pack->hunger_interval.value_or(rules.hunger_interval);
+    rules.pack = std::move(pack);
+  }
   const auto& regions = array(data, "regions", 1, 16, "");
   std::set<std::string> region_ids, site_ids;
   for (std::size_t i = 0; i < regions.size(); ++i) {
@@ -299,9 +330,14 @@ Expedition decode(const Json& data, std::string identity) {
   return Expedition(std::move(rules), std::move(*items.workshop), std::move(identity));
 }
 
-std::string identity(std::string_view project, std::uint64_t revision, std::string_view bytes) {
+std::string identity(std::string_view project, std::uint64_t revision, std::string_view bytes,
+                     std::string_view pack) {
   std::uint64_t hash = 14695981039346656037ULL;
   for (unsigned char value : bytes) hash = (hash ^ value) * 1099511628211ULL;
+  if (!pack.empty()) {
+    hash *= 1099511628211ULL;
+    for (unsigned char value : pack) hash = (hash ^ value) * 1099511628211ULL;
+  }
   return std::string(project) + ":" + std::to_string(revision) + ":" + std::to_string(hash);
 }
 
@@ -375,6 +411,13 @@ Json state(const Expedition& expedition) {
     result["completed_chapters"] = current.completed_chapters;
     result["unlocked_characters"] = current.unlocked_characters;
   }
+  if (const auto& pack = expedition.rules().pack) {
+    result["play_rules"] = {{"resource", pack->resource},
+                            {"mode", play_mode_name(pack->mode)},
+                            {"commands", expedition.permitted_commands()},
+                            {"season_ticks", expedition.rules().season_ticks},
+                            {"hunger_interval", expedition.rules().hunger_interval}};
+  }
   return result;
 }
 
@@ -396,7 +439,27 @@ LoadResult load(const fs::path& root, std::uint64_t revision) {
     const auto bytes = io::read_bytes(root / resource->path, 1024 * 1024);
     if (!bytes) return {{}, "invalid_expedition", resource->path};
     const auto data = io::parse_json(*bytes);
-    auto expedition = decode(data, identity(project.id, revision, *bytes));
+    const auto pack_id = token(data, "rule_pack", "", true);
+    std::optional<RulePack> pack;
+    std::string pack_bytes;
+    if (!pack_id.empty()) {
+      const auto asset = std::ranges::find(project.resources, pack_id, &platform::Resource::id);
+      if (asset == project.resources.end() || asset == resource || asset->kind != "data" ||
+          std::ranges::find(resource->refs, pack_id) == resource->refs.end())
+        throw Invalid{"/rule_pack"};
+      const auto contents = io::read_bytes(root / asset->path, 8 * 1024);
+      if (!contents) throw Invalid{"/rule_pack"};
+      try {
+        pack = read_pack(io::parse_json(*contents), pack_id);
+      } catch (const Json::exception&) {
+        throw Invalid{"/rule_pack"};
+      } catch (const std::length_error&) {
+        throw Invalid{"/rule_pack"};
+      }
+      pack_bytes = std::move(*contents);
+    }
+    auto expedition =
+        decode(data, identity(project.id, revision, *bytes, pack_bytes), std::move(pack));
     auto icons = load_icons(data, expedition.rules(), project, *resource, root);
     const auto current = platform::open_project(root);
     if (!current.project) return {{}, current.code, current.location};
@@ -405,6 +468,8 @@ LoadResult load(const fs::path& root, std::uint64_t revision) {
   } catch (const Invalid& error) {
     return {{}, "invalid_expedition", resource->path + error.location};
   } catch (const Json::exception&) {
+    return {{}, "invalid_expedition", resource->path};
+  } catch (const std::length_error&) {
     return {{}, "invalid_expedition", resource->path};
   } catch (const fs::filesystem_error&) {
     return {{}, "io_error", resource->path};
@@ -418,6 +483,8 @@ std::optional<std::string> document_error(std::string_view bytes) {
   } catch (const Invalid& error) {
     return error.location;
   } catch (const Json::exception&) {
+    return "/";
+  } catch (const std::length_error&) {
     return "/";
   }
 }
