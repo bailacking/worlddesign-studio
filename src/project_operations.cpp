@@ -176,6 +176,10 @@ Json workyard(const fs::path& directory, std::uint64_t revision, std::string_vie
     reply["water_updates"] = change.water_updates;
     reply["ignited"] = change.ignited;
     reply["extinguished"] = change.extinguished;
+    if (scene.world.terrain()->thermal_workyard()) {
+      reply["lava_updates"] = change.lava_updates;
+      reply["solidified"] = change.solidified;
+    }
   }
   return reply;
 }

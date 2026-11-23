@@ -44,10 +44,13 @@ double rendered_height(Block block) {
     case Block::rail:
       return 0.11;
     case Block::water_low:
+    case Block::lava_low:
       return 0.25;
     case Block::water_mid:
+    case Block::lava_mid:
       return 0.5;
     case Block::water_high:
+    case Block::lava_high:
       return 0.75;
     default:
       return 1;

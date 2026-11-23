@@ -109,9 +109,9 @@ bool valid_runtime(const Json& metadata) {
          name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format" ||
          name == "survival_format" || name == "exposure_format" || name == "processing_format" ||
          name == "story_format" || name == "interaction_format" ||
-         name == "voxel_dynamics_format" || name == "inscription_format" ||
-         name == "expedition_rules_format" || name == "expedition_input_format" ||
-         name == "expedition_character_format") &&
+         name == "voxel_dynamics_format" || name == "voxel_thermal_format" ||
+         name == "inscription_format" || name == "expedition_rules_format" ||
+         name == "expedition_input_format" || name == "expedition_character_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -301,6 +301,10 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
         scene.voxel_scene->world.terrain()->workyard() &&
         !metadata.contains("voxel_dynamics_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_dynamics_format");
+    if (scene.voxel_scene && scene.voxel_scene->world.terrain() &&
+        scene.voxel_scene->world.terrain()->thermal_workyard() &&
+        !metadata.contains("voxel_thermal_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_thermal_format");
     if (scene.session && scene.session->snapshot().behavior_state &&
         !metadata.contains("behavior_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/behavior_format");

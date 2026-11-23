@@ -54,6 +54,8 @@ struct DynamicsStep {
   int ignited = 0;
   int extinguished = 0;
   bool changed = false;
+  int lava_updates = 0;
+  int solidified = 0;
 };
 
 class World {

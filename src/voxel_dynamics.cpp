@@ -14,21 +14,28 @@ bool in_world(int coordinate) {
   return coordinate >= -SeededTerrain::limit && coordinate < SeededTerrain::limit;
 }
 
-int water_level(Block block) {
-  if (block == Block::spring) return 3;
-  if (block < Block::water_low || block > Block::water_high) return 0;
-  return 1 + static_cast<int>(block) - static_cast<int>(Block::water_low);
-}
+struct Fluid {
+  Block source;
+  Block low;
+  Block high;
 
-Block water(int level) {
-  return level == 0 ? Block::air
-                    : static_cast<Block>(static_cast<int>(Block::water_low) + level - 1);
-}
+  int level(Block block) const {
+    if (block == source) return 3;
+    if (block < low || block > high) return 0;
+    return 1 + static_cast<int>(block) - static_cast<int>(low);
+  }
 
-bool accepts_water(Block block) {
-  return block == Block::air || block == Block::flame ||
-         (block >= Block::water_low && block <= Block::water_high);
-}
+  Block at(int strength) const {
+    return strength == 0 ? Block::air : static_cast<Block>(static_cast<int>(low) + strength - 1);
+  }
+
+  bool accepts(Block block) const {
+    return block == Block::air || block == Block::flame || (block >= low && block <= high);
+  }
+};
+
+constexpr Fluid water{Block::spring, Block::water_low, Block::water_high};
+constexpr Fluid lava{Block::vent, Block::lava_low, Block::lava_high};
 
 struct Region {
   int width;
@@ -48,30 +55,52 @@ struct Region {
   }
 };
 
-void evolve(const Region& region, std::vector<Block>& cells, DynamicsStep& result) {
+std::vector<int> flow(const Region& region, const std::vector<Block>& cells, Fluid fluid) {
   std::vector<int> supply(cells.size());
   const auto pour = [&](int x, int y, int z, int power) {
     if (!region.contains(x, z)) return;
     const auto index = region.index(x, y, z);
-    if (accepts_water(cells[index])) supply[index] = std::max(supply[index], power);
+    if (fluid.accepts(cells[index])) supply[index] = std::max(supply[index], power);
   };
   region.each([&](int x, int y, int z) {
-    const auto level = water_level(cells[region.index(x, y, z)]);
+    const auto level = fluid.level(cells[region.index(x, y, z)]);
     if (level == 0) return;
-    if (y > 1 && accepts_water(cells[region.index(x, y - 1, z)])) {
+    if (y > 1 && fluid.accepts(cells[region.index(x, y - 1, z)])) {
       pour(x, y - 1, z, level);
     } else if (level > 1) {
       for (const auto& [dx, dz] : directions) pour(x + dx, y, z + dz, level - 1);
     }
   });
+  return supply;
+}
 
+bool touches_water(const Region& region, const std::vector<Block>& cells, int x, int y, int z) {
+  const auto wet = [&](int u, int v, int w) {
+    return region.contains(u, w) && v >= 1 && v < World::height &&
+           water.level(cells[region.index(u, v, w)]) > 0;
+  };
+  return wet(x, y - 1, z) || wet(x, y + 1, z) ||
+         std::ranges::any_of(
+             directions, [&](const auto& offset) { return wet(x + offset[0], y, z + offset[1]); });
+}
+
+void evolve(const Region& region, std::vector<Block>& cells, bool thermal, DynamicsStep& result) {
+  const auto wet = flow(region, cells, water);
+  const auto hot = thermal ? flow(region, cells, lava) : std::vector<int>(cells.size());
   auto next = cells;
   region.each([&](int x, int y, int z) {
     const auto index = region.index(x, y, z);
     const auto old = cells[index];
-    if (supply[index] > 0) {
-      next[index] = water(supply[index]);
+    if ((wet[index] > 0 && hot[index] > 0) ||
+        (lava.level(old) > 0 && touches_water(region, cells, x, y, z))) {
+      next[index] = Block::basalt;
+      ++result.solidified;
       if (old == Block::flame) ++result.extinguished;
+    } else if (wet[index] > 0) {
+      next[index] = water.at(wet[index]);
+      if (old == Block::flame) ++result.extinguished;
+    } else if (hot[index] > 0) {
+      next[index] = lava.at(hot[index]);
     } else if (old == Block::flame) {
       next[index] = Block::air;
       for (const auto& [dx, dz] : directions) {
@@ -81,11 +110,15 @@ void evolve(const Region& region, std::vector<Block>& cells, DynamicsStep& resul
         next[neighbor] = Block::flame;
         ++result.ignited;
       }
-    } else if (old != Block::spring && water_level(old) > 0) {
-      next[index] = water(water_level(old) - 1);
+    } else if (old != Block::spring && water.level(old) > 0) {
+      next[index] = water.at(water.level(old) - 1);
+    } else if (old != Block::vent && lava.level(old) > 0) {
+      next[index] = lava.at(lava.level(old) - 1);
     }
-    if (next[index] != old && (water_level(next[index]) || water_level(old)))
-      ++result.water_updates;
+    if (next[index] != old) {
+      if (water.level(next[index]) || water.level(old)) ++result.water_updates;
+      if (lava.level(next[index]) || lava.level(old)) ++result.lava_updates;
+    }
   });
   cells.swap(next);
 }
@@ -138,7 +171,8 @@ DynamicsStep World::step_dynamics(int x, int z, int columns, int rows, int steps
   });
   const auto before = cells;
   DynamicsStep result{"ok"};
-  for (int step = 0; step < steps; ++step) evolve(region, cells, result);
+  for (int step = 0; step < steps; ++step)
+    evolve(region, cells, candidate.thermal_workyard(), result);
   if (before == cells) return result;
 
   // Reclaim edit slots before adding records whose generated block is different.

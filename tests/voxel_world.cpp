@@ -106,4 +106,26 @@ int main() {
             !yard.collides(rider.feet),
         "rail renders as a slab and allows the rider to stand on its support");
   check(rider.toggle_cart(yard) && !rider.cart, "rider can leave the cart safely");
+
+  std::istringstream incompatible("wds-voxel-workyard-v1 53207\n15 8 10 13\n");
+  check(!yard.read(incompatible) && yard.block(13, 2, 17) == Block::rail,
+        "the original profile rejects new block IDs without changing its existing state");
+  World thermal;
+  thermal.use_seed(53207, TerrainProfile::thermal_workyard);
+  std::istringstream vents("wds-voxel-workyard-v2 53207\n15 8 10 13\n16 7 10 8\n");
+  check(thermal.read(vents), "thermal workyard reads both sources");
+  const auto falling = thermal.step_dynamics(15, 10, 2, 1, 1);
+  check(falling.lava_updates == 1 && falling.water_updates == 1 && falling.solidified == 0 &&
+            thermal.block(15, 7, 10) == Block::lava_high,
+        "lava and water fall through empty cells on the first tick");
+  const auto cooled = thermal.step_dynamics(15, 10, 2, 1, 1);
+  check(cooled.solidified == 1 && thermal.block(15, 7, 10) == Block::basalt &&
+            thermal.block(16, 7, 10) == Block::spring && solid(Block::basalt),
+        "adjacent water cools lava into solid basalt across the chunk boundary");
+  std::stringstream heat_save;
+  thermal.write(heat_save);
+  World reloaded_thermal;
+  reloaded_thermal.use_seed(53207, TerrainProfile::thermal_workyard);
+  check(reloaded_thermal.read(heat_save) && reloaded_thermal.block(15, 7, 10) == Block::basalt,
+        "thermal workyard round trips cooled material");
 }

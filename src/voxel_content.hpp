@@ -22,11 +22,16 @@ enum class Block {
   water_low,
   water_mid,
   water_high,
-  flame
+  flame,
+  vent,
+  lava_low,
+  lava_mid,
+  lava_high,
+  basalt
 };
 
 [[nodiscard]] constexpr bool solid(Block block) {
-  return block >= Block::grass && block <= Block::timber;
+  return (block >= Block::grass && block <= Block::timber) || block == Block::basalt;
 }
 
 struct BlockStyle {
@@ -38,7 +43,7 @@ struct BlockStyle {
 struct Content {
   std::uint32_t sky = 0x87bce8;
   Block placement = Block::stone;
-  std::array<BlockStyle, 13> blocks{{{0, false},
+  std::array<BlockStyle, 18> blocks{{{0, false},
                                      {0x659645, true},
                                      {0x90643e, true},
                                      {0x87929f, true},
@@ -50,7 +55,12 @@ struct Content {
                                      {0x8cdaf5, false},
                                      {0x58afdf, false},
                                      {0x3582d4, false},
-                                     {0xf57b35, false}}};
+                                     {0xf57b35, false},
+                                     {0xf6a447, false},
+                                     {0xd14c18, false},
+                                     {0xdc5818, false},
+                                     {0xe86a1a, false},
+                                     {0x3c3b4a, true}}};
 
   [[nodiscard]] const BlockStyle& style(Block block) const;
   bool operator==(const Content&) const = default;

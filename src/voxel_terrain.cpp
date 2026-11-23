@@ -78,6 +78,7 @@ SeededTerrain::SeededTerrain(std::uint32_t seed, TerrainProfile profile)
     : seed_(seed), profile_(profile), chunks_(diameter * diameter) {}
 
 std::string_view SeededTerrain::profile_name() const {
+  if (thermal_workyard()) return "workyard-v2";
   if (workyard()) return "workyard-v1";
   return frontier() ? "frontier-v1" : "seeded-v1";
 }
@@ -237,7 +238,10 @@ void SeededTerrain::stream(int x, int z) const {
 bool SeededTerrain::read(std::istream& input) {
   std::string line;
   if (!std::getline(input, line) || line != save_header()) return false;
-  const auto max_block = workyard() ? Block::flame : frontier() ? Block::timber : Block::stone;
+  const auto max_block = thermal_workyard() ? Block::basalt
+                         : workyard()       ? Block::flame
+                         : frontier()       ? Block::timber
+                                            : Block::stone;
   Edits candidate;
   while (std::getline(input, line)) {
     std::istringstream row(line);

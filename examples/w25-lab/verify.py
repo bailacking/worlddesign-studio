@@ -101,7 +101,7 @@ def workyard(cli, project, destination):
     assert {"15 4 13 11", "16 4 14 10", "17 4 12 12", "17 4 14 6"} <= cells
     assert {"16 4 12 12", "14 4 13 10", "15 4 12 10", "18 4 12 12"}.isdisjoint(cells)
     reopened = request(cli, destination, "scene.inspect", {}, revision=1)
-    assert reopened["terrain"]["profile"] == "workyard-v1"
+    assert reopened["terrain"]["profile"] == "workyard-v2"
     second = dynamics(area, revision=1, mode="apply")
     assert second["revision"] == 2 and second["ignited"] == 1
     cells = world()
@@ -121,7 +121,17 @@ def workyard(cli, project, destination):
     assert (joint / "assets" / "yard.json").read_bytes() == saved
     request(cli, SAMPLE.parent / "seeded-voxel", "scene.voxel.dynamics", area,
             "unsupported_terrain", mode="preview")
-    print("Workyard cart crosses chunks, water quenches fire, replay and save agree")
+
+    trench = {"x": 14, "z": 10, "width": 5, "depth": 1, "steps": 1}
+    thermal = dynamics(trench, revision=2, mode="preview")
+    assert thermal["lava_updates"] == thermal["solidified"] == 1
+    assert thermal["water_updates"] == 1 and source.read_bytes() == saved
+    thermal = dynamics(trench, revision=2, mode="apply")
+    assert thermal["revision"] == 3 and thermal["solidified"] == 1
+    assert {"14 6 10 15", "15 6 10 13", "16 6 10 17", "17 6 10 8", "18 6 10 10"} <= world()
+    after = request(cli, destination, "scene.inspect", {}, revision=3)
+    assert after["terrain"]["profile"] == "workyard-v2"
+    print("Cart, fire and fluids cross chunks, lava meets water, replay and save agree")
 
 
 def action(command, target=None, ingredients=None):
@@ -830,6 +840,8 @@ def main():
             package(runtime, control, root / "actions-package", "interaction_format",
                     graphics=graphics)
             package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
+                    graphics=False)
+            package(runtime, yard, root / "thermal-workyard-package", "voxel_thermal_format",
                     graphics=False)
             package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
                     graphics=graphics)
