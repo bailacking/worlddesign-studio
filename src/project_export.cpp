@@ -107,7 +107,7 @@ bool valid_runtime(const Json& metadata) {
     // Earlier players can export scenes that use only the capabilities they advertise.
     if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format" ||
          name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format" ||
-         name == "survival_format") &&
+         name == "survival_format" || name == "exposure_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -303,21 +303,16 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
       fail(route.code.c_str(), route.location);
     if (route.expedition && !metadata.contains("expedition_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_format");
-    const bool survival =
-        (route.expedition &&
-         (route.expedition->workshop().uses_survival_rules() ||
-          std::ranges::any_of(route.expedition->rules().regions,
-                              [](const auto& region) {
-                                return std::ranges::any_of(region.sites, [](const auto& site) {
-                                  return site.kind == "plot" || site.kind == "kitchen";
-                                });
-                              }))) ||
-        (scene.session && scene.session->workshop() &&
-         scene.session->workshop()->uses_survival_rules()) ||
-        (scene.voxel_scene && scene.voxel_scene->workshop &&
-         scene.voxel_scene->workshop->uses_survival_rules());
+    const bool survival = (route.expedition && route.expedition->uses_survival_rules()) ||
+                          (scene.session && scene.session->workshop() &&
+                           scene.session->workshop()->uses_survival_rules()) ||
+                          (scene.voxel_scene && scene.voxel_scene->workshop &&
+                           scene.voxel_scene->workshop->uses_survival_rules());
     if (survival && !metadata.contains("survival_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/survival_format");
+    if (route.expedition && route.expedition->uses_exposure_rules() &&
+        !metadata.contains("exposure_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/exposure_format");
     const bool frontier = scene.voxel_scene && scene.voxel_scene->world.terrain() &&
                           scene.voxel_scene->world.terrain()->frontier();
     const bool ecology =

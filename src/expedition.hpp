@@ -27,6 +27,20 @@ struct Site {
   int power;
   int anchor_capacity = 3;
   std::string icon{};
+  int venom = 0;
+};
+
+struct Eruption {
+  unsigned interval;
+  unsigned warning_ticks;
+  unsigned season;
+  int damage;
+};
+
+struct Climate {
+  std::array<int, 4> wetness;
+  std::array<int, 4> heat;
+  std::optional<Eruption> eruption{};
 };
 
 struct Region {
@@ -37,6 +51,7 @@ struct Region {
   TilePoint spawn;
   std::vector<Site> sites;
   std::optional<std::array<std::uint32_t, 4>> palette;
+  std::optional<Climate> climate{};
 };
 
 struct Rules {
@@ -61,7 +76,8 @@ enum class Command {
   craft,
   eat,
   revive,
-  cook
+  cook,
+  treat
 };
 
 struct Action {
@@ -91,6 +107,7 @@ struct State {
   int morale = 20;
   int wetness = 0;
   int heat = 0;
+  int poison = 0;
   int boat = 0;
   int anchor_charge = 0;
   int population = 1;
@@ -124,12 +141,15 @@ class Expedition {
   const Site* nearby(std::string_view target) const;
   int terrain(TilePoint point) const;
   TilePoint location(const Site& site) const;
+  bool uses_survival_rules() const;
+  bool uses_exposure_rules() const;
 
  private:
   std::string_view interact(const Site& site, bool attack);
   std::string_view move(int x, int y);
   void advance();
   void advance_crops();
+  void advance_environment();
   void change(std::string_view cause, int health, int hunger = 0, int morale = 0);
   bool award(const std::string& reward, const std::string& cost = {});
   bool enter(const Site& portal);

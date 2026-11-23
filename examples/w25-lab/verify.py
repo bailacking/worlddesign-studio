@@ -188,7 +188,60 @@ def garden(cli, project, probe, save):
     print("Plant, traverse regions, resume, harvest, prioritize cooking, save and reopen")
 
 
-def package(cli, project, root):
+def conditions(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    area, coast = document["regions"]
+    area["sites"].append({"id": "remedy-supply", "kind": "source",
+                          "at": [0, 1], "reward": "tonic"})
+    coast["sites"].append({"id": "stinger", "kind": "enemy",
+                           "at": [2, 1], "power": 3, "venom": 4})
+    coast["climate"] = {
+        "wetness": [1, 3, 2, -2], "heat": [1, -1, 3, -2],
+        "eruption": {"interval": 6, "warning_ticks": 2, "season": 0, "damage": 3},
+    }
+    document["workshop"]["items"]["tonic"] = {"limit": 8, "tags": ["antidote"]}
+    document["workshop"]["sources"]["remedy-supply"] = {
+        "yield": {"item": "tonic", "count": 1}, "uses": 1,
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    actions = [
+        action("gather", "remedy-supply"), action("east"), action("use", "trail"),
+        action("attack", "stinger"), action("treat", "herb"), action("treat", "tonic"),
+        action("attack", "stinger"), action("use", "return-path"), action("wait"),
+    ]
+    request_data = {"actions": actions}
+    steps = request(cli, destination, "expedition.replay", request_data)["steps"]
+    assert steps == request(cli, destination, "expedition.replay", request_data)["steps"]
+
+    def causes(row):
+        return [event["cause"] for event in row["receipts"]]
+
+    assert all(row["code"] == "ok" for index, row in enumerate(steps) if index != 4)
+    assert steps[3]["poison"] == 3 and steps[3]["health"] == 17
+    assert causes(steps[3]) == ["retaliation", "poisoned", "eruption_warning", "poison"]
+    assert steps[4]["code"] == "missing_antidote" and steps[4]["tick"] == 4
+    assert steps[4]["workshop"] == steps[3]["workshop"] and steps[4]["poison"] == 3
+    assert causes(steps[5]) == ["treated"] and "poison" not in steps[5]
+    assert not steps[5]["workshop"]["bag"]
+    assert causes(steps[6]) == ["retaliation", "poisoned", "eruption", "poison"]
+    assert steps[6]["health"] == 11 and steps[6]["heat"] == steps[6]["wetness"] == 4
+    assert causes(steps[7]) == ["arrival", "poison"] and steps[7]["region"] == "wind-garden"
+    assert steps[7]["poison"] == 2 and steps[7]["wetness"] == 3
+
+    original = path.read_bytes()
+    coast["climate"]["heat"][2] = 90
+    path.write_text(json.dumps(document), encoding="utf-8")
+    error = request(cli, destination, "expedition.replay", request_data, "invalid_expedition")
+    assert error["location"].endswith("/regions/1/climate/heat/2")
+    path.write_bytes(original)
+    print("Seeded eruption warning and damage, regional climate, poison across travel and treatment")
+
+
+def package(cli, project, root, capability):
+    root.mkdir()
     destination = root / "release"
     export = [cli, "project", "export", project, "0", "windows-x64", destination]
     subprocess.run(export, timeout=30, check=True, capture_output=True)
@@ -205,14 +258,14 @@ def package(cli, project, root):
     shutil.copytree(cli.parent / "wds-runtime" / "windows-x64", kit)
     manifest = kit / "wds.runtime.json"
     metadata = json.loads(manifest.read_text(encoding="utf-8"))
-    assert metadata.pop("survival_format") == 1
+    assert metadata.pop(capability) == 1
     manifest.write_text(json.dumps(metadata), encoding="utf-8")
     rejected = root / "rejected"
     failure = subprocess.run([old_cli, *export[1:-1], rejected], capture_output=True,
                              timeout=30, check=False)
     result = json.loads(failure.stdout)
     assert failure.returncode and result["code"] == "invalid_runtime_dependency", result
-    assert result["location"].endswith("/survival_format") and not rejected.exists()
+    assert result["location"].endswith("/" + capability) and not rejected.exists()
     print("Standalone Windows validation, graphics smoke, older runtime rejection")
 
 
@@ -232,8 +285,11 @@ def main():
         circuit(args.cli.resolve(), project, root / "circuit.json")
         actuate(args.cli.resolve(), root / "actuator-bench")
         garden(args.cli.resolve(), project, args.probe.resolve(), root / "adventure.json")
+        coast = root / "coast"
+        conditions(args.cli.resolve(), project, coast)
         if args.runtime:
-            package(args.runtime.resolve(), project, root)
+            package(args.runtime.resolve(), project, root / "garden-package", "survival_format")
+            package(args.runtime.resolve(), coast, root / "coast-package", "exposure_format")
 
 
 if __name__ == "__main__":

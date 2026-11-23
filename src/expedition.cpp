@@ -10,8 +10,8 @@
 namespace wds::expedition {
 namespace {
 
-constexpr std::array commands{"north",  "south",  "west",  "east", "wait",   "use",
-                              "attack", "gather", "craft", "eat",  "revive", "cook"};
+constexpr std::array commands{"north",  "south", "west", "east",   "wait", "use",  "attack",
+                              "gather", "craft", "eat",  "revive", "cook", "treat"};
 
 int distance(TilePoint a, TilePoint b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 
@@ -45,6 +45,21 @@ Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identi
 TilePoint Expedition::location(const Site& site) const {
   const auto current = state_.actors.find(site.id);
   return current == state_.actors.end() ? site.point : current->second;
+}
+
+bool Expedition::uses_survival_rules() const {
+  return workshop_.uses_survival_rules() || !state_.crops.empty() ||
+         std::ranges::any_of(rules_.regions, [](const auto& area) {
+           return std::ranges::any_of(area.sites,
+                                      [](const auto& site) { return site.kind == "kitchen"; });
+         });
+}
+
+bool Expedition::uses_exposure_rules() const {
+  return std::ranges::any_of(rules_.regions, [](const auto& area) {
+    return area.climate ||
+           std::ranges::any_of(area.sites, [](const auto& site) { return site.venom > 0; });
+  });
 }
 
 const Site* Expedition::nearby(std::string_view target) const {
@@ -89,16 +104,7 @@ void Expedition::advance() {
   if (region().habitat == "cavern" && state_.tick % 2 == 0 && !workshop_.has_item("lantern"))
     change("darkness", -1, 0, -2);
   if (region().habitat == "ember" && state_.tick % 3 == 0) change("embers", -1);
-  if (!rules_.voxel) {
-    const auto phase = season();
-    state_.wetness =
-        std::clamp(state_.wetness + (phase == 1 || region().habitat == "ocean" ? 2 : -1), 0, 10);
-    state_.heat = std::clamp(state_.heat + (phase == 2 ? 2 : -1), 0, 10);
-    if (state_.wetness >= 8) change("drenched", 0, 0, -1);
-    if (state_.heat >= 8) change("overheat", -2);
-    if (phase == 3 && state_.wetness > 4) change("cold", -1);
-    if (state_.morale == 0) change("despair", -1);
-  }
+  advance_environment();
   advance_crops();
   for (const auto& site : region().sites) {
     const auto actor = state_.actors.find(site.id);
@@ -115,6 +121,33 @@ void Expedition::advance() {
     }
     if (site.kind == "raid" && state_.tick % 6 == 0 && distance(point, position()) <= 2)
       change("raid", -2);
+  }
+}
+
+void Expedition::advance_environment() {
+  const auto phase = season();
+  const auto& climate = region().climate;
+  if (!rules_.voxel || climate) {
+    const int rain =
+        climate ? climate->wetness[phase] : (phase == 1 || region().habitat == "ocean" ? 2 : -1);
+    const int warmth = climate ? climate->heat[phase] : (phase == 2 ? 2 : -1);
+    state_.wetness = std::clamp(state_.wetness + rain, 0, 10);
+    state_.heat = std::clamp(state_.heat + warmth, 0, 10);
+    if (state_.wetness >= 8) change("drenched", 0, 0, -1);
+    if (state_.heat >= 8) change("overheat", -2);
+    if (phase == 3 && state_.wetness > 4) change("cold", -1);
+    if (state_.morale == 0) change("despair", -1);
+  }
+  if (climate && climate->eruption && phase == climate->eruption->season) {
+    const auto& hazard = *climate->eruption;
+    const auto offset = (rules_.seed + static_cast<unsigned>(state_.region)) % hazard.interval;
+    const auto progress = (state_.tick + offset) % hazard.interval;
+    if (progress == hazard.interval - hazard.warning_ticks) change("eruption_warning", 0);
+    if (progress == 0) change("eruption", -hazard.damage);
+  }
+  if (state_.poison > 0) {
+    --state_.poison;
+    change("poison", -1);
   }
 }
 
@@ -188,6 +221,10 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
       if (phase_change) change("boss_enraged", 0);
       const bool enraged = site.kind == "boss" && found->second <= site.power / 2;
       change("retaliation", enraged ? -3 : -2, 0, -1);
+      if (!state_.dead && site.venom > state_.poison) {
+        state_.poison = site.venom;
+        change("poisoned", 0);
+      }
       if (region().habitat == "ocean") state_.boat = std::max(0, state_.boat - 1);
     }
     return "ok";
@@ -251,7 +288,7 @@ std::string_view Expedition::apply(Action action) {
   const auto cmd = action.command;
   if (state_.dead && cmd != Command::revive) return "dead";
   const bool needs_target = cmd == Command::gather || cmd == Command::craft ||
-                            cmd == Command::eat || cmd == Command::cook;
+                            cmd == Command::eat || cmd == Command::cook || cmd == Command::treat;
   const bool uses_target = needs_target || cmd == Command::use || cmd == Command::attack;
   if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()) ||
       (cmd == Command::cook) != !action.ingredients.empty())
@@ -298,12 +335,22 @@ std::string_view Expedition::apply(Action action) {
           return "missing_food";
         change("meal", 1, 6);
         return "ok";
+      case Command::treat:
+        if (state_.poison == 0) return "no_poison";
+        if (const auto item = workshop_.catalog().items.find(action.target);
+            item == workshop_.catalog().items.end() || !item->second.tags.contains("antidote") ||
+            !workshop_.consume(action.target))
+          return "missing_antidote";
+        state_.poison = 0;
+        change("treated", 0);
+        return "ok";
       case Command::revive:
         if (!state_.dead) return "still_alive";
         if (!state_.anchor_charge && rules_.permanent && !workshop_.consume("lifeline", 1))
           return "permanent_death";
         if (state_.anchor_charge) --state_.anchor_charge;
         state_.dead = false;
+        state_.poison = 0;
         state_.hunger = std::max(state_.hunger, 8);
         go_to(state_.anchor);
         state_.positions[state_.region] = region().spawn;

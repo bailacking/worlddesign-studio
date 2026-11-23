@@ -134,6 +134,10 @@ std::optional<Action> input(const Expedition& run, const Site* selected, std::st
   if (IsKeyPressed(KEY_R)) return Action{Command::revive};
   if (IsKeyPressed(KEY_C) && !recipe.empty()) return Action{Command::craft, std::move(recipe)};
   if (IsKeyPressed(KEY_E)) {
+    if (run.state().poison > 0)
+      for (const auto& slot : run.workshop().state().bag)
+        if (run.workshop().catalog().items.at(slot.id).tags.contains("antidote"))
+          return Action{Command::treat, slot.id};
     for (const auto& slot : run.workshop().state().bag)
       if (run.workshop().catalog().items.at(slot.id).tags.contains("food"))
         return Action{Command::eat, slot.id};
@@ -232,9 +236,10 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
         735, 220,
         "Season " + std::to_string(run.season() + 1) + "   Tide " + std::to_string(run.tide() + 1),
         16, subdued);
-    ui_text(735, 245,
-            "Wetness " + std::to_string(state.wetness) + "   Heat " + std::to_string(state.heat),
-            16, subdued);
+    std::string exposure =
+        "Wetness " + std::to_string(state.wetness) + "   Heat " + std::to_string(state.heat);
+    if (state.poison > 0) exposure += "   Poison " + std::to_string(state.poison);
+    ui_text(735, 245, exposure, 16, subdued);
     std::string site_label = site ? site->id + " / " + site->kind : "No site in reach";
     if (site && site->kind == "plot") {
       const auto growth = state.crops.at(site->id);

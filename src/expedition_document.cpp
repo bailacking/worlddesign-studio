@@ -71,6 +71,31 @@ const Json& array(const Json& row, const char* key, std::size_t low, std::size_t
   return row[key];
 }
 
+Climate read_climate(const Json& value, const std::string& path) {
+  if (!value.is_object() || value.size() != 2U + value.count("eruption")) throw Invalid{path};
+  const auto curve = [&](const char* key) {
+    const auto& points = array(value, key, 4, 4, path);
+    std::array<int, 4> result{};
+    for (std::size_t i = 0; i < result.size(); ++i)
+      result[i] =
+          static_cast<int>(number(points[i], -5, 5, path + "/" + key + "/" + std::to_string(i)));
+    return result;
+  };
+  Climate result{curve("wetness"), curve("heat")};
+  if (value.contains("eruption")) {
+    const auto location = path + "/eruption";
+    const auto& hazard = value["eruption"];
+    if (!hazard.is_object() || hazard.size() != 4) throw Invalid{location};
+    const auto interval = integer(hazard, "interval", 2, 300, location);
+    result.eruption =
+        Eruption{static_cast<unsigned>(interval),
+                 static_cast<unsigned>(integer(hazard, "warning_ticks", 1, interval - 1, location)),
+                 static_cast<unsigned>(integer(hazard, "season", 0, 3, location)),
+                 integer(hazard, "damage", 1, 20, location)};
+  }
+  return result;
+}
+
 Region region(const Json& row, const std::string& location, std::set<std::string>& site_ids) {
   const auto width = integer(row, "width", 4, 40, location);
   const auto height = integer(row, "height", 4, 30, location);
@@ -90,6 +115,7 @@ Region region(const Json& row, const std::string& location, std::set<std::string
           number(shades[i], 0, 0xffffff, location + "/palette/" + std::to_string(i)));
     result.palette = colors;
   }
+  if (row.contains("climate")) result.climate = read_climate(row["climate"], location + "/climate");
   if (std::ranges::find(habitats, result.habitat) == habitats.end())
     throw Invalid{location + "/habitat"};
   const auto& entries = array(row, "sites", 0, 96, location);
@@ -107,9 +133,12 @@ Region region(const Json& row, const std::string& location, std::set<std::string
     const auto power = entry.contains("power") ? integer(entry, "power", 1, 20, path) : 1;
     if (entry.contains("capacity") && kind != "anchor") throw Invalid{path + "/capacity"};
     const auto capacity = entry.contains("capacity") ? integer(entry, "capacity", 1, 20, path) : 3;
+    if (entry.contains("venom") && kind != "enemy" && kind != "boss")
+      throw Invalid{path + "/venom"};
+    const auto venom = entry.contains("venom") ? integer(entry, "venom", 1, 20, path) : 0;
     result.sites.push_back({key, kind, where, token(entry, "target", path, true),
                             token(entry, "item", path, true), token(entry, "reward", path, true),
-                            power, capacity, token(entry, "icon", path, true)});
+                            power, capacity, token(entry, "icon", path, true), venom});
   }
   return result;
 }
@@ -292,6 +321,7 @@ Json state(const Expedition& expedition) {
               {"workshop", items::state_json(expedition.workshop().state())},
               {"receipts", receipts}};
   if (!current.crops.empty()) result["crops"] = current.crops;
+  if (current.poison > 0) result["poison"] = current.poison;
   return result;
 }
 

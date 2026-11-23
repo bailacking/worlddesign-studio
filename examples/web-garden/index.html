@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>风园试验场 · WDS</title>
+  <link rel="stylesheet" href="/garden.css">
+  <script type="module" src="/garden.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="brand">WORLD DESIGN STUDIO</div>
+        <h1>风园试验场</h1>
+      </div>
+      <button id="restart" class="secondary" type="button">重新开始</button>
+    </header>
+    <p id="status" role="status">正在加载远征。</p>
+    <div class="layout">
+      <section class="map-panel" aria-labelledby="region">
+        <div class="map-header">
+          <h2 id="region">地图</h2>
+          <output id="turn"></output>
+        </div>
+        <div id="map" role="img" aria-label="远征地图，圆形标记为玩家位置"></div>
+        <div class="controls" aria-label="移动">
+          <button type="button" data-move="north">北</button>
+          <button type="button" data-move="west">西</button>
+          <button type="button" data-move="south">南</button>
+          <button type="button" data-move="east">东</button>
+          <button type="button" data-move="wait" class="secondary">等待</button>
+        </div>
+      </section>
+      <aside>
+        <section>
+          <h2>附近</h2>
+          <div id="nearby"></div>
+        </section>
+        <section>
+          <h2>背包</h2>
+          <ul id="inventory"></ul>
+          <div class="form-row">
+            <label for="recipe">配方</label>
+            <select id="recipe"></select>
+            <button type="button" id="craft">制作</button>
+          </div>
+          <form id="cook" hidden>
+            <div class="form-row">
+              <label for="ingredient">食材</label>
+              <select id="ingredient"></select>
+              <button type="button" id="add-ingredient">入锅</button>
+            </div>
+            <p id="pot">锅为空</p>
+            <div class="form-row">
+              <button type="button" id="remove-ingredient" class="secondary">移除一份</button>
+              <button type="submit">烹饪</button>
+            </div>
+          </form>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
