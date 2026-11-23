@@ -90,7 +90,8 @@ Recipe recipe(const Catalog& catalog, const Json& object, const std::string& loc
   result.method = text(object["method"], location + "/method");
   const bool workshop_method =
       result.method == "craft" || result.method == "smelt" || result.method == "cook";
-  const bool processing = expedition && (result.method == "brew" || result.method == "upgrade");
+  const bool processing = expedition && (result.method == "brew" || result.method == "upgrade" ||
+                                         result.method == "inscribe");
   if (!workshop_method && !processing) throw Invalid{location + "/method"};
   if (object.contains("priority")) {
     if (result.method != "cook" || object.contains("pattern"))
@@ -108,6 +109,9 @@ Recipe recipe(const Catalog& catalog, const Json& object, const std::string& loc
     if (!symbol(result.unlocks)) throw Invalid{location + "/unlocks"};
   }
   result.output = stack(catalog, object["output"], location + "/output");
+  if (result.method == "inscribe" &&
+      (result.output.count != 1 || !catalog.items.at(result.output.id).inscription))
+    throw Invalid{location + "/output"};
   int units = 0;
   if (object.contains("ingredients")) {
     const auto& array = object["ingredients"];
@@ -180,7 +184,7 @@ LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
     if (!items.is_object() || items.empty() || items.size() > 128) throw Invalid{"/workshop/items"};
     for (const auto& [id, item] : items.items()) {
       const auto where = "/workshop/items/" + id;
-      if (!symbol(id) || !shape(item, {"limit", "tags"}, {"spoilage", "durability"}))
+      if (!symbol(id) || !shape(item, {"limit", "tags"}, {"spoilage", "durability", "inscription"}))
         throw Invalid{where};
       Item entry{number(item["limit"], 1, 64, where + "/limit"),
                  tags(item["tags"], where + "/tags")};
@@ -196,6 +200,15 @@ LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
         const auto path = where + "/durability";
         if (!expedition || entry.limit != 1 || entry.spoilage) throw Invalid{path};
         entry.durability = static_cast<unsigned>(number(item["durability"], 1, 4096, path));
+      }
+      if (const auto inscription = item.find("inscription"); inscription != item.end()) {
+        const auto path = where + "/inscription";
+        if (!entry.durability || !shape(*inscription, {"force_bonus", "guard_bonus"}))
+          throw Invalid{path};
+        const int force = number((*inscription)["force_bonus"], 0, 3, path + "/force_bonus");
+        const int guard = number((*inscription)["guard_bonus"], 0, 2, path + "/guard_bonus");
+        if (force == 0 && guard == 0) throw Invalid{path};
+        entry.inscription = Inscription{force, guard};
       }
       catalog.items.emplace(id, std::move(entry));
     }

@@ -11,6 +11,7 @@
   "survival_format": 1,
   "exposure_format": 1,
   "processing_format": 1,
+  "inscription_format": 1,
   "story_format": 1,
   "interaction_format": 1,
   "voxel_dynamics_format": 1,

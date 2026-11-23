@@ -397,6 +397,44 @@ def processing(cli, project, destination):
     print("Two processing stages and unlocks, durability across travel, breakage and fallback")
 
 
+def inscriptions(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    sentinel = next(site for site in document["regions"][1]["sites"] if site["id"] == "sentinel")
+    sentinel["power"] = 9
+    workshop = document["workshop"]
+    workshop["items"]["reef-lance"] = {
+        "limit": 1, "tags": [], "durability": 2,
+        "inscription": {"force_bonus": 1, "guard_bonus": 1},
+    }
+    workshop["recipes"]["inscribe-lance"] = {
+        "method": "inscribe", "station": "refine",
+        "ingredients": [{"item": "spear", "count": 1}],
+        "output": {"item": "reef-lance", "count": 1},
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    commands = [
+        action("craft", "inscribe-lance"), action("gather", "bark-store"),
+        action("gather", "herbs"), action("craft", "build-stove"),
+        action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("craft", "inscribe-lance"), action("east"), action("use", "trail"),
+        *([action("attack", "sentinel")] * 3),
+    ]
+    steps = request(cli, destination, "expedition.replay", {"actions": commands})["steps"]
+    assert steps[0]["code"] == "station_locked" and all(s["code"] == "ok" for s in steps[1:])
+    held = steps[8]["workshop"]["bag"]
+    assert any(slot["item"] == "reef-lance" and slot["uses_remaining"] == 2 for slot in held)
+    assert not any(slot["item"] == "spear" for slot in held)
+    strength = [step["encounters"]["sentinel"] for step in steps[8:]]
+    assert strength == [9, 5, 1, 0], strength
+    retaliation = next(row for row in steps[9]["receipts"] if row["cause"] == "retaliation")
+    assert retaliation["health"] == steps[8]["health"] - 1
+    assert any(row["cause"] == "tool_broken" for row in steps[10]["receipts"])
+    assert not any(slot["item"] == "reef-lance" for slot in steps[10]["workshop"]["bag"])
+    print("Inscribed tool adds force and guard, keeps durability across travel, and breaks")
+
+
 def story(cli, project, destination):
     shutil.copytree(project, destination)
     path = destination / "assets" / "expedition.json"
@@ -600,6 +638,8 @@ def main():
         conditions(args.cli.resolve(), project, coast)
         kiln = root / "kiln"
         processing(args.cli.resolve(), project, kiln)
+        engraved = root / "engraved"
+        inscriptions(args.cli.resolve(), kiln, engraved)
         chronicle = root / "chronicle"
         story(args.cli.resolve(), project, chronicle)
         combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
@@ -612,6 +652,8 @@ def main():
                     args.probe.resolve(), graphics=graphics)
             package(runtime, coast, root / "coast-package", "exposure_format", graphics=graphics)
             package(runtime, kiln, root / "kiln-package", "processing_format", graphics=graphics)
+            package(runtime, engraved, root / "engraved-package", "inscription_format",
+                    graphics=graphics)
             package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
             package(runtime, control, root / "actions-package", "interaction_format",
                     graphics=graphics)

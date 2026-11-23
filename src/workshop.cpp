@@ -124,6 +124,27 @@ bool Workshop::uses_processing_rules() const {
          });
 }
 
+bool Workshop::uses_inscriptions() const {
+  return std::ranges::any_of(
+      catalog_.items, [](const auto& entry) { return entry.second.inscription.has_value(); });
+}
+
+CombatTool Workshop::combat_tool() const {
+  CombatTool best;
+  if (has_item("spear")) best = {"spear", 3, 0};
+  for (const auto& slot : state_.bag) {
+    const auto& inscription = catalog_.items.at(slot.id).inscription;
+    if (!inscription || slot.uses_remaining == 0) continue;
+    const CombatTool candidate{slot.id, 3 + inscription->force_bonus, inscription->guard_bonus};
+    if (candidate.force > best.force ||
+        (candidate.force == best.force &&
+         (candidate.guard > best.guard ||
+          (candidate.guard == best.guard && candidate.id < best.id))))
+      best = candidate;
+  }
+  return best;
+}
+
 bool Workshop::wear(std::string_view id) {
   const auto slot = std::ranges::find(state_.bag, id, &Stack::id);
   if (slot == state_.bag.end() || slot->uses_remaining == 0 || --slot->uses_remaining != 0)

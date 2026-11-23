@@ -25,11 +25,23 @@ struct Spoilage {
   std::string result;
 };
 
+struct Inscription {
+  int force_bonus = 0;
+  int guard_bonus = 0;
+};
+
+struct CombatTool {
+  std::string id;
+  int force = 1;
+  int guard = 0;
+};
+
 struct Item {
   int limit;
   Tags tags;
   std::optional<Spoilage> spoilage{};
   unsigned durability = 0;
+  std::optional<Inscription> inscription{};
 };
 
 struct Ingredient {
@@ -91,6 +103,8 @@ class Workshop {
   int advance(unsigned tick);
   bool uses_survival_rules() const;
   bool uses_processing_rules() const;
+  bool uses_inscriptions() const;
+  CombatTool combat_tool() const;
   bool wear(std::string_view id);
   std::vector<Action> actions(bool gather) const;
   std::string_view apply(const Action& action, const std::vector<std::string>& grid = {});

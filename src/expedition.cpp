@@ -234,8 +234,8 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   if (attack) {
     const auto found = state_.encounters.find(site.id);
     if (found == state_.encounters.end() || found->second == 0) return "no_target";
-    const bool armed = workshop_.has_item("spear");
-    const int dealt = armed ? 3 : 1;
+    const auto tool = workshop_.combat_tool();
+    const int dealt = tool.force;
     if (dealt >= found->second) {
       if (!award(site.reward)) return "capacity";
       found->second = 0;
@@ -247,14 +247,15 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
           site.kind == "boss" && before > site.power / 2 && found->second <= site.power / 2;
       if (phase_change) change("boss_enraged", 0);
       const bool enraged = site.kind == "boss" && found->second <= site.power / 2;
-      change("retaliation", enraged ? -3 : -2, 0, -1);
+      const int retaliation = enraged ? 3 : 2;
+      change("retaliation", -std::max(0, retaliation - tool.guard), 0, -1);
       if (!state_.dead && site.venom > state_.poison) {
         state_.poison = site.venom;
         change("poisoned", 0);
       }
       if (region().habitat == "ocean") state_.boat = std::max(0, state_.boat - 1);
     }
-    if (armed && workshop_.wear("spear")) change("tool_broken", 0);
+    if (!tool.id.empty() && workshop_.wear(tool.id)) change("tool_broken", 0);
     return "ok";
   }
   if (site.kind == "portal") return enter(site) ? "ok" : "route_locked";
