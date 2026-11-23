@@ -28,6 +28,8 @@ struct Site {
   int anchor_capacity = 3;
   std::string icon{};
   int venom = 0;
+  std::vector<std::string> after_any{};
+  std::string unlock_character{};
 };
 
 struct Eruption {
@@ -120,6 +122,8 @@ struct State {
   std::map<std::string, int, std::less<>> encounters;
   std::map<std::string, TilePoint, std::less<>> actors;
   std::map<std::string, int, std::less<>> crops;
+  items::Tags completed_chapters;
+  items::Tags unlocked_characters;
   std::vector<Receipt> receipts;
 };
 
@@ -143,6 +147,7 @@ class Expedition {
   TilePoint location(const Site& site) const;
   bool uses_survival_rules() const;
   bool uses_exposure_rules() const;
+  bool uses_story_rules() const { return !state_.completed_chapters.empty(); }
 
  private:
   std::string_view interact(const Site& site, bool attack);

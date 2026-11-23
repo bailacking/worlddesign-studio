@@ -80,15 +80,18 @@ Ingredient ingredient(const Catalog& catalog, const Json& object, const std::str
   return {std::move(id), number(object["count"], 1, 64, location + "/count")};
 }
 
-Recipe recipe(const Catalog& catalog, const Json& object, const std::string& location) {
+Recipe recipe(const Catalog& catalog, const Json& object, const std::string& location,
+              bool expedition) {
   if (!shape(object, {"method", "output"},
              {"station", "unlocks", "ingredients", "pattern", "priority"}) ||
       object.contains("ingredients") == object.contains("pattern"))
     throw Invalid{location};
   Recipe result{};
   result.method = text(object["method"], location + "/method");
-  if (result.method != "craft" && result.method != "smelt" && result.method != "cook")
-    throw Invalid{location + "/method"};
+  const bool workshop_method =
+      result.method == "craft" || result.method == "smelt" || result.method == "cook";
+  const bool processing = expedition && (result.method == "brew" || result.method == "upgrade");
+  if (!workshop_method && !processing) throw Invalid{location + "/method"};
   if (object.contains("priority")) {
     if (result.method != "cook" || object.contains("pattern"))
       throw Invalid{location + "/priority"};
@@ -177,7 +180,8 @@ LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
     if (!items.is_object() || items.empty() || items.size() > 128) throw Invalid{"/workshop/items"};
     for (const auto& [id, item] : items.items()) {
       const auto where = "/workshop/items/" + id;
-      if (!symbol(id) || !shape(item, {"limit", "tags"}, {"spoilage"})) throw Invalid{where};
+      if (!symbol(id) || !shape(item, {"limit", "tags"}, {"spoilage", "durability"}))
+        throw Invalid{where};
       Item entry{number(item["limit"], 1, 64, where + "/limit"),
                  tags(item["tags"], where + "/tags")};
       if (item.contains("spoilage")) {
@@ -188,12 +192,17 @@ LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
             Spoilage{static_cast<unsigned>(number(rule["ticks"], 1, 4096, path + "/ticks")),
                      text(rule["result"], path + "/result")};
       }
+      if (item.contains("durability")) {
+        const auto path = where + "/durability";
+        if (!expedition || entry.limit != 1 || entry.spoilage) throw Invalid{path};
+        entry.durability = static_cast<unsigned>(number(item["durability"], 1, 4096, path));
+      }
       catalog.items.emplace(id, std::move(entry));
     }
     for (const auto& [id, item] : catalog.items) {
       if (!item.spoilage) continue;
       const auto result = catalog.items.find(item.spoilage->result);
-      if (result == catalog.items.end() || result->second.spoilage ||
+      if (result == catalog.items.end() || result->second.spoilage || result->second.durability ||
           result->second.limit < item.limit)
         throw Invalid{"/workshop/items/" + id + "/spoilage/result"};
     }
@@ -203,7 +212,7 @@ LoadResult read_workshop(const Json& document, bool voxel, bool expedition) {
     for (const auto& [id, value] : recipes.items()) {
       const auto where = "/workshop/recipes/" + id;
       if (!symbol(id)) throw Invalid{where};
-      auto entry = recipe(catalog, value, where);
+      auto entry = recipe(catalog, value, where, expedition);
       if (!entry.unlocks.empty()) stations.insert(entry.unlocks);
       catalog.recipes.emplace(id, std::move(entry));
     }
@@ -238,6 +247,7 @@ Json state_json(const State& state) {
     for (const auto& stack : container) {
       Json row{{"item", stack.id}, {"count", stack.count}};
       if (stack.best_before) row["best_before"] = stack.best_before;
+      if (stack.uses_remaining) row["uses_remaining"] = stack.uses_remaining;
       result.push_back(std::move(row));
     }
     return result;

@@ -136,9 +136,23 @@ Region region(const Json& row, const std::string& location, std::set<std::string
     if (entry.contains("venom") && kind != "enemy" && kind != "boss")
       throw Invalid{path + "/venom"};
     const auto venom = entry.contains("venom") ? integer(entry, "venom", 1, 20, path) : 0;
+    std::vector<std::string> after_any;
+    if (entry.contains("after_any")) {
+      if (kind != "chapter") throw Invalid{path + "/after_any"};
+      items::Tags seen;
+      for (const auto& value : array(entry, "after_any", 1, 8, path)) {
+        if (!value.is_string() || !id(value.get_ref<const std::string&>()) ||
+            !seen.insert(value.get_ref<const std::string&>()).second)
+          throw Invalid{path + "/after_any"};
+        after_any.push_back(value.get<std::string>());
+      }
+    }
+    if (entry.contains("unlock_character") && kind != "chapter")
+      throw Invalid{path + "/unlock_character"};
     result.sites.push_back({key, kind, where, token(entry, "target", path, true),
                             token(entry, "item", path, true), token(entry, "reward", path, true),
-                            power, capacity, token(entry, "icon", path, true), venom});
+                            power, capacity, token(entry, "icon", path, true), venom,
+                            std::move(after_any), token(entry, "unlock_character", path, true)});
   }
   return result;
 }
@@ -160,6 +174,8 @@ void validate_references(const Rules& rules, const items::Catalog& catalog,
       if (site.kind == "chapter" && !site.target.empty() &&
           (!chapters.contains(site.target) || site.target == site.id))
         throw Invalid{path + "/target"};
+      for (const auto& prior : site.after_any)
+        if (prior == site.id || !chapters.contains(prior)) throw Invalid{path + "/after_any"};
       if (site.kind == "source") {
         const auto found = catalog.sources.find(site.id);
         if (found == catalog.sources.end() || found->second.uses <= 0 ||
@@ -174,6 +190,35 @@ void validate_references(const Rules& rules, const items::Catalog& catalog,
         throw Invalid{path + "/reward"};
     }
   }
+}
+
+void validate_chapter_paths(const Rules& rules) {
+  std::vector<const Site*> chapters;
+  bool branching = false;
+  for (const auto& area : rules.regions) {
+    for (const auto& site : area.sites) {
+      if (site.kind != "chapter") continue;
+      chapters.push_back(&site);
+      branching = branching || !site.after_any.empty() || !site.unlock_character.empty();
+    }
+  }
+  if (!branching) return;
+  items::Tags reached{"departure"};
+  std::size_t previous = 0;
+  while (previous != reached.size()) {
+    previous = reached.size();
+    for (const auto* site : chapters) {
+      if (!site->target.empty() && !reached.contains(site->target)) continue;
+      if (!site->after_any.empty() && std::ranges::none_of(site->after_any, [&](const auto& id) {
+            return reached.contains(id);
+          }))
+        continue;
+      reached.insert(site->id);
+    }
+  }
+  for (const auto* site : chapters)
+    if (site->id == "departure" || !reached.contains(site->id))
+      throw Invalid{"/chapters/" + site->id};
 }
 
 void validate_icons(const Json& document) {
@@ -241,6 +286,7 @@ Expedition decode(const Json& data, std::string identity) {
   auto items = items::read_workshop(data["workshop"], false, true);
   if (!items.workshop) throw Invalid{items.location};
   validate_references(rules, items.workshop->catalog(), region_ids);
+  validate_chapter_paths(rules);
   validate_icons(data);
   if (data.contains("icons"))
     for (auto& area : rules.regions)
@@ -322,6 +368,10 @@ Json state(const Expedition& expedition) {
               {"receipts", receipts}};
   if (!current.crops.empty()) result["crops"] = current.crops;
   if (current.poison > 0) result["poison"] = current.poison;
+  if (expedition.uses_story_rules()) {
+    result["completed_chapters"] = current.completed_chapters;
+    result["unlocked_characters"] = current.unlocked_characters;
+  }
   return result;
 }
 

@@ -62,15 +62,18 @@ Json receipt(std::string_view code, std::uint64_t revision) {
 
 class Host {
  public:
-  Host(Initial initial, QString save, quint16 port)
+  Host(Initial initial, QString save, quint16 port, bool read_only)
       : campaign_(std::move(initial.campaign)),
         identity_(std::move(initial.identity)),
         catalog_(std::move(initial.catalog)),
         save_(std::move(save)),
-        writer_(save_ + ".lock") {
+        writer_(save_ + ".lock"),
+        read_only_(read_only) {
     writer_.setStaleLockTime(0);
     if (!writer_.tryLock()) throw std::runtime_error("Campaign already has a writer");
-    if (QFileInfo::exists(save_)) {
+    const bool exists = QFileInfo::exists(save_);
+    if (read_only_ && !exists) throw std::runtime_error("Read-only mode requires an existing save");
+    if (exists) {
       QFile file(save_);
       if (!file.open(QIODevice::ReadOnly) || file.size() > max_save)
         throw std::runtime_error("Unable to load campaign");
@@ -166,6 +169,10 @@ class Host {
       }
     } else {
       if (message.size() != 2) throw std::runtime_error("Invalid hello");
+      if (read_only_) {
+        send(socket, receipt("ticket_required", campaign_.revision));
+        return;
+      }
       if (campaign_.players.size() >= max_players) {
         send(socket, receipt("player_limit", campaign_.revision));
         return;
@@ -213,6 +220,10 @@ class Host {
       return;
     }
     if (type != "action" || message.size() != 5) throw std::runtime_error("Invalid action");
+    if (read_only_) {
+      send(socket, receipt("permission_denied", campaign_.revision));
+      return;
+    }
     const auto revision = checked_number(message.at("revision"));
     const auto sequence = checked_number(message.at("seq"));
     const auto& command = message.at("command");
@@ -248,6 +259,7 @@ class Host {
   Json catalog_;
   QString save_;
   QLockFile writer_;
+  bool read_only_;
   std::map<QTcpSocket*, std::string> peers_;
   QTcpServer listener_;
 };
@@ -257,16 +269,19 @@ class Host {
 
 int main(int argc, char** argv) {
   QCoreApplication app(argc, argv);
-  const auto args = app.arguments();
+  auto args = app.arguments();
+  const bool read_only = args.size() > 1 && args.last() == "--read-only";
+  if (read_only) args.removeLast();
   if (args.size() != 4 && args.size() != 5) {
-    std::cerr << "Usage: wds_w15_server SURFACE_PROJECT CAVERN_PROJECT SAVE_FILE [PORT]\n";
+    std::cerr << "Usage: wds_w15_server SURFACE_PROJECT CAVERN_PROJECT SAVE_FILE "
+                 "[PORT] [--read-only]\n";
     return 2;
   }
   try {
     bool valid = true;
     const auto port = args.size() == 5 ? args[4].toUShort(&valid) : quint16{0};
     if (!valid) throw std::runtime_error("Invalid port");
-    wds::lab::Host host(wds::lab::bootstrap(args[1], args[2]), args[3], port);
+    wds::lab::Host host(wds::lab::bootstrap(args[1], args[2]), args[3], port, read_only);
     std::cout << wds::lab::Json{{"code", "ready"}, {"port", host.port()}}.dump() << std::endl;
     return app.exec();
   } catch (const std::exception& error) {

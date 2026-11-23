@@ -25,7 +25,8 @@ void remove(Container& container, std::string_view id, int amount) {
 }
 
 bool same_lot(const Stack& left, const Stack& right) {
-  return left.id == right.id && left.best_before == right.best_before;
+  return left.id == right.id && left.best_before == right.best_before &&
+         left.uses_remaining == right.uses_remaining;
 }
 
 int room(const Container& container, int slots, int limit, const Stack& stack) {
@@ -48,7 +49,7 @@ bool add(Container& container, int slots, int limit, const Stack& stack) {
   }
   while (amount) {
     const auto placed = std::min(amount, limit);
-    container.push_back({stack.id, placed, stack.best_before});
+    container.push_back({stack.id, placed, stack.best_before, stack.uses_remaining});
     amount -= placed;
   }
   return true;
@@ -65,7 +66,7 @@ std::string_view transfer(Container& source, Container& destination, int slots, 
     const auto available = room(placed, slots, limit, slot);
     const auto used = std::min({remaining, slot.count, available});
     if (used == 0) continue;
-    add(placed, slots, limit, {slot.id, used, slot.best_before});
+    add(placed, slots, limit, {slot.id, used, slot.best_before, slot.uses_remaining});
     slot.count -= used;
     remaining -= used;
     if (remaining == 0) break;
@@ -88,8 +89,9 @@ void Workshop::reset() {
 }
 
 Stack Workshop::fresh(Stack stack) const {
-  const auto& spoilage = catalog_.items.at(stack.id).spoilage;
-  if (spoilage) stack.best_before = tick_ + spoilage->ticks;
+  const auto& item = catalog_.items.at(stack.id);
+  if (item.spoilage) stack.best_before = tick_ + item.spoilage->ticks;
+  stack.uses_remaining = item.durability;
   return stack;
 }
 
@@ -112,6 +114,22 @@ bool Workshop::uses_survival_rules() const {
                              [](const auto& entry) { return entry.second.spoilage.has_value(); }) ||
          std::ranges::any_of(catalog_.recipes,
                              [](const auto& entry) { return entry.second.priority.has_value(); });
+}
+
+bool Workshop::uses_processing_rules() const {
+  return std::ranges::any_of(catalog_.items,
+                             [](const auto& entry) { return entry.second.durability != 0; }) ||
+         std::ranges::any_of(catalog_.recipes, [](const auto& entry) {
+           return entry.second.method == "brew" || entry.second.method == "upgrade";
+         });
+}
+
+bool Workshop::wear(std::string_view id) {
+  const auto slot = std::ranges::find(state_.bag, id, &Stack::id);
+  if (slot == state_.bag.end() || slot->uses_remaining == 0 || --slot->uses_remaining != 0)
+    return false;
+  state_.bag.erase(slot);
+  return true;
 }
 
 bool Workshop::matches(const Ingredient& ingredient, std::string_view item) const {

@@ -13,6 +13,7 @@ struct Stack {
   std::string id;
   int count;
   unsigned best_before = 0;
+  unsigned uses_remaining = 0;
   bool operator==(const Stack&) const = default;
 };
 
@@ -28,6 +29,7 @@ struct Item {
   int limit;
   Tags tags;
   std::optional<Spoilage> spoilage{};
+  unsigned durability = 0;
 };
 
 struct Ingredient {
@@ -88,6 +90,8 @@ class Workshop {
   std::string_view cook(const std::vector<std::string>& supplied);
   int advance(unsigned tick);
   bool uses_survival_rules() const;
+  bool uses_processing_rules() const;
+  bool wear(std::string_view id);
   std::vector<Action> actions(bool gather) const;
   std::string_view apply(const Action& action, const std::vector<std::string>& grid = {});
 

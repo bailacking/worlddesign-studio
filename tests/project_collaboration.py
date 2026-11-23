@@ -47,11 +47,11 @@ def test(cli, git_binary, root):
         assert result.returncode == expected, result
         return result.stdout
 
-    def request(operation, values, revision, mode="read", expected="ok"):
+    def request(operation, values, revision, mode="read", expected="ok", *, project=baseline):
         request_data = {"version": 1, "operation": operation, "input": values,
                         "expected_revision": revision, "mode": mode}
         access = ["--allow-project-write"] if mode == "apply" else []
-        result = subprocess.run([cli, "project", "request", baseline, *access],
+        result = subprocess.run([cli, "project", "request", project, *access],
                                 input=json.dumps(request_data), encoding="utf-8",
                                 capture_output=True, timeout=20, check=False)
         reply = json.loads(result.stdout)
@@ -114,7 +114,26 @@ def test(cli, git_binary, root):
     assert by_id["art"]["content"] == "bytes" and by_id["collaborator-art"]["kind"] == "added"
     request("project.diff", {**comparison, "other_revision": 1}, 0, expected="revision_conflict")
     assert not git(left, "status", "--porcelain")
-    print("Two Git worktrees, stable resource move, merged semantic fields and both binary versions")
+
+    relocated = root / "relocated"
+    git(left, "worktree", "move", right, relocated)
+    moved = request("project.diff", {"other_directory": str(relocated), "other_revision": 1}, 0)
+    moved_rules = next(row for row in moved["resources"] if row["id"] == "tuning")
+    assert moved_rules["path"]["after"] == new_rules and (relocated / new_rules).exists()
+
+    old_scene = (left / SCENE).read_bytes()
+    unintentionally_changed = request(
+        "scene.field.set", {"entity_id": "drifter", "field": "vx",
+                            "value": 17, "capture_change": True},
+        2, "apply", project=left,
+    )
+    assert unintentionally_changed["revision"] == 3
+    undo = unintentionally_changed["scene_change"]
+    undo["before"], undo["after"] = undo["after"], undo["before"]
+    restored = request("scene.restore", {"change": undo}, 3, "apply", project=left)
+    assert restored["revision"] == 4 and (left / SCENE).read_bytes() == old_scene
+    assert (left / ART).read_bytes() == ours and (left / other_art).read_bytes() == theirs
+    print("Two Git worktrees, semantic merge, both binary versions, relocation and scene recovery")
 
 
 if __name__ == "__main__":

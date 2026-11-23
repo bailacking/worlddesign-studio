@@ -6,7 +6,10 @@ on:
     paths:
       - 'src/**'
       - 'examples/w24-expeditions/**'
+      - 'examples/w25-lab/**'
+      - 'examples/plugin-sdk/**'
       - 'tests/expedition_save.cpp'
+      - 'tests/project_collaboration.py'
       - 'CMakeLists.txt'
       - '.github/workflows/expedition.yml'
   workflow_dispatch:
@@ -31,4 +34,10 @@ jobs:
           python-version: '3.12'
       - run: cmake --preset dev
       - run: cmake --build --preset dev --target wds_cli wds_expedition_save --parallel 2
-      - run: ctest --preset dev -R '^expedition_replay$' --verbose --no-tests=error
+      - run: ctest --preset dev -R '^(expedition_replay|living_systems|project_collaboration)$' --verbose --no-tests=error
+      - run: cmake --install build/dev --component Tools --prefix build/installed
+      - run: build/installed/bin/wds_cli --project-operations
+      - run: cmake --install build/dev --component PluginSDK --prefix build/installed
+      - run: cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo
+      - run: cmake --build build/sdk-demo --parallel 2
+      - run: ctest --test-dir build/sdk-demo --output-on-failure --no-tests=error

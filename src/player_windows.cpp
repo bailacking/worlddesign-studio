@@ -6,13 +6,33 @@
 #include "player_view.hpp"
 #include "project_export.hpp"
 
+namespace {
+
+int expedition_slot(std::wstring_view argument, std::wstring_view prefix) {
+  if (argument.size() != prefix.size() + 1) return 0;
+  const auto digit = argument.back();
+  return digit >= L'1' && digit <= L'3' ? digit - L'0' : 0;
+}
+
+std::wstring save_name(int slot) {
+  if (slot == 1) return L"expedition.save.json";
+  return L"expedition.slot-" + std::to_wstring(slot) + L".json";
+}
+
+}  // namespace
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
   using namespace wds::platform;
   const auto option = std::wstring_view(arguments);
   const bool check_only = option == L"--check";
   const bool smoke = option == L"--expedition-smoke";
-  const auto failure = [check_only, smoke](std::string message) {
-    if (!check_only && !smoke) {
+  const bool check_save = option.starts_with(L"--check-save=");
+  const bool choose_save = option.starts_with(L"--slot=");
+  const auto slot = check_save    ? expedition_slot(option, L"--check-save=")
+                    : choose_save ? expedition_slot(option, L"--slot=")
+                                  : 1;
+  const auto failure = [check_only, smoke, check_save](std::string message) {
+    if (!check_only && !smoke && !check_save) {
       const int length = MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0);
       std::wstring text(static_cast<std::size_t>(length), L'\0');
       MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, text.data(), length);
@@ -20,6 +40,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
     }
     return 1;
   };
+  if (slot == 0) {
+    failure("Save slots are numbered from 1 to 3.");
+    return 2;
+  }
   const auto folder = executable_directory();
   if (folder.empty()) return failure("Could not locate the exported game.");
   const auto verified = verify_release(folder);
@@ -38,13 +62,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
                    wds::player::play_expedition(*journey.expedition, journey.icons, {}, true)
                ? 0
                : 1;
+  if ((check_save || choose_save) && !journey.expedition)
+    return failure("This game has no expedition saves.");
   if (journey.expedition) {
-    const auto guard = folder / L".expedition.lock";
+    const auto save = folder / save_name(slot);
+    if (check_save) {
+      std::error_code error;
+      if (!std::filesystem::exists(save, error)) return error ? 1 : 2;
+      return wds::expedition::restore(*journey.expedition, save) ? 0 : 1;
+    }
+    const auto guard = slot == 1
+                           ? folder / L".expedition.lock"
+                           : folder / (L".expedition.slot-" + std::to_wstring(slot) + L".lock");
     const HANDLE lock = CreateFileW(guard.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                                     OPEN_ALWAYS, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (lock == INVALID_HANDLE_VALUE) return failure("The expedition save is already in use.");
-    const bool played = wds::player::play_expedition(*journey.expedition, journey.icons,
-                                                     folder / L"expedition.save.json");
+    const bool played = wds::player::play_expedition(*journey.expedition, journey.icons, save);
     CloseHandle(lock);
     return played ? 0 : failure("Could not open the expedition save or graphics.");
   }

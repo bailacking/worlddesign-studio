@@ -10,6 +10,8 @@
   "expedition_format": 1,
   "survival_format": 1,
   "exposure_format": 1,
+  "processing_format": 1,
+  "story_format": 1,
   "minimum_environment": {
     "os": "Windows 10 x64",
     "graphics": "OpenGL 3.3"

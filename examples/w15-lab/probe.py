@@ -88,9 +88,9 @@ def templates(folder):
 
 
 @contextmanager
-def server(exe, surface, cavern, save):
+def server(exe, surface, cavern, save, *flags):
     process = subprocess.Popen(
-        [exe, surface, cavern, save], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        [exe, surface, cavern, save, *flags], stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     try:
         banner = Queue(maxsize=1)
@@ -282,7 +282,7 @@ def authority(exe, folder):
                 and a.latest["inventory"] == inventory
             )
             assert a.latest["positions"] == {"surface": [13, 17], "cavern": [11, 17]}
-            return {
+            report = {
                 "final_revision": a.latest["revision"],
                 "clients_reconnected": 2,
                 "failed_write_unchanged": True,
@@ -293,6 +293,21 @@ def authority(exe, folder):
                 "cavern_position": a.latest["positions"]["cavern"],
                 "inventory": inventory,
             }
+    source = save.read_bytes()
+    with server(exe, surface, cavern, save, "--read-only") as port:
+        with socket.create_connection(("127.0.0.1", port), timeout=4) as guest:
+            guest.sendall(encoded({"v": 1, "type": "hello"}))
+            with guest.makefile("rb") as response:
+                assert json.loads(response.readline())["code"] == "ticket_required"
+        with Client(port, a_ticket) as observer:
+            before = observer.query()
+            assert before["revision"] == report["final_revision"]
+            assert before["inventory"] == inventory
+            observer.action("move", direction="east", expected="permission_denied")
+            assert observer.query() == before
+    assert save.read_bytes() == source
+    report["read_only_reconnect_and_denial"] = True
+    return report
 
 
 def main():

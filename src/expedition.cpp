@@ -39,6 +39,9 @@ Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identi
       if (site.kind == "enemy" || site.kind == "raid") state_.actors.emplace(site.id, site.point);
     for (const auto& site : region.sites)
       if (site.kind == "plot") state_.crops.emplace(site.id, -1);
+    for (const auto& site : region.sites)
+      if (!site.after_any.empty() || !site.unlock_character.empty())
+        state_.completed_chapters.insert("departure");
   }
 }
 
@@ -208,7 +211,8 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   if (attack) {
     const auto found = state_.encounters.find(site.id);
     if (found == state_.encounters.end() || found->second == 0) return "no_target";
-    const int dealt = workshop_.has_item("spear") ? 3 : 1;
+    const bool armed = workshop_.has_item("spear");
+    const int dealt = armed ? 3 : 1;
     if (dealt >= found->second) {
       if (!award(site.reward)) return "capacity";
       found->second = 0;
@@ -227,6 +231,7 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
       }
       if (region().habitat == "ocean") state_.boat = std::max(0, state_.boat - 1);
     }
+    if (armed && workshop_.wear("spear")) change("tool_broken", 0);
     return "ok";
   }
   if (site.kind == "portal") return enter(site) ? "ok" : "route_locked";
@@ -272,11 +277,19 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   } else if (site.kind == "rest") {
     change("shelter", site.power, 0, site.power);
   } else if (site.kind == "chapter") {
+    if (state_.completed_chapters.contains(site.id)) return "chapter_complete";
     if (!site.target.empty() && site.target != state_.chapter) return "chapter_locked";
+    if (!site.after_any.empty() && std::ranges::none_of(site.after_any, [&](const auto& prior) {
+          return state_.completed_chapters.contains(prior);
+        }))
+      return "chapter_locked";
     if (!award(site.reward)) return "capacity";
     state_.chapter = site.id;
-    state_.ending = site.id == "return";
-    change(state_.ending ? "ending" : "chapter", 0, 0, 2);
+    const bool finished = site.id == "return";
+    state_.ending = finished || (uses_story_rules() && state_.ending);
+    if (uses_story_rules()) state_.completed_chapters.insert(site.id);
+    if (!site.unlock_character.empty()) state_.unlocked_characters.insert(site.unlock_character);
+    change(finished ? "ending" : "chapter", 0, 0, 2);
   } else {
     return "no_action";
   }

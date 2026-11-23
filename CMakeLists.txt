@@ -68,6 +68,13 @@ target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png wds_m0)
 target_link_libraries(wds_cli PRIVATE wds_project)
 target_include_directories(wds_cli SYSTEM PRIVATE third_party/nlohmann)
+
+install(TARGETS wds_cli RUNTIME DESTINATION bin COMPONENT Tools)
+install(FILES src/plugin_host.hpp src/plugin_host.cpp
+  DESTINATION share/wds/plugin-sdk/src COMPONENT PluginSDK)
+install(FILES examples/plugin-sdk/CMakeLists.txt examples/plugin-sdk/demo.cpp
+  examples/plugin-sdk/README.md LICENSE DESTINATION share/wds/plugin-sdk COMPONENT PluginSDK)
+
 if(WIN32)
   set(kit_spec "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-x64-runtime.json")
   file(READ "${kit_spec}" WDS_WINDOWS_RUNTIME_SPEC)
@@ -107,6 +114,7 @@ if(WDS_BUILD_WINDOWS_PLAYER)
   target_link_libraries(wds_player PRIVATE raylib wds_project wds_compile_options user32)
   set(kit_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-player-kit.cmake")
   set(runtime_kit "$<TARGET_FILE_DIR:wds_player>/wds-runtime/windows-x64")
+  install(DIRECTORY "${runtime_kit}" DESTINATION bin/wds-runtime COMPONENT WindowsRuntime)
   set_property(TARGET wds_player APPEND PROPERTY LINK_DEPENDS
     "${kit_script}" "${kit_spec}" "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/LICENSE"

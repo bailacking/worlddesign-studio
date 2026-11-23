@@ -107,7 +107,8 @@ bool valid_runtime(const Json& metadata) {
     // Earlier players can export scenes that use only the capabilities they advertise.
     if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format" ||
          name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format" ||
-         name == "survival_format" || name == "exposure_format") &&
+         name == "survival_format" || name == "exposure_format" || name == "processing_format" ||
+         name == "story_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -313,6 +314,12 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
     if (route.expedition && route.expedition->uses_exposure_rules() &&
         !metadata.contains("exposure_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/exposure_format");
+    if (route.expedition && route.expedition->workshop().uses_processing_rules() &&
+        !metadata.contains("processing_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/processing_format");
+    if (route.expedition && route.expedition->uses_story_rules() &&
+        !metadata.contains("story_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/story_format");
     const bool frontier = scene.voxel_scene && scene.voxel_scene->world.terrain() &&
                           scene.voxel_scene->world.terrain()->frontier();
     const bool ecology =

@@ -256,7 +256,9 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
     ui_text(735, 345, "Inventory", 17, subdued);
     int row = 369;
     for (const auto& slot : bag) {
-      ui_text(735, row, slot.id + "  x" + std::to_string(slot.count), 15);
+      std::string stack = slot.id + "  x" + std::to_string(slot.count);
+      if (slot.uses_remaining) stack += "  (" + std::to_string(slot.uses_remaining) + " uses)";
+      ui_text(735, row, stack, 15);
       row += 18;
       if (row >= 535) break;
     }

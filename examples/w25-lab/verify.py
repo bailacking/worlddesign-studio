@@ -240,7 +240,149 @@ def conditions(cli, project, destination):
     print("Seeded eruption warning and damage, regional climate, poison across travel and treatment")
 
 
-def package(cli, project, root, capability):
+def processing(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    coast = document["regions"][1]
+    coast["sites"].append({"id": "sentinel", "kind": "enemy",
+                           "at": [2, 1], "power": 7, "reward": "bark"})
+    inventory = document["workshop"]
+    inventory["items"]["vial"] = {"limit": 8, "tags": []}
+    inventory["items"]["spear"] = {"limit": 1, "tags": [], "durability": 2}
+    inventory["recipes"]["distil-gel"] = {
+        "method": "brew", "station": "hearth", "unlocks": "refine",
+        "output": {"item": "vial", "count": 1},
+        "ingredients": [{"item": "herb", "count": 1}],
+    }
+    inventory["recipes"]["hone-staff"] = {
+        "method": "upgrade", "station": "refine",
+        "output": {"item": "spear", "count": 1},
+        "ingredients": [{"item": "vial", "count": 1}],
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    actions = [
+        action("craft", "hone-staff"), action("gather", "bark-store"), action("gather", "herbs"),
+        action("craft", "build-stove"), action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("attack", "sentinel"), action("east"), action("use", "trail"),
+        *([action("attack", "sentinel")] * 4),
+    ]
+    steps = request(cli, destination, "expedition.replay", {"actions": actions})["steps"]
+    failures = {0: "station_locked", 6: "out_of_reach", 12: "no_target"}
+    for index, row in enumerate(steps):
+        assert row["code"] == failures.get(index, "ok"), (index, row)
+    assert steps[0]["tick"] == 0 and not steps[0]["workshop"]["bag"]
+    assert steps[4]["workshop"]["unlocked"] == ["hearth", "refine"]
+    for index, uses in ((5, 2), (6, 2), (8, 2), (9, 1)):
+        spear = next(slot for slot in steps[index]["workshop"]["bag"] if slot["item"] == "spear")
+        assert spear["uses_remaining"] == uses, steps[index]
+    assert not any(slot["item"] == "spear" for slot in steps[10]["workshop"]["bag"])
+    assert steps[10]["receipts"][-1]["cause"] == "tool_broken"
+    assert steps[10]["encounters"]["sentinel"] == 1 and steps[11]["encounters"]["sentinel"] == 0
+    assert steps[12]["tick"] == steps[11]["tick"] == 10
+    print("Two processing stages and unlocks, durability across travel, breakage and fallback")
+
+
+def story(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    area, coast = document["regions"]
+    ending = {"id": "return", "kind": "chapter", "at": [3, 0],
+              "after_any": ["cartographer", "shorewatch"]}
+    area["sites"].extend([
+        {"id": "briefing", "kind": "chapter", "at": [0, 1], "target": "departure"},
+        {"id": "cartographer", "kind": "chapter", "at": [2, 2], "target": "briefing",
+         "reward": "bark", "unlock_character": "wayfinder"},
+        ending,
+    ])
+    coast["sites"].append({
+        "id": "shorewatch", "kind": "chapter", "at": [2, 1], "target": "briefing",
+        "unlock_character": "shorekeeper",
+    })
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    def route(actions):
+        return request(cli, destination, "expedition.replay", {"actions": actions})["steps"]
+
+    denied = route([action("east"), action("north"), action("use", "return")])
+    assert denied[-1]["code"] == "chapter_locked" and denied[-1]["tick"] == 2
+    start = [action("use", "briefing"), action("east")]
+    finish = [action("north"), action("use", "return")]
+    left = route([*start, action("use", "cartographer"), action("use", "cartographer"), *finish])
+    assert left[3]["code"] == "chapter_complete" and left[3]["tick"] == left[2]["tick"]
+    assert left[3]["workshop"]["bag"] == left[2]["workshop"]["bag"] == [{"item": "bark", "count": 1}]
+    assert left[-1]["ending"] and left[-1]["unlocked_characters"] == ["wayfinder"]
+    right = route([*start, action("use", "trail"), action("use", "shorewatch"),
+                   action("use", "return-path"), *finish])
+    assert all(row["code"] == "ok" for row in right)
+    assert right[-1]["ending"] and right[-1]["unlocked_characters"] == ["shorekeeper"]
+    assert right[-1]["completed_chapters"] == ["briefing", "departure", "return", "shorewatch"]
+    original = path.read_bytes()
+    ending["after_any"] = ["briefing"]
+    area["sites"][-3]["target"] = "return"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    invalid = request(cli, destination, "expedition.replay", {"actions": []}, "invalid_expedition")
+    assert invalid["location"].endswith("/chapters/briefing"), invalid
+    path.write_bytes(original)
+    print("Alternative chapters, one-time rewards, character unlocks and circular route rejection")
+
+
+def combined(cli, project, variants, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for variant in variants:
+        changed = json.loads((variant / "assets" / "expedition.json").read_text(encoding="utf-8"))
+        for base, extra in zip(document["regions"], changed["regions"], strict=True):
+            known = {site["id"] for site in base["sites"]}
+            base["sites"].extend(site for site in extra["sites"] if site["id"] not in known)
+        for group in ("items", "recipes", "sources"):
+            document["workshop"][group].update(changed["workshop"][group])
+    garden, island = document["regions"]
+    for spot in garden["sites"]:
+        if spot["id"] == "briefing":
+            spot["at"] = [2, 2]
+        if spot["id"] == "cartographer":
+            spot["at"] = [3, 2]
+    island["sites"] = [site for site in island["sites"] if site["id"] != "stinger"]
+    for spot in island["sites"]:
+        if spot["id"] == "sentinel":
+            spot["venom"] = 4
+        if spot["id"] == "shorewatch":
+            spot["at"] = [2, 2]
+    island["climate"] = {
+        "wetness": [-1, 1, -1, -1], "heat": [0, 0, 0, 0],
+        "eruption": {"interval": 4, "warning_ticks": 1, "season": 1, "damage": 2},
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    actions = [
+        action("gather", "seed-mat"), action("gather", "herbs"), action("gather", "herbs"),
+        action("gather", "bark-store"), action("gather", "remedy-supply"),
+        action("craft", "build-stove"), action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("east"), action("use", "briefing"), action("use", "plot"),
+        action("use", "trail"), action("attack", "sentinel"), action("treat", "tonic"),
+        action("attack", "sentinel"), action("attack", "sentinel"), action("east"),
+        action("use", "shorewatch"), action("north"), action("use", "return-path"),
+        action("gather", "herbs"), action("use", "plot"), action("east"),
+        action("cook", "kitchen", ["root", "herb"]), action("north"), action("use", "return"),
+    ]
+    inputs = {"actions": actions}
+    result = request(cli, destination, "expedition.replay", inputs)
+    assert all(row["code"] == "ok" for row in result["steps"]), [
+        (index, row["code"]) for index, row in enumerate(result["steps"]) if row["code"] != "ok"
+    ]
+    assert len(result["steps"]) == 26
+    assert result["state"]["ending"] and result["state"]["unlocked_characters"] == ["shorekeeper"]
+    assert any(slot["item"] == "stew" for slot in result["state"]["workshop"]["bag"])
+    assert {"plant", "eruption", "poison", "treated", "tool_broken", "spoilage", "harvest",
+            "cooked", "ending"} <= {
+        row["cause"] for step in result["steps"] for row in step["receipts"]
+    }
+    print("Integrated 26-action route from crafting gears through eruption to the story ending")
+
+
+def package(cli, project, root, capability, probe=None):
     root.mkdir()
     destination = root / "release"
     export = [cli, "project", "export", project, "0", "windows-x64", destination]
@@ -249,6 +391,15 @@ def package(cli, project, root, capability):
     for mode in ("--check", "--expedition-smoke"):
         subprocess.run([destination / "Play.exe", mode], cwd=root, env=runtime,
                        timeout=20, check=True)
+    if probe:
+        save_slot = destination / "expedition.slot-2.json"
+        subprocess.run([probe, project, save_slot, "farm-start"], timeout=20, check=True)
+        preserved = save_slot.read_bytes()
+        result = subprocess.run([destination / "Play.exe", "--check-save=2"], timeout=20)
+        assert result.returncode == 0 and save_slot.read_bytes() == preserved
+        for invalid in ("--check-save=1", "--check-save=4"):
+            result = subprocess.run([destination / "Play.exe", invalid], timeout=20)
+            assert result.returncode == 2 and save_slot.read_bytes() == preserved
 
     prior = root / "without-living-format"
     prior.mkdir()
@@ -287,9 +438,17 @@ def main():
         garden(args.cli.resolve(), project, args.probe.resolve(), root / "adventure.json")
         coast = root / "coast"
         conditions(args.cli.resolve(), project, coast)
+        kiln = root / "kiln"
+        processing(args.cli.resolve(), project, kiln)
+        chronicle = root / "chronicle"
+        story(args.cli.resolve(), project, chronicle)
+        combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
         if args.runtime:
-            package(args.runtime.resolve(), project, root / "garden-package", "survival_format")
+            package(args.runtime.resolve(), project, root / "garden-package", "survival_format",
+                    args.probe.resolve())
             package(args.runtime.resolve(), coast, root / "coast-package", "exposure_format")
+            package(args.runtime.resolve(), kiln, root / "kiln-package", "processing_format")
+            package(args.runtime.resolve(), chronicle, root / "story-package", "story_format")
 
 
 if __name__ == "__main__":
