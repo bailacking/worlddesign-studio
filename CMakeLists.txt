@@ -34,6 +34,9 @@ else()
     INTERFACE -Wall -Wextra -Wpedantic -Werror
   )
 endif()
+if(EMSCRIPTEN)
+  target_compile_options(wds_compile_options INTERFACE -fexceptions)
+endif()
 
 # 构建骨架的冒烟程序：只验证编译、链接、C++ 标准模式与 CTest 链路。
 add_executable(wds_smoke tests/smoke.cpp)
@@ -68,6 +71,33 @@ target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png wds_m0)
 target_link_libraries(wds_cli PRIVATE wds_project)
 target_include_directories(wds_cli SYSTEM PRIVATE third_party/nlohmann)
+
+if(EMSCRIPTEN)
+  set(web_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/web-garden")
+  set(garden_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/w25-lab")
+  set(web_output "${CMAKE_CURRENT_BINARY_DIR}/web-garden")
+  add_executable(wds_web_runtime "${web_source}/wasm.cpp")
+  target_link_libraries(wds_web_runtime PRIVATE wds_project wds_compile_options)
+  target_include_directories(wds_web_runtime SYSTEM PRIVATE third_party/nlohmann)
+  set_target_properties(wds_web_runtime PROPERTIES
+    OUTPUT_NAME garden-engine SUFFIX ".mjs" RUNTIME_OUTPUT_DIRECTORY "${web_output}")
+  target_link_options(wds_web_runtime PRIVATE
+    -fexceptions --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1
+    -sEXPORTED_RUNTIME_METHODS=ccall
+    "SHELL:--embed-file \"${garden_source}/assets@/garden/assets\""
+    "SHELL:--embed-file \"${garden_source}/wds.project.json@/garden/wds.project.json\"")
+  set_property(TARGET wds_web_runtime APPEND PROPERTY LINK_DEPENDS
+    "${garden_source}/assets/entry.json" "${garden_source}/assets/expedition.json"
+    "${garden_source}/wds.project.json")
+  add_custom_target(wds_web_garden
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${web_source}/index.html" "${web_source}/garden.css" "${web_source}/garden.js"
+      "${web_output}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${web_source}/wasm-runtime.mjs" "${web_output}/garden-runtime.mjs"
+    DEPENDS wds_web_runtime
+    VERBATIM)
+endif()
 
 install(TARGETS wds_cli RUNTIME DESTINATION bin COMPONENT Tools)
 install(FILES src/plugin_host.hpp src/plugin_host.cpp

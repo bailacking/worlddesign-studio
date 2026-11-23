@@ -8,6 +8,7 @@ on:
       - 'examples/w24-expeditions/**'
       - 'examples/w25-lab/**'
       - 'examples/voxel-workyard/**'
+      - 'examples/web-garden/**'
       - 'examples/plugin-sdk/**'
       - 'tests/expedition_save.cpp'
       - 'tests/project_collaboration.py'
@@ -19,6 +20,37 @@ permissions:
   contents: read
 
 jobs:
+  browser:
+    name: Standalone WebAssembly garden
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - name: Build the static browser runtime
+        run: |
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          cd "$RUNNER_TEMP/emsdk"
+          test "$(git rev-parse HEAD)" = c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+          ./emsdk install 4.0.23
+          ./emsdk activate 4.0.23
+          source ./emsdk_env.sh
+          cd "$GITHUB_WORKSPACE"
+          emcmake cmake -S . -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm --target wds_web_garden --parallel 2
+      - name: Play the garden in Chrome with only static hosting
+        run: |
+          npm install --prefix build/web-test --no-save --ignore-scripts playwright@1.56.1
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory build/wasm > build/wasm/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          curl --fail --silent --show-error --retry 4 --retry-connrefused http://127.0.0.1:8765/web-garden/ > /dev/null
+          node examples/web-garden/verify-browser.mjs http://127.0.0.1:8765/web-garden/ build/web-test
+
   replay:
     strategy:
       fail-fast: false

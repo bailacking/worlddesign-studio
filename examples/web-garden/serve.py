@@ -11,6 +11,7 @@ FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/garden.css": ("garden.css", "text/css; charset=utf-8"),
     "/garden.js": ("garden.js", "text/javascript; charset=utf-8"),
+    "/garden-runtime.mjs": ("bridge-runtime.mjs", "text/javascript; charset=utf-8"),
 }
 LIMIT = 32 * 1024
 

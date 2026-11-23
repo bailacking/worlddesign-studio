@@ -1,3 +1,5 @@
+import {loadGarden} from "./garden-runtime.mjs";
+
 const element = (id) => document.getElementById(id);
 const names = {
   "wind-garden": "风园", "tide-terrace": "潮滩",
@@ -18,6 +20,7 @@ const mark = {source: "◆", plot: "✿", kitchen: "▣", portal: "↔"};
 const actions = [];
 const pot = [];
 let rules;
+let replay;
 let state;
 let busy = false;
 let kitchen = null;
@@ -30,15 +33,6 @@ function options(select, rows) {
   const current = select.value;
   select.replaceChildren(...rows.map((id) => new Option(label(id), id)));
   if (rows.includes(current)) select.value = current;
-}
-
-async function replay(history) {
-  const response = await fetch("/api/replay", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(history),
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.code);
-  return body;
 }
 
 async function act(command, target, ingredients) {
@@ -193,10 +187,10 @@ element("cook").addEventListener("submit", (event) => {
 
 async function start() {
   try {
-    const response = await fetch("/api/rules");
-    if (!response.ok) throw new Error("Load failed");
-    rules = await response.json();
-    state = (await replay([])).state;
+    const backend = await loadGarden();
+    const initial = await backend.replay([]);
+    ({rules, replay} = backend);
+    state = initial.state;
     options(element("recipe"), Object.keys(rules.workshop.recipes)
       .filter((id) => rules.workshop.recipes[id].method === "craft"));
     element("status").textContent = "采集种子和香草，播种并收获，完成一锅炖食。";
