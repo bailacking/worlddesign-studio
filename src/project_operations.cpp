@@ -188,6 +188,11 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
   if (id == "project.diff")
     return compare_projects(directory, revision, path(input, "other_directory"),
                             number<std::uint64_t>(input, "other_revision"));
+  if (id == "scene.merge")
+    return Json::parse(field_result_json(merge_project_scene(
+        {directory, revision},
+        {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
+        {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")}, apply)));
   if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
   if (id == "scene.voxel.cart" || id == "scene.voxel.dynamics")
     return workyard(directory, revision, id, apply, input);

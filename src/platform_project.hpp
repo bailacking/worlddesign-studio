@@ -58,7 +58,16 @@ struct FieldResult {
   std::optional<std::int64_t> new_value{};
   bool changed = false;
   std::optional<SceneChange> scene_change{};
+  std::vector<std::string> conflicts{};
 };
+
+struct SceneVersion {
+  std::filesystem::path directory;
+  std::uint64_t revision;
+};
+
+FieldResult merge_project_scene(const SceneVersion& current, const SceneVersion& base,
+                                const SceneVersion& incoming, bool apply);
 
 struct SceneField {
   std::string_view name;

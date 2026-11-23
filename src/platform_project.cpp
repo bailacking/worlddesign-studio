@@ -3,6 +3,7 @@
 #include "asset_import.hpp"
 #include "behavior_document.hpp"
 #include "expedition.hpp"
+#include "project_diff.hpp"
 #include "project_io.hpp"
 #include "project_operations.hpp"
 #include "voxel_palette.hpp"
@@ -1156,6 +1157,78 @@ FieldResult replace_scene_source(const fs::path& root, std::uint64_t revision,
 
 }  // namespace
 
+FieldResult merge_project_scene(const SceneVersion& current, const SceneVersion& base,
+                                const SceneVersion& incoming, bool apply) {
+  const auto target = open_project(current.directory);
+  if (!target.project) return {target.code, target.location};
+  const auto& project = *target.project;
+  const auto& resource = entry_resource(project);
+  if (project.revision != current.revision)
+    return {"revision_conflict", "/revision", project.revision};
+  try {
+    auto before = read_bytes(current.directory / resource.path, max_edit_bytes);
+    if (!before) return {"edit_too_large", resource.path};
+    const auto left = parse_json(*before);
+    if (!left.is_object()) return {"invalid_scene", resource.path};
+    const auto read_version = [&](const SceneVersion& version, std::string_view label,
+                                  Json& document) -> FieldResult {
+      const auto location = "/input/" + std::string(label);
+      const auto source = open_project(version.directory);
+      if (!source.project) return {source.code, location + "_directory"};
+      const auto& snapshot = *source.project;
+      if (snapshot.revision != version.revision)
+        return {"revision_conflict", location + "_revision", snapshot.revision};
+      if (snapshot.id != project.id) return {"different_project", location + "_directory"};
+      const auto found = std::ranges::find(snapshot.resources, resource.id, &Resource::id);
+      if (found == snapshot.resources.end() || found->kind != "scene")
+        return {"invalid_resource", location + "_directory"};
+      const auto bytes = read_bytes(version.directory / found->path, max_edit_bytes);
+      if (!bytes) return {"edit_too_large", location + "_directory"};
+      document = parse_json(*bytes);
+      if (!document.is_object()) return {"invalid_scene", location + "_directory"};
+      return {"ok"};
+    };
+    Json ancestor, right;
+    if (auto result = read_version(base, "base", ancestor); result.code != "ok") return result;
+    if (auto result = read_version(incoming, "other", right); result.code != "ok") return result;
+    auto merge = merge_scene_documents(ancestor, left, right);
+    if (!merge.conflicts.empty()) {
+      FieldResult result{"merge_conflict", merge.conflicts.front(), project.revision};
+      result.conflicts = std::move(merge.conflicts);
+      return result;
+    }
+    const auto validated = validate_scene_replacement(left, merge.document);
+    if (validated.code != "ok") return validated;
+    const auto declared = [&](std::string_view id, std::string_view kind) {
+      const auto found = std::ranges::find(project.resources, id, &Resource::id);
+      return found != project.resources.end() && found->kind == kind &&
+             std::ranges::find(resource.refs, id) != resource.refs.end();
+    };
+    if (is_voxel_scene(merge.document)) {
+      if (!declared(merge.document["materials"].get_ref<const std::string&>(), "text"))
+        return {"invalid_voxel_materials", "/materials", project.revision};
+    } else if (const auto entities = merge.document.find("entities");
+               entities != merge.document.end()) {
+      for (const auto& entity : *entities)
+        if (const auto sprite = entity.find("sprite");
+            sprite != entity.end() && !declared(sprite->get_ref<const std::string&>(), "image"))
+          return {"invalid_sprite", "/entities", project.revision};
+    }
+    const bool changed = left != merge.document;
+    auto after = changed ? merge.document.dump(2) + "\n" : *before;
+    if (after.size() > max_edit_bytes) return {"edit_too_large", resource.path};
+    const SceneChange change{project.id, resource.id, resource.path, std::move(*before),
+                             std::move(after)};
+    return edit_scene_file(
+        current.directory, current.revision, {{"version", 4}}, apply, true,
+        [&](Json&) -> FieldResult { return {"ok", "/", {}, {}, {}, changed}; }, &change);
+  } catch (const std::length_error&) {
+    return {"invalid_scene", resource.path};
+  } catch (const Json::exception&) {
+    return {"invalid_scene", resource.path};
+  }
+}
+
 FieldResult restore_scene(const fs::path& root, std::uint64_t revision, std::string_view request) {
   const FieldResult invalid{"invalid_argument", "/input"};
   if (request.size() > max_scene_restore_request) return invalid;
@@ -1625,6 +1698,7 @@ std::string field_result_json(const FieldResult& result) {
   if (result.old_value) json["old_value"] = *result.old_value;
   if (result.new_value) json["new_value"] = *result.new_value;
   if (result.code == "ok") json["changed"] = result.changed;
+  if (!result.conflicts.empty()) json["conflicts"] = result.conflicts;
   if (result.scene_change) {
     const auto& change = *result.scene_change;
     json["scene_change"] = {{"project_id", change.project_id},
@@ -2024,6 +2098,17 @@ Json build_operation_specs() {
        {"steps", "integer from 1 to 32"}},
       dynamics_errors);
   scene_errors.push_back("scene_content_conflict");
+  auto merge_errors = scene_errors;
+  for (const auto code : {"different_project", "invalid_resource", "merge_conflict"})
+    merge_errors.push_back(code);
+  add("scene.merge", "project request DIRECTORY", true,
+      {{"directory", "current checkout"},
+       {"expected_revision", "current revision"},
+       {"base_directory", "common ancestor checkout"},
+       {"base_revision", "ancestor revision"},
+       {"other_directory", "incoming checkout"},
+       {"other_revision", "incoming revision"}},
+      merge_errors);
   add("scene.restore", "project restore-scene DIRECTORY REVISION", true,
       {{"directory", "path"},
        {"expected_revision", "integer"},
@@ -2034,7 +2119,7 @@ Json build_operation_specs() {
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
         id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set" ||
         id == "scene.character.set" || id == "scene.voxel.actuate" ||
-        id == "scene.voxel.dynamics") {
+        id == "scene.voxel.dynamics" || id == "scene.merge") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};

@@ -32,6 +32,12 @@ std::string segment(std::string_view key) {
 
 using Members = std::map<std::string, const Json*, std::less<>>;
 
+Members object_fields(const Json& object) {
+  Members result;
+  for (const auto& [key, value] : object.items()) result.emplace(key, &value);
+  return result;
+}
+
 std::optional<Members> identified(const Json& rows) {
   if (!rows.is_array()) return {};
   Members result;
@@ -58,10 +64,7 @@ struct Changes {
   void compare(const Json& before, const Json& after, const std::string& path) {
     if (before == after || truncated) return;
     if (before.is_object() && after.is_object()) {
-      Members left, right;
-      for (const auto& [key, value] : before.items()) left.emplace(key, &value);
-      for (const auto& [key, value] : after.items()) right.emplace(key, &value);
-      compare_members(left, right, path);
+      compare_members(object_fields(before), object_fields(after), path);
       return;
     }
     if (path == "/entities") {
@@ -99,6 +102,67 @@ struct Changes {
       if (!before.contains(key)) append(path + "/" + segment(key), "added");
       if (truncated) return;
     }
+  }
+};
+
+bool equal(const Json* a, const Json* b) { return a == b || (a && b && *a == *b); }
+
+std::vector<std::string> ids(const Json& entities) {
+  std::vector<std::string> result;
+  for (const auto& row : entities) result.push_back(row["id"].get<std::string>());
+  return result;
+}
+
+struct Merge {
+  std::vector<std::string> conflicts;
+
+  std::optional<Json> value(const Json* base, const Json* current, const Json* incoming,
+                            const std::string& path) {
+    if (conflicts.size() == fields_limit) return {};
+    if (equal(current, incoming) || equal(base, incoming))
+      return current ? std::optional(*current) : std::nullopt;
+    if (equal(base, current)) return incoming ? std::optional(*incoming) : std::nullopt;
+    if (base && current && incoming) {
+      if (base->is_object() && current->is_object() && incoming->is_object())
+        return object(object_fields(*base), object_fields(*current), object_fields(*incoming),
+                      path);
+      if (path == "/entities") {
+        const auto ancestor = identified(*base), left = identified(*current),
+                   right = identified(*incoming);
+        if (ancestor && left && right) {
+          const auto before = ids(*base), local = ids(*current), remote = ids(*incoming);
+          if (local == remote || local == before || remote == before) {
+            const auto combined = object(*ancestor, *left, *right, path);
+            auto result = Json::array();
+            for (const auto& id : local == before ? remote : local)
+              if (combined.contains(id)) result.push_back(combined[id]);
+            return result;
+          }
+        }
+      }
+    }
+    conflicts.push_back(path.empty() ? "/" : path);
+    return {};
+  }
+
+  Json object(const Members& base, const Members& current, const Members& incoming,
+              const std::string& path) {
+    std::set<std::string> keys;
+    for (const auto* entries : {&base, &current, &incoming})
+      for (const auto& [key, unused] : *entries) {
+        (void)unused;
+        keys.insert(key);
+      }
+    const auto item = [](const Members& entries, const std::string& key) {
+      const auto found = entries.find(key);
+      return found != entries.end() ? found->second : nullptr;
+    };
+    auto result = Json::object();
+    for (const auto& key : keys)
+      if (auto field = value(item(base, key), item(current, key), item(incoming, key),
+                             path + "/" + segment(key)))
+        result[key] = std::move(*field);
+    return result;
   }
 };
 
@@ -149,6 +213,12 @@ void describe_content(const Resource& before, const Resource& after, const std::
 }
 
 }  // namespace
+
+SceneMerge merge_scene_documents(const Json& base, const Json& current, const Json& incoming) {
+  Merge merge;
+  auto document = merge.value(&base, &current, &incoming, "");
+  return {std::move(document).value_or(Json{}), std::move(merge.conflicts)};
+}
 
 Json compare_projects(const fs::path& before, std::uint64_t before_revision, const fs::path& after,
                       std::uint64_t after_revision) {

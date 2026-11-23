@@ -135,6 +135,50 @@ def test(cli, git_binary, root):
     assert (left / ART).read_bytes() == ours and (left / other_art).read_bytes() == theirs
     print("Two Git worktrees, semantic merge, both binary versions, relocation and scene recovery")
 
+    local = root / "semantic-local"
+    remote = root / "semantic-incoming"
+    shutil.copytree(baseline, local)
+    shutil.copytree(baseline, remote)
+    request("scene.field.set", {"entity_id": "drifter", "field": "vx", "value": 12}, 0,
+            "apply", project=local)
+    renamed = remote / "assets" / "field-relocated.json"
+    (remote / SCENE).rename(renamed)
+    remote_scene = read(renamed)
+    remote_scene["entities"][1]["y"] = 63
+    remote_scene["entities"].reverse()
+    put(renamed, remote_scene)
+    remote_manifest = read(remote / MANIFEST)
+    remote_manifest["revision"] = 1
+    remote_manifest["resources"][0]["path"] = renamed.relative_to(remote).as_posix()
+    put(remote / MANIFEST, remote_manifest)
+    inputs = {
+        "base_directory": str(baseline), "base_revision": 0,
+        "other_directory": str(remote), "other_revision": 1,
+    }
+    original = (local / SCENE).read_bytes()
+    incoming = renamed.read_bytes()
+    assert request("scene.merge", inputs, 1, "preview", project=local)["changed"]
+    assert (local / SCENE).read_bytes() == original and renamed.read_bytes() == incoming
+    merged = request("scene.merge", inputs, 1, "apply", project=local)
+    assert merged["revision"] == 2 and merged["changed"]
+    current = read(local / SCENE)["entities"]
+    assert [row["id"] for row in current] == [row["id"] for row in remote_scene["entities"]]
+    drifter = next(row for row in current if row["id"] == "drifter")
+    assert drifter["vx"] == 12 and drifter["y"] == 63
+    assert not request("scene.merge", inputs, 2, "apply", project=local)["changed"]
+    request("scene.merge", {**inputs, "other_revision": 0}, 2, "apply", "revision_conflict",
+            project=local)
+    change = merged["scene_change"]
+    change["before"], change["after"] = change["after"], change["before"]
+    request("scene.restore", {"change": change}, 2, "apply", project=local)
+    assert (local / SCENE).read_bytes() == original
+    next(row for row in remote_scene["entities"] if row["id"] == "drifter")["vx"] = 15
+    put(renamed, remote_scene)
+    conflict = request("scene.merge", inputs, 3, "apply", "merge_conflict", project=local)
+    assert conflict["conflicts"] == ["/entities/drifter/vx"]
+    assert (local / SCENE).read_bytes() == original
+    print("Three-way scene merge preserves stable IDs and reports conflicts without writing")
+
 
 if __name__ == "__main__":
     cli_path, git_path, work_path = map(Path, sys.argv[1:])

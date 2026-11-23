@@ -38,6 +38,10 @@ jobs:
       - run: ctest --preset dev -R '^(expedition_replay|living_systems|project_collaboration)$' --verbose --no-tests=error
       - run: cmake --install build/dev --component Tools --prefix build/installed
       - run: build/installed/bin/wds_cli --project-operations
+      - name: Replay the representative projects with installed tools
+        run: >
+          python examples/w25-lab/verify.py --cli build/installed/bin/wds_cli
+          --probe build/dev/wds_expedition_save --work build/installed-replay
       - run: cmake --install build/dev --component PluginSDK --prefix build/installed
       - run: cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo
       - run: cmake --build build/sdk-demo --parallel 2
