@@ -313,7 +313,8 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
             {"revision", revision},
             {"weather", sample->weather},
             {"open_sky", sample->open_sky},
-            {"vertical_light", sample->vertical_light}};
+            {"vertical_light", sample->vertical_light},
+            {"light", sample->light}};
   }
   if (id == "scene.character.set") {
     const auto optional = [&](const char* key) -> std::optional<int> {

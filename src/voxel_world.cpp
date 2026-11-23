@@ -57,6 +57,71 @@ double rendered_height(Block block) {
   }
 }
 
+bool exposed_to_sky(const World& world, int x, int y, int z) {
+  for (; y < World::height; ++y)
+    if (solid(world.block(x, y, z))) return false;
+  return true;
+}
+
+int emitted_light(Block block) {
+  switch (block) {
+    case Block::vent:
+      return 13;
+    case Block::lava_high:
+      return 12;
+    case Block::flame:
+    case Block::lava_mid:
+      return 11;
+    case Block::lava_low:
+      return 9;
+    default:
+      return 0;
+  }
+}
+
+int propagated_light(const World& world, Cell origin, int daylight, bool open_sky) {
+  const auto [x, y, z] = origin;
+  if (solid(world.block(x, y, z))) return 0;
+  constexpr int range = 14;
+  constexpr int width = range * 2 + 1;
+  constexpr std::array neighbors{Cell{1, 0, 0},  Cell{-1, 0, 0}, Cell{0, 1, 0},
+                                 Cell{0, -1, 0}, Cell{0, 0, 1},  Cell{0, 0, -1}};
+  const auto index = [x, z](int column, int row, int depth) {
+    return static_cast<std::size_t>((row * width + depth - z + range) * width + column - x + range);
+  };
+  struct Probe {
+    Cell cell;
+    int distance;
+  };
+  std::array<bool, width * width * World::height> visited{};
+  visited[index(x, y, z)] = true;
+  std::vector<Probe> pending{{origin, 0}};
+  int light = open_sky ? daylight : 0;
+  const int brightest = std::max(daylight, emitted_light(Block::vent));
+  // Follow open cells outward from the sample. Each face crossed costs one level.
+  for (std::size_t next = 0; next < pending.size(); ++next) {
+    const auto [position, distance] = pending[next];
+    if (brightest - distance <= light) break;
+    const auto [u, v, w] = position;
+    light = std::max(light, emitted_light(world.block(u, v, w)) - distance);
+    if (daylight - distance > light && exposed_to_sky(world, u, v, w)) light = daylight - distance;
+    if (brightest - distance - 1 <= light) continue;
+    for (const auto& [du, dv, dw] : neighbors) {
+      const int column = u + du, row = v + dv, depth = w + dw;
+      if (column < -SeededTerrain::limit || column >= SeededTerrain::limit ||
+          depth < -SeededTerrain::limit || depth >= SeededTerrain::limit || row < 0 ||
+          row >= World::height)
+        continue;
+      auto& seen = visited[index(column, row, depth)];
+      if (seen) continue;
+      seen = true;
+      if (!solid(world.block(column, row, depth)))
+        pending.push_back({{column, row, depth}, distance + 1});
+    }
+  }
+  return light;
+}
+
 }  // namespace
 
 World::World(Content content) : content_(content) {
@@ -260,20 +325,16 @@ std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::ui
       z < -SeededTerrain::limit || z >= SeededTerrain::limit || y < 0 || y >= height)
     return {};
   stream({static_cast<double>(x), 0, static_cast<double>(z)});
-  bool open_sky = true;
-  for (int above = y; above < height; ++above) {
-    if (!solid(block(x, above, z))) continue;
-    open_sky = false;
-    break;
-  }
+  const bool open_sky = exposed_to_sky(*this, x, y, z);
   constexpr std::array weather_names{"clear", "rain", "storm"};
   constexpr std::array attenuation{0, 2, 4};
   const auto roll = coordinate_hash(terrain_->seed(), static_cast<int>(tick / 120), 0) % 10U;
   const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
   const int time = static_cast<int>(tick % 240);
   const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, 14) + 1;
-  return EnvironmentSample{weather_names[weather], open_sky,
-                           open_sky ? std::max(1, daytime - attenuation[weather]) : 0};
+  const int daylight = std::max(1, daytime - attenuation[weather]);
+  return EnvironmentSample{weather_names[weather], open_sky, open_sky ? daylight : 0,
+                           propagated_light(*this, {x, y, z}, daylight, open_sky)};
 }
 
 bool World::read(std::istream& input) {

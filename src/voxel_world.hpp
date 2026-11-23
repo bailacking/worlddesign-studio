@@ -33,6 +33,7 @@ struct EnvironmentSample {
   std::string_view weather;
   bool open_sky;
   int vertical_light;
+  int light;
 };
 
 using Cell = std::array<int, 3>;

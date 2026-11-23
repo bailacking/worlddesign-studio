@@ -123,6 +123,9 @@ def workyard(cli, project, destination):
             "unsupported_terrain", mode="preview")
 
     trench = {"x": 14, "z": 10, "width": 5, "depth": 1, "steps": 1}
+    sample = {"x": 16, "y": 6, "z": 10, "tick": 230}
+    glowing = request(cli, destination, "scene.landscape.environment", sample, revision=2)
+    assert glowing["vertical_light"] == 1 and glowing["light"] == 12
     thermal = dynamics(trench, revision=2, mode="preview")
     assert thermal["lava_updates"] == thermal["solidified"] == 1
     assert thermal["water_updates"] == 1 and source.read_bytes() == saved
@@ -131,6 +134,8 @@ def workyard(cli, project, destination):
     assert {"14 6 10 15", "15 6 10 13", "16 6 10 17", "17 6 10 8", "18 6 10 10"} <= world()
     after = request(cli, destination, "scene.inspect", {}, revision=3)
     assert after["terrain"]["profile"] == "workyard-v2"
+    quenched = request(cli, destination, "scene.landscape.environment", sample, revision=3)
+    assert quenched["light"] == 0 and not quenched["open_sky"]
     print("Cart, fire and fluids cross chunks, lava meets water, replay and save agree")
 
 
@@ -183,7 +188,9 @@ def actuate(cli, project):
     assert left["weather"] == right["weather"]
     assert not left["open_sky"] and left["vertical_light"] == 0
     assert right["open_sky"] and right["vertical_light"] > 1
+    assert left["light"] == right["vertical_light"] - 1
     assert sky(16, 230, 0)["vertical_light"] == 1
+    assert sky(15, 230, 0)["light"] == 0
     assert not operation(mode="preview")["changed"]
     values["circuit"]["events"].append({"tick": 0, "id": "switch", "level": 15})
     preview = operation(mode="preview")
@@ -206,6 +213,7 @@ def actuate(cli, project):
     assert left_next["weather"] == right_next["weather"] == right["weather"]
     assert left_next["open_sky"] and left_next["vertical_light"] == right["vertical_light"]
     assert not right_next["open_sky"] and right_next["vertical_light"] == 0
+    assert right_next["light"] == left_next["vertical_light"] - 1
     operation("revision_conflict", mode="apply")
     operation("immovable", mode="apply", revision=1)
     checked = request(cli, project, "scene.inspect", {}, revision=1)
