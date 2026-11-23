@@ -74,8 +74,19 @@ std::string_view feature_name(Structure structure) {
 
 }  // namespace
 
-SeededTerrain::SeededTerrain(std::uint32_t seed, bool frontier)
-    : seed_(seed), frontier_(frontier), chunks_(diameter * diameter) {}
+SeededTerrain::SeededTerrain(std::uint32_t seed, TerrainProfile profile)
+    : seed_(seed), profile_(profile), chunks_(diameter * diameter) {}
+
+std::string_view SeededTerrain::profile_name() const {
+  if (workyard()) return "workyard-v1";
+  return frontier() ? "frontier-v1" : "seeded-v1";
+}
+
+std::string SeededTerrain::save_header() const {
+  auto header = "wds-voxel-" + std::string(profile_name());
+  if (frontier()) header += ' ' + std::to_string(seed_);
+  return header;
+}
 
 int SeededTerrain::ground(int x, int z) const {
   const int depth = 2 + blend(seed_, x, z, 24, 7);
@@ -85,7 +96,7 @@ int SeededTerrain::ground(int x, int z) const {
 }
 
 std::string_view SeededTerrain::biome(int x, int z) const {
-  if (!frontier_ || !inside(x) || !inside(z)) return {};
+  if (!frontier() || !inside(x) || !inside(z)) return {};
   const auto climate = blend(seed_ ^ 0xa73ba093U, x, z, district, 12);
   if (climate < 4) return "meadow";
   if (climate < 7) return "woodland";
@@ -93,14 +104,14 @@ std::string_view SeededTerrain::biome(int x, int z) const {
 }
 
 std::string_view SeededTerrain::landmark(int x, int z) const {
-  if (!frontier_ || !inside(x) || !inside(z)) return {};
+  if (!frontier() || !inside(x) || !inside(z)) return {};
   return feature_name(footprint(seed_, x, z).structure);
 }
 
 SeededTerrain::Column SeededTerrain::generated(int x, int z) const {
   Column blocks{};
   const auto climate = biome(x, z);
-  const auto site = frontier_ ? footprint(seed_, x, z) : Footprint{Structure::none, 0, 0, 0};
+  const auto site = frontier() ? footprint(seed_, x, z) : Footprint{Structure::none, 0, 0, 0};
   int surface = ground(x, z);
   if (site.structure != Structure::none) {
     const auto center = [](int at) { return floor_div(at, district) * district + district / 2; };
@@ -110,7 +121,7 @@ SeededTerrain::Column SeededTerrain::generated(int x, int z) const {
   blocks[0] = Block::dirt;
   for (int y = 1; y < surface - 1; ++y) {
     blocks[y] = y <= 2 ? Block::dirt : Block::stone;
-    if (!frontier_ || y < 2 || site.structure != Structure::none) continue;
+    if (!frontier() || y < 2 || site.structure != Structure::none) continue;
     const auto vein = coordinate_hash(seed_ ^ (0x81462f97U * static_cast<unsigned>(y / 2)),
                                       floor_div(x, 2), floor_div(z, 2));
     if (vein % 17U == 0) blocks[y] = Block::copper;
@@ -171,7 +182,7 @@ Block SeededTerrain::block(int x, int y, int z) const {
 bool SeededTerrain::set(int x, int y, int z, Block block) {
   if (!inside(x) || !inside(z) || y <= 0 || y >= height || !resident(x, z)) return false;
   const Position key{x, z, y};
-  if (generated(x, z)[y] == block)
+  if (matches_generated(x, y, z, block))
     edits_.erase(key);
   else {
     if (edits_.size() == max_edits && !edits_.contains(key)) return false;
@@ -179,6 +190,10 @@ bool SeededTerrain::set(int x, int y, int z, Block block) {
   }
   chunks_[slot(floor_div(x, chunk_size), floor_div(z, chunk_size))].cells[index(x, y, z)] = block;
   return true;
+}
+
+bool SeededTerrain::matches_generated(int x, int y, int z, Block block) const {
+  return inside(x) && inside(z) && y >= 0 && y < height && generated(x, z)[y] == block;
 }
 
 void SeededTerrain::stream(int x, int z) const {
@@ -221,10 +236,8 @@ void SeededTerrain::stream(int x, int z) const {
 
 bool SeededTerrain::read(std::istream& input) {
   std::string line;
-  const auto header =
-      frontier_ ? "wds-voxel-frontier-v1 " + std::to_string(seed_) : "wds-voxel-seeded-v1";
-  if (!std::getline(input, line) || line != header) return false;
-  const auto max_block = frontier_ ? Block::timber : Block::stone;
+  if (!std::getline(input, line) || line != save_header()) return false;
+  const auto max_block = workyard() ? Block::flame : frontier() ? Block::timber : Block::stone;
   Edits candidate;
   while (std::getline(input, line)) {
     std::istringstream row(line);
@@ -244,10 +257,7 @@ bool SeededTerrain::read(std::istream& input) {
 }
 
 void SeededTerrain::write(std::ostream& output) const {
-  if (frontier_)
-    output << "wds-voxel-frontier-v1 " << seed_ << '\n';
-  else
-    output << "wds-voxel-seeded-v1\n";
+  output << save_header() << '\n';
   for (const auto& [key, block] : edits_) {
     const auto& [x, z, y] = key;
     output << x << ' ' << y << ' ' << z << ' ' << static_cast<int>(block) << '\n';

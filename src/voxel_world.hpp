@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <optional>
+#include <vector>
 
 #include "voxel_terrain.hpp"
 
@@ -34,6 +35,22 @@ struct EnvironmentSample {
   int vertical_light;
 };
 
+using Cell = std::array<int, 3>;
+
+struct CartRoute {
+  std::string_view code;
+  std::vector<Cell> positions;
+  bool blocked = false;
+};
+
+struct DynamicsStep {
+  std::string_view code;
+  int water_updates = 0;
+  int ignited = 0;
+  int extinguished = 0;
+  bool changed = false;
+};
+
 class World {
  public:
   static constexpr int width = 24;
@@ -46,6 +63,9 @@ class World {
   [[nodiscard]] Hit cast(Vec3 origin, Vec3 direction, double limit) const;
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
   std::string_view shift_block(int x, int y, int z, int dx, int dz);
+  [[nodiscard]] bool cart_track(Cell position) const;
+  [[nodiscard]] CartRoute cart_route(Cell start, int dx, int dz, int steps) const;
+  [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps);
   [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
                                                              std::uint32_t tick) const;
   bool read(std::istream& input);
@@ -54,6 +74,7 @@ class World {
   void set_content(Content content) { content_ = content; }
   void set_placement(Block block);
   void use_seed(std::uint32_t seed, bool frontier = false);
+  void use_seed(std::uint32_t seed, TerrainProfile profile);
   void stream(Vec3 center) const;
   [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
@@ -69,9 +90,13 @@ struct Player {
   double pitch = 0;
   double fall_speed = 0;
   bool grounded = false;
+  std::optional<Cell> cart;
 
   void step(const World& world, double forward, double strafe, bool jump, double seconds,
             int jump_speed = 6);
+  bool toggle_cart(const World& world);
+  bool move_cart(const World& world, int dx, int dz);
+  [[nodiscard]] DynamicsStep advance_workyard(World& world) const;
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
   [[nodiscard]] Camera camera() const;

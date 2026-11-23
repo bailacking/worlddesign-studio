@@ -9,7 +9,9 @@
 namespace wds::voxel {
 namespace {
 
-constexpr std::array names{"air", "grass", "dirt", "stone", "copper", "quartz", "timber"};
+constexpr std::array names{"air",       "grass",      "dirt", "stone",  "copper",
+                           "quartz",    "timber",     "rail", "spring", "water-low",
+                           "water-mid", "water-high", "flame"};
 constexpr std::size_t legacy_materials = 4;
 constexpr std::string_view signature = "wds-sandbox-content-v1";
 

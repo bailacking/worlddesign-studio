@@ -70,6 +70,60 @@ def circuit(cli, project, checkpoint_path):
     print("Analog threshold and subtraction, checkpoint replay, malformed pending rejection")
 
 
+def workyard(cli, project, destination):
+    shutil.copytree(project, destination)
+    source = destination / "assets" / "yard.json"
+    original = source.read_bytes()
+    rail = {"x": 13, "y": 2, "z": 17, "dx": 1, "dz": 0, "steps": 12}
+    route = request(cli, destination, "scene.voxel.cart", rail)
+    assert route["positions"] == [[x, 2, 17] for x in range(13, 19)] and route["blocked"]
+    reverse = request(cli, destination, "scene.voxel.cart", {**rail, "x": 18, "dx": -1, "steps": 3})
+    assert reverse["positions"] == [[x, 2, 17] for x in (18, 17, 16, 15)]
+    assert not reverse["blocked"]
+    request(cli, destination, "scene.voxel.cart", {**rail, "x": 19}, "invalid_track")
+    request(cli, destination, "scene.voxel.cart", {**rail, "dz": 1}, "invalid_argument")
+
+    area = {"x": 13, "z": 12, "width": 6, "depth": 3, "steps": 1}
+
+    def dynamics(values, expected="ok", **options):
+        return request(cli, destination, "scene.voxel.dynamics", values, expected, **options)
+
+    def world():
+        return set(json.loads(source.read_text(encoding="utf-8"))["world"].splitlines()[1:])
+
+    preview = dynamics(area, mode="preview")
+    assert preview["changed"] and source.read_bytes() == original
+    applied = dynamics(area, mode="apply")
+    assert applied["revision"] == 1
+    for field, expected in {"water_updates": 3, "ignited": 1, "extinguished": 1}.items():
+        assert applied[field] == preview[field] == expected
+    cells = world()
+    assert {"15 4 13 11", "16 4 14 10", "17 4 12 12", "17 4 14 6"} <= cells
+    assert {"16 4 12 12", "14 4 13 10", "15 4 12 10", "18 4 12 12"}.isdisjoint(cells)
+    reopened = request(cli, destination, "scene.inspect", {}, revision=1)
+    assert reopened["terrain"]["profile"] == "workyard-v1"
+    second = dynamics(area, revision=1, mode="apply")
+    assert second["revision"] == 2 and second["ignited"] == 1
+    cells = world()
+    assert {"16 4 13 10", "18 4 12 12", "16 3 14 10", "17 4 14 6"} <= cells
+    assert "17 4 12 12" not in cells
+    saved = source.read_bytes()
+    dynamics(area, "revision_conflict", revision=1, mode="apply")
+    dynamics({**area, "x": 2147483647}, "invalid_argument", revision=2, mode="apply")
+    stationary = dynamics({**area, "z": 17, "depth": 1}, revision=2, mode="apply")
+    assert not stationary["changed"] and stationary["revision"] == 2
+    assert source.read_bytes() == saved
+
+    joint = destination.with_name("workyard-joint")
+    shutil.copytree(project, joint)
+    combined = request(cli, joint, "scene.voxel.dynamics", {**area, "steps": 2}, mode="apply")
+    assert combined["revision"] == 1
+    assert (joint / "assets" / "yard.json").read_bytes() == saved
+    request(cli, SAMPLE.parent / "seeded-voxel", "scene.voxel.dynamics", area,
+            "unsupported_terrain", mode="preview")
+    print("Workyard cart crosses chunks, water quenches fire, replay and save agree")
+
+
 def action(command, target=None, ingredients=None):
     data = {"command": command}
     if target:
@@ -484,6 +538,8 @@ def main():
         shutil.copy2(SAMPLE / "wds.project.json", project)
         circuit(args.cli.resolve(), project, root / "circuit.json")
         actuate(args.cli.resolve(), root / "actuator-bench")
+        yard = SAMPLE.parent / "voxel-workyard"
+        workyard(args.cli.resolve(), yard, root / "workyard")
         garden(args.cli.resolve(), project, args.probe.resolve(), root / "adventure.json")
         coast = root / "coast"
         conditions(args.cli.resolve(), project, coast)
@@ -504,6 +560,8 @@ def main():
             package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
             package(runtime, control, root / "actions-package", "interaction_format",
                     graphics=graphics)
+            package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
+                    graphics=False)
 
 
 if __name__ == "__main__":

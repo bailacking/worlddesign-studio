@@ -923,6 +923,14 @@
             <source>WASD move · Arrows look · Space jump · Left break · Right place</source>
             <translation>WASD 移动 · 方向键转头 · 空格跳跃 · 左键破坏 · 右键放置</translation>
         </message>
+        <message>
+            <source>Cart mounted · A west · D east · W north · S south · E exit</source>
+            <translation>已登车 · A 向西 · D 向东 · W 向北 · S 向南 · E 下车</translation>
+        </message>
+        <message>
+            <source>E board cart near rail · F advance water and fire</source>
+            <translation>靠近轨道按 E 登车 · 按 F 推进一轮水火</translation>
+        </message>
     </context>
     <context>
         <name>WorkshopDialog</name>

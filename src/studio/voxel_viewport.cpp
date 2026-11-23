@@ -49,6 +49,7 @@ void VoxelViewport::setWorld(platform::VoxelScene* scene, bool reset_camera) {
   scene_ = scene;
   world_ = scene ? &scene->world : nullptr;
   if (reset_camera) player_ = {};
+  if (player_.cart && (!world_ || !world_->cart_track(*player_.cart))) player_.cart.reset();
   if (world_) {
     world_->stream(player_.feet);
     if (world_->collides(player_.feet)) {
@@ -85,9 +86,35 @@ void VoxelViewport::focusOutEvent(QFocusEvent* event) {
 }
 
 void VoxelViewport::keyPressEvent(QKeyEvent* event) {
-  if (!movementKey(event->key()) ||
-      (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+  if (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
     QWidget::keyPressEvent(event);
+    return;
+  }
+  if (world_ && world_->terrain() && world_->terrain()->workyard() &&
+      (event->key() == Qt::Key_E || event->key() == Qt::Key_F)) {
+    if (!event->isAutoRepeat()) {
+      if (event->key() == Qt::Key_E) {
+        if (player_.toggle_cart(*world_)) invalidateFrame();
+      } else {
+        if (player_.advance_workyard(*world_).changed) {
+          invalidateFrame();
+          changed_();
+        }
+      }
+    }
+    event->accept();
+    return;
+  }
+  if (!movementKey(event->key())) {
+    QWidget::keyPressEvent(event);
+    return;
+  }
+  if (player_.cart && (event->key() == Qt::Key_W || event->key() == Qt::Key_A ||
+                       event->key() == Qt::Key_S || event->key() == Qt::Key_D)) {
+    const int dx = (event->key() == Qt::Key_D) - (event->key() == Qt::Key_A);
+    const int dz = (event->key() == Qt::Key_S) - (event->key() == Qt::Key_W);
+    if (player_.move_cart(*world_, dx, dz)) invalidateFrame();
+    event->accept();
     return;
   }
   if (!event->isAutoRepeat()) {
@@ -186,8 +213,16 @@ void VoxelViewport::paintEvent(QPaintEvent*) {
                                      .arg(hit.z)
                                : QCoreApplication::translate("VoxelViewport", "No block in reach");
   const auto bounds = rect().adjusted(12, 12, -12, -12);
-  const auto hint = QCoreApplication::translate(
+  auto hint = QCoreApplication::translate(
       "VoxelViewport", "WASD move · Arrows look · Space jump · Left break · Right place");
+  if (world_->terrain() && world_->terrain()->workyard())
+    hint +=
+        QStringLiteral("\n") +
+        (player_.cart
+             ? QCoreApplication::translate(
+                   "VoxelViewport", "Cart mounted · A west · D east · W north · S south · E exit")
+             : QCoreApplication::translate("VoxelViewport",
+                                           "E board cart near rail · F advance water and fire"));
   painter.setPen(theme::color::text);
   const auto drawLabel = [&](const QString& text, int alignment) {
     const auto area = painter.boundingRect(bounds, alignment | Qt::TextWordWrap, text);

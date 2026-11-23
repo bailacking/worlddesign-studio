@@ -218,7 +218,19 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
-本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_(voxel_)?smoke$' --output-on-failure`。检查离屏启动工作台，分别打开「礁灯投递」和「方块工坊」并绘制当前视口。
+本机可复跑与 Windows CI 相同的工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_(voxel_|workyard_)?smoke$' --output-on-failure`。测试离屏启动工作台，并绘制「礁灯投递」「方块工坊」和「块石工场」的视口。
+
+### 启动工作台与试玩
+
+在仓库根目录运行下列入口。默认读取 `build/native`，按上文构建在 `build/studio` 时，给命令加 `--build build/studio`。
+
+| 入口 | 命令 |
+| --- | --- |
+| 工作台 | `python scripts/launch.py studio` |
+| 方块游戏「块石工场」 | `python scripts/launch.py voxel` |
+| 非方块游戏「风园」 | `python scripts/launch.py planar`，打开浏览器试玩。 |
+
+两个工作台入口支持 `--project <目录>`。浏览器入口在回环地址运行，终端会显示本地 URL，按 **Ctrl+C** 关闭。三个入口都支持 `--check` 验证启动路径。
 
 ### 编辑方块工坊
 

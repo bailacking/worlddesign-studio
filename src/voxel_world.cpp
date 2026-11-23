@@ -39,6 +39,21 @@ Block legacy_block(int x, int y, int z) {
   return Block::air;
 }
 
+double rendered_height(Block block) {
+  switch (block) {
+    case Block::rail:
+      return 0.11;
+    case Block::water_low:
+      return 0.25;
+    case Block::water_mid:
+      return 0.5;
+    case Block::water_high:
+      return 0.75;
+    default:
+      return 1;
+  }
+}
+
 }  // namespace
 
 World::World(Content content) : content_(content) {
@@ -55,7 +70,11 @@ Block World::block(int x, int y, int z) const {
 }
 
 void World::use_seed(std::uint32_t seed, bool frontier) {
-  terrain_.emplace(seed, frontier);
+  use_seed(seed, frontier ? TerrainProfile::frontier : TerrainProfile::seeded);
+}
+
+void World::use_seed(std::uint32_t seed, TerrainProfile profile) {
+  terrain_.emplace(seed, profile);
   stream(Player{}.feet);
 }
 
@@ -85,7 +104,7 @@ bool World::collides(Vec3 feet) const {
   for (int x = cell(feet.x - radius); x <= cell(feet.x + radius - epsilon); ++x) {
     for (int y = cell(feet.y); y <= cell(feet.y + body_height - epsilon); ++y) {
       for (int z = cell(feet.z - radius); z <= cell(feet.z + radius - epsilon); ++z) {
-        if ((terrain_ && !terrain_->resident(x, z)) || block(x, y, z) != Block::air) return true;
+        if ((terrain_ && !terrain_->resident(x, z)) || solid(block(x, y, z))) return true;
       }
     }
   }
@@ -125,7 +144,17 @@ Hit World::cast(Vec3 origin, Vec3 direction, double limit) const {
   int normal = 0;
   while (distance <= limit) {
     const auto hit = block(grid[0], grid[1], grid[2]);
-    if (hit != Block::air) return {hit, distance, side, grid[0], grid[1], grid[2], normal};
+    if (hit != Block::air) {
+      const auto surface = rendered_height(hit);
+      const auto top = grid[1] + surface;
+      if (surface == 1 || pos[1] + ray[1] * distance <= top)
+        return {hit, distance, side, grid[0], grid[1], grid[2], normal};
+      if (ray[1] < 0) {
+        const auto crossing = (top - pos[1]) / ray[1];
+        if (crossing <= limit && crossing < std::min({next[0], next[1], next[2]}))
+          return {hit, crossing, 1, grid[0], grid[1], grid[2], 1};
+      }
+    }
     side = static_cast<int>(std::min_element(next.begin(), next.end()) - next.begin());
     distance = next[side];
     if (!std::isfinite(distance) || distance > limit) break;
@@ -212,7 +241,7 @@ std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::ui
   stream({static_cast<double>(x), 0, static_cast<double>(z)});
   bool open_sky = true;
   for (int above = y; above < height; ++above) {
-    if (block(x, above, z) == Block::air) continue;
+    if (!solid(block(x, above, z))) continue;
     open_sky = false;
     break;
   }
@@ -268,6 +297,8 @@ void World::write(std::ostream& output) const {
 
 void Player::step(const World& world, double forward, double strafe, bool jump, double seconds,
                   int jump_speed) {
+  if (cart && world.cart_track(*cart)) return;
+  cart.reset();
   if (!(seconds > 0) || !std::isfinite(seconds) || !std::isfinite(forward) ||
       !std::isfinite(strafe)) {
     return;

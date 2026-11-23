@@ -89,4 +89,21 @@ int main() {
   standard_jump.step(world, 0, 0, true, 0.01, 6);
   higher_jump.step(world, 0, 0, true, 0.01, 8);
   check(higher_jump.feet.y > standard_jump.feet.y, "rule must change actual jump motion");
+
+  World yard;
+  yard.use_seed(53207, TerrainProfile::workyard);
+  std::istringstream tracks("wds-voxel-workyard-v1 53207\n13 2 17 7\n14 2 17 7\n");
+  check(yard.read(tracks), "workyard reads rail states");
+  Player rider;
+  rider.step(yard, 0, 0, false, 0.01);
+  check(rider.toggle_cart(yard) && rider.cart == Cell{13, 2, 17},
+        "a grounded player can board from the next cell");
+  check(rider.move_cart(yard, 1, 0) && rider.feet.x == 14.5, "cart moves the rider along the rail");
+  check(!rider.move_cart(yard, 1, 0) && rider.cart == Cell{14, 2, 17},
+        "rider remains at the end of the rail");
+  const auto rail = yard.cast(rider.eye(), {0, -1, 0}, 4);
+  check(rail.block == Block::rail && std::abs(rail.distance - 1.44) < 0.001 &&
+            !yard.collides(rider.feet),
+        "rail renders as a slab and allows the rider to stand on its support");
+  check(rider.toggle_cart(yard) && !rider.cart, "rider can leave the cart safely");
 }

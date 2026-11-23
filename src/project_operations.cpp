@@ -120,6 +120,37 @@ Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, cons
   return reply;
 }
 
+Json workyard(const fs::path& directory, std::uint64_t revision, std::string_view id, bool apply,
+              const Json& input) {
+  auto loaded = start_scene(directory, revision, true);
+  if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+  if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
+  auto& scene = *loaded.voxel_scene;
+  const auto x = number<int>(input, "x"), z = number<int>(input, "z");
+  const auto steps = number<int>(input, "steps");
+  if (id == "scene.voxel.cart") {
+    const auto route = scene.world.cart_route(
+        {x, number<int>(input, "y"), z}, number<int>(input, "dx"), number<int>(input, "dz"), steps);
+    if (route.code != "ok") return fail(route.code, "/input");
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"positions", route.positions},
+            {"blocked", route.blocked}};
+  }
+  const auto change = scene.world.step_dynamics(x, z, number<int>(input, "width"),
+                                                number<int>(input, "depth"), steps);
+  if (change.code != "ok") return fail(change.code, "/input");
+  auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
+  saved.scene_change.reset();
+  auto reply = Json::parse(field_result_json(saved));
+  if (saved.code == "ok") {
+    reply["water_updates"] = change.water_updates;
+    reply["ignited"] = change.ignited;
+    reply["extinguished"] = change.extinguished;
+  }
+  return reply;
+}
+
 Json dispatch(const fs::path& directory, std::string_view id, std::string_view mode,
               std::optional<std::uint64_t> expected, const Json& input) {
   const auto revision = expected.value_or(0);
@@ -129,6 +160,8 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     return compare_projects(directory, revision, path(input, "other_directory"),
                             number<std::uint64_t>(input, "other_revision"));
   if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
+  if (id == "scene.voxel.cart" || id == "scene.voxel.dynamics")
+    return workyard(directory, revision, id, apply, input);
   if (id == "expedition.replay") {
     auto loaded = expedition::load(directory, revision);
     if (!loaded.expedition) return fail(loaded.code, loaded.location);

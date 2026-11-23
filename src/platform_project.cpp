@@ -496,10 +496,16 @@ FieldResult parse_voxel_scene(const Json& json, voxel::World& world,
       return {"invalid_voxel_world", "/terrain"};
     const auto seed = integer(terrain["seed"]);
     if (!seed || *seed < 0 || *seed > UINT32_MAX) return {"invalid_voxel_world", "/terrain/seed"};
-    const bool frontier = terrain.contains("profile");
-    if (frontier && terrain["profile"] != "frontier-v1")
-      return {"invalid_voxel_world", "/terrain/profile"};
-    world.use_seed(static_cast<std::uint32_t>(*seed), frontier);
+    auto profile = voxel::TerrainProfile::seeded;
+    if (terrain.contains("profile")) {
+      if (terrain["profile"] == "frontier-v1")
+        profile = voxel::TerrainProfile::frontier;
+      else if (terrain["profile"] == "workyard-v1")
+        profile = voxel::TerrainProfile::workyard;
+      else
+        return {"invalid_voxel_world", "/terrain/profile"};
+    }
+    world.use_seed(static_cast<std::uint32_t>(*seed), profile);
   }
   if (json.contains("workshop")) {
     auto loaded = items::read_workshop(json["workshop"], true);
@@ -1711,7 +1717,7 @@ std::string scene_result_json(const SceneResult& result, bool include_fields) {
                 {"scene_id", voxel.source.scene_id}};
     if (const auto& terrain = voxel.world.terrain()) {
       output["terrain"] = {{"seed", terrain->seed()}, {"loaded_chunks", terrain->loaded()}};
-      if (terrain->frontier()) output["terrain"]["profile"] = "frontier-v1";
+      if (terrain->frontier()) output["terrain"]["profile"] = terrain->profile_name();
     }
     if (voxel.workshop) output["workshop"] = items::state_json(voxel.workshop->state());
     output["palette"] = {{"provider", voxel.palette}, {"sky", voxel.world.content().sky}};
@@ -1992,6 +1998,29 @@ Json build_operation_specs() {
        {"dx", "east or west step, or zero"},
        {"dz", "south or north step, or zero"}},
       actuator_errors);
+  auto cart_errors = scene_errors;
+  for (const auto code : {"unsupported_terrain", "invalid_track"}) cart_errors.push_back(code);
+  add("scene.voxel.cart", "project request DIRECTORY", false,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"x", "starting rail x"},
+       {"y", "starting rail y"},
+       {"z", "starting rail z"},
+       {"dx", "east or west step, or zero"},
+       {"dz", "south or north step, or zero"},
+       {"steps", "integer from 1 to 64"}},
+      cart_errors);
+  auto dynamics_errors = scene_errors;
+  for (const auto code : {"unsupported_terrain", "edit_limit"}) dynamics_errors.push_back(code);
+  add("scene.voxel.dynamics", "project request DIRECTORY", true,
+      {{"directory", "path"},
+       {"expected_revision", "integer"},
+       {"x", "minimum world x"},
+       {"z", "minimum world z"},
+       {"width", "integer from 1 to 24"},
+       {"depth", "integer from 1 to 24"},
+       {"steps", "integer from 1 to 32"}},
+      dynamics_errors);
   scene_errors.push_back("scene_content_conflict");
   add("scene.restore", "project restore-scene DIRECTORY REVISION", true,
       {{"directory", "path"},
@@ -2002,7 +2031,8 @@ Json build_operation_specs() {
     const auto& id = operation["id"].get_ref<const std::string&>();
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
         id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set" ||
-        id == "scene.character.set" || id == "scene.voxel.actuate") {
+        id == "scene.character.set" || id == "scene.voxel.actuate" ||
+        id == "scene.voxel.dynamics") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};

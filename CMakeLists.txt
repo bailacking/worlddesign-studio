@@ -163,7 +163,9 @@ if(WDS_BUILD_MODERN_STUDIO)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
     add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
-    set_tests_properties(workbench_smoke workbench_voxel_smoke PROPERTIES
+    add_test(NAME workbench_workyard_smoke COMMAND wds_studio_modern --smoke
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workyard")
+    set_tests_properties(workbench_smoke workbench_voxel_smoke workbench_workyard_smoke PROPERTIES
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
   endif()
 endif()
@@ -185,7 +187,7 @@ if(WDS_BUILD_W15_LAB)
   endif()
 endif()
 
-add_library(wds_voxel STATIC src/voxel_world.cpp src/voxel_terrain.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
+add_library(wds_voxel STATIC src/voxel_world.cpp src/voxel_terrain.cpp src/voxel_dynamics.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
 target_link_libraries(wds_project PRIVATE wds_voxel)

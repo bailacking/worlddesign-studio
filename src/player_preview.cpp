@@ -365,6 +365,8 @@ bool play_voxel(VoxelScene& scene, const char* title) {
   const bool ready = IsTextureValid(texture);
   if (ready) {
     voxel::Player player;
+    const auto& terrain = scene.world.terrain();
+    const bool workyard = terrain && terrain->workyard();
     WorkshopPanel workshop;
     SceneInput blocked;
     bool needs_frame = true;
@@ -394,9 +396,20 @@ bool play_voxel(VoxelScene& scene, const char* title) {
                                       2 * std::numbers::pi);
           player.pitch =
               std::clamp(player.pitch + axis(SceneKey::up, SceneKey::down) * dt * 1.4, -1.3, 1.3);
-          for (int step = 0; step < 2; ++step)
-            player.step(scene.world, axis(key("W"), key("S")), axis(key("D"), key("A")),
-                        step == 0 && IsKeyPressed(KEY_SPACE), dt * .5);
+          if (workyard) {
+            if (IsKeyPressed(KEY_E)) player.toggle_cart(scene.world);
+            if (IsKeyPressed(KEY_F))
+              needs_frame = player.advance_workyard(scene.world).changed || needs_frame;
+          }
+          if (player.cart) {
+            const int dx = IsKeyPressed(KEY_D) - IsKeyPressed(KEY_A);
+            const int dz = IsKeyPressed(KEY_S) - IsKeyPressed(KEY_W);
+            if (dx || dz) player.move_cart(scene.world, dx, dz);
+          } else {
+            for (int step = 0; step < 2; ++step)
+              player.step(scene.world, axis(key("W"), key("S")), axis(key("D"), key("A")),
+                          step == 0 && IsKeyPressed(KEY_SPACE), dt * .5);
+          }
           if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
             needs_frame = scene.edit(player.feet, player.eye(), player.view(),
                                      IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) ||
@@ -431,7 +444,10 @@ bool play_voxel(VoxelScene& scene, const char* title) {
       DrawLine(width / 2 - 8, height / 2, width / 2 + 8, height / 2, WHITE);
       DrawLine(width / 2, height / 2 - 8, width / 2, height / 2 + 8, WHITE);
       DrawRectangle(0, height - 34, width, 34, {16, 21, 31, 200});
-      DrawText("WASD move   Arrows look   Space jump", 12, height - 29, 13, RAYWHITE);
+      DrawText(workyard ? (player.cart ? "A west   D east   W north   S south   E exit"
+                                       : "WASD move   E board cart   F advance water and fire")
+                        : "WASD move   Arrows look   Space jump",
+               12, height - 29, 13, RAYWHITE);
       DrawText(scene.workshop ? "Left break   Right place   Tab items   Esc quit"
                               : "Left break   Right place   Esc quit",
                12, height - 15, 13, RAYWHITE);

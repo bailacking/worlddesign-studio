@@ -95,10 +95,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--open", action="store_true", help="open the local preview in a browser")
     args = parser.parse_args()
     cli = args.cli.resolve(strict=True)
     with PreviewServer(cli, ROOT.parent / "w25-lab", args.port) as server:
-        print(f"http://127.0.0.1:{server.server_address[1]}/", flush=True)
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        print(url, flush=True)
+        if args.open:
+            import webbrowser
+
+            webbrowser.open(url, new=2)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
