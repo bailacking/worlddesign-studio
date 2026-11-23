@@ -24,6 +24,10 @@
 
 GitHub Actions 使用 Qt 6.8.3。在 Ubuntu 24.04 x64 的 Xvfb/X11 与 macOS 15 arm64 的 Cocoa 环境分别构建工作台和 CLI，执行行为往返，并打开同一场景生成 PNG。Linux 验收环境缺少中文字体，截图中的中文标签显示为方框。 [原生构建日志与截图](https://github.com/bailacking/worlddesign-studio/actions/runs/44248255465)
 
+### W24 远征验证
+
+Ubuntu 24.04 与 macOS 15 的 C++ CLI 构建和无界面回归通过，包含两条远征生成、回放和中断存档复验。图形启动和独立发行包在 Windows x64 验证。 [双平台回放](https://github.com/bailacking/worlddesign-studio/actions/runs/45088063465) · [工程验收](../project/w18-w24-expeditions.md)
+
 ## 发布要求
 
 每个发行版本声明可支持任务、插件组合、依赖和最低环境。验证安装、升级、卸载、项目迁移及恢复；说明未覆盖的设备与已知问题。构建成功不等于运行支持，其他操作系统的结果不能代替本机平台证据。
