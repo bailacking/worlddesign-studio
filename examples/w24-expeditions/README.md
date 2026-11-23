@@ -42,6 +42,8 @@ python examples/w24-expeditions/verify.py --cli build/native/wds_cli.exe --probe
 
 Linux 与 macOS 从原生 CMake 构建运行 `ctest --preset dev -R '^expedition_replay$' --verbose`。 [验收文档](../../docs/project/w18-w24-expeditions.md)
 
+Windows CI 使用 `--no-graphics` 检查独立发行包、图标字节一致性和分阶段耗时。完整报告随 `wds-candidate-coverage` 附在运行记录中。 [远征验收工作流](https://github.com/bailacking/worlddesign-studio/actions/workflows/expedition.yml)
+
 ## W24 分段计时与 Java 参考数据复核
 
 给验证命令追加 `--seed` 和 `--scale` 可指定试演组合。四轮使用 `73021/0`、`73021/4`、`16431/4`、`4294967295/4`。每轮重新生成工程，用共享项目操作修改两个源工程的饥饿间隔和远征地形种子，并从修订 2 完整重放。Windows 记录单包的打包、完整性检查和图形冒烟时间。Linux 与 macOS 复跑生成、回放和存档，不生成 Windows 运行包。

@@ -388,7 +388,7 @@ def reauthor(cli, project, route):
     return {"repair_ms": repair_ms, "edit_ms": edit_ms}
 
 
-def export(cli, source, destination, revision):
+def export(cli, source, destination, revision, *, graphics):
     start = time.perf_counter()
     result = subprocess.run([cli, "project", "export", source, str(revision), "windows-x64", destination],
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
@@ -400,7 +400,10 @@ def export(cli, source, destination, revision):
         assert (destination / "game" / "assets" / image.name).read_bytes() == image.read_bytes()
     env = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
     checks = {"pack_ms": (packed - start) * 1000}
-    for mode, metric in (("--check", "check_ms"), ("--expedition-smoke", "graphics_ms")):
+    modes = [("--check", "check_ms")]
+    if graphics:
+        modes.append(("--expedition-smoke", "graphics_ms"))
+    for mode, metric in modes:
         start = time.perf_counter()
         subprocess.run([destination / "Play.exe", mode], cwd=destination.parent,
                        env=env, timeout=20, check=True)
@@ -413,6 +416,8 @@ def main():
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--probe", type=Path, required=True)
     parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--no-graphics", action="store_true",
+                        help="verify standalone packages without opening a graphics window")
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--seed", type=int, default=73021)
@@ -458,9 +463,12 @@ def main():
         checkpoints = checkpoint_handoff(args.cli.resolve(), drift, root / "relocated-drift")
         checkpoint = time.perf_counter()
         packages = {}
+        graphics = not args.no_graphics
         if args.runtime:
-            packages["copper-r0"] = export(args.runtime.resolve(), copper, root / "copper-original", 0)
-            packages["drift-r0"] = export(args.runtime.resolve(), drift, root / "drift-original", 0)
+            packages["copper-r0"] = export(args.runtime.resolve(), copper, root / "copper-original",
+                                            0, graphics=graphics)
+            packages["drift-r0"] = export(args.runtime.resolve(), drift, root / "drift-original",
+                                           0, graphics=graphics)
         first_packed = time.perf_counter()
         changes = {"copper": reauthor(args.cli.resolve(), copper, COPPER),
                    "drift": reauthor(args.cli.resolve(), drift, DRIFT)}
@@ -468,8 +476,10 @@ def main():
             supply_steps.extend(supply_chain(args.cli.resolve(), p, 2) for p in (copper, drift))
         before_pack = time.perf_counter()
         if args.runtime:
-            packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised", 2)
-            packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised", 2)
+            packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised",
+                                            2, graphics=graphics)
+            packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised",
+                                           2, graphics=graphics)
         result = {**metrics, "seed": args.seed, "scale": args.scale, "route_validation": "ok",
                   "total_generation_ms": (generation - start) * 1000,
                   "replay_and_coverage_ms": (replayed - generation) * 1000,
