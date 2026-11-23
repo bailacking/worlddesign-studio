@@ -29,6 +29,7 @@ def attack(target, count=1):
 
 EAST = action("east")
 WEST = action("west")
+NORTH = action("north")
 SOUTH = action("south")
 WAIT = action("wait")
 
@@ -141,6 +142,85 @@ def supply_chain(cli, project, revision=0):
     assert not carry(steps[12], "sample-1") and carry(steps[-1], "voucher-1")
     assert "shelter" in causes(steps[-1:])
     return len(steps)
+
+
+def check_supply_route(cli, project, prefix, expected_steps):
+    steps = replay(cli, project, [*prefix, *(cmd for cmd, _ in expected_steps)])["steps"]
+    for index, (command, code) in enumerate(expected_steps, len(prefix)):
+        step = steps[index]
+        if step["code"] != code:
+            return steps, {
+                "step": index + 1, "action": command, "code": step["code"],
+                "expected": code, "boat": step["boat"], "tick": step["tick"],
+            }
+        if code != "ok":
+            assert step["tick"] == steps[index - 1]["tick"], (project.name, command, step)
+            assert step["workshop"] == steps[index - 1]["workshop"], (project.name, command)
+    return steps, None
+
+
+def supply_coverage(cli, project, main_route, main_report):
+    authored = json.loads((project / "assets" / "expedition.json").read_text(encoding="utf-8"))
+    expected = set()
+    completed = set()
+    failures = []
+    tide_delays = []
+    entries = {authored["regions"][0]["id"]: 0}
+    for index, step in enumerate(main_report["steps"], 1):
+        entries.setdefault(step["region"], index)
+
+    for area in authored["regions"]:
+        region = area["id"]
+        prefix = main_route[:entries[region]]
+        for site in area["sites"]:
+            deposit = site["id"]
+            if not deposit.startswith("deposit-"):
+                continue
+            key = deposit.removeprefix("deposit-")
+            expected.add(deposit)
+            sample = site["reward"]
+            slot = sample.removeprefix("sample-")
+            item, voucher = f"refined-{slot}", f"voucher-{slot}"
+            trade, shelter = use(f"outpost-{key}"), use(f"shelter-{key}")
+            recipe = authored["workshop"]["recipes"][item]
+            materials = sum(stack["count"] for stack in recipe["ingredients"])
+
+            # Enter on the main route and approach the lane from its west side.
+            x, y = site["at"]
+            route = [SOUTH] * (y - 1) + [EAST] * (x - 2)
+            checks = [
+                (action("craft", item), "missing_ingredients"),
+                *((cmd, "ok") for cmd in gather(deposit, materials)),
+                (EAST, "ok"), (trade, "trade_unavailable"),
+                (action("craft", item), "ok"), (trade, "ok"), (trade, "trade_unavailable"),
+                (EAST, "ok"), (shelter, "ok"),
+            ]
+            expected_steps = [*((command, "ok") for command in route), *checks]
+            steps, failure = check_supply_route(cli, project, prefix, expected_steps)
+            if area["habitat"] == "ocean" and failure and failure["code"] == "boat_required":
+                alternatives = [(waits, route, False) for waits in range(1, 16)]
+                # Check alternate lanes from the repair deck when the direct lane stays rough.
+                for lane in range(y, 1, -1):
+                    approach = [SOUTH, SOUTH, use("repair-deck")]
+                    approach += ([NORTH] if lane == 2 else [SOUTH] * (lane - 3))
+                    approach += [EAST] * (x - 2) + [SOUTH] * (y - lane)
+                    alternatives.extend((waits, approach, True) for waits in range(16))
+                for waits, approach, repaired in alternatives:
+                    delayed = [(WAIT, "ok")] * waits
+                    delayed += [(command, "ok") for command in approach] + checks
+                    retry, error = check_supply_route(cli, project, prefix, delayed)
+                    if not error:
+                        tide_delays.append({"deposit": deposit, "waits": waits, "repair": repaired,
+                                            "approach": approach, "initial": failure})
+                        steps, failure = retry, None
+                        break
+            if failure:
+                failures.append({"deposit": deposit, "region": region, **failure})
+                continue
+            assert carry(steps[-1], voucher) and "shelter" in causes(steps[-1:]), (project.name, deposit)
+            assert not carry(steps[-1], sample) and not carry(steps[-1], item), (project.name, deposit)
+            completed.add(deposit)
+    return {**observed(expected, completed), "failures": failures, "tide_delays": tide_delays}
 
 
 def journey(cli, projects, coverage):
@@ -311,13 +391,22 @@ def main():
         metrics = generate(root / "projects", seed=args.seed, scale=args.scale)
         generation = time.perf_counter()
         coverage = {}
+        chains = {}
         try:
             reports = journey(args.cli.resolve(), root / "projects", coverage)
+            for name, project, route in (
+                ("copper", root / "projects" / "copper-relay", COPPER),
+                ("drift", root / "projects" / "drift-naturalists", DRIFT),
+            ):
+                chains[project.name] = supply_coverage(args.cli.resolve(), project, route, reports[name])
+            supply_failures = [row for report in chains.values() for row in report["failures"]]
+            assert not supply_failures, supply_failures
         except (AssertionError, subprocess.SubprocessError) as error:
             if args.report:
                 write_json(args.report, {
                     "seed": args.seed, "scale": args.scale, "route_validation": "failed",
                     "detail": str(error), "candidate_coverage": coverage,
+                    "supply_coverage": chains,
                 })
             raise
         copper = root / "projects" / "copper-relay"
@@ -352,6 +441,7 @@ def main():
                   "reauthor": changes, "packages": packages,
                   "route_steps": {key: len(value["steps"]) for key, value in reports.items()},
                   "supply_steps_checked": supply_steps,
+                  "supply_coverage": chains,
                   "independent_packages_checked": len(packages)}
         if args.report:
             write_json(args.report, {**result, "candidate_coverage": coverage})
@@ -359,6 +449,9 @@ def main():
             name: {group: value if group == "failed_steps" else {
                 "covered": value["covered"], "total": value["total"],
             } for group, value in counts.items()} for name, counts in coverage.items()
+        }
+        result["supply_coverage"] = {
+            name: {key: value[key] for key in ("total", "covered")} for name, value in chains.items()
         }
         print(json.dumps(result, indent=2))
 
