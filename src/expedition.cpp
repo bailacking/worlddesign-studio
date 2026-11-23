@@ -65,12 +65,35 @@ bool Expedition::uses_exposure_rules() const {
   });
 }
 
+bool Expedition::uses_interaction_rules() const {
+  return std::ranges::any_of(rules_.regions, [](const auto& area) {
+    return std::ranges::any_of(area.sites,
+                               [](const auto& site) { return site.interaction_priority > 0; });
+  });
+}
+
+std::vector<const Site*> Expedition::nearby_sites() const {
+  std::vector<const Site*> targets;
+  for (const auto& site : region().sites)
+    if (distance(location(site), position()) <= 1) targets.push_back(&site);
+  std::ranges::stable_sort(targets, std::ranges::greater{}, &Site::interaction_priority);
+  return targets;
+}
+
 const Site* Expedition::nearby(std::string_view target) const {
   if (target.empty()) {
-    const auto found = std::ranges::min_element(
-        region().sites, {}, [&](const auto& site) { return distance(location(site), position()); });
-    return found != region().sites.end() && distance(location(*found), position()) <= 1 ? &*found
-                                                                                        : nullptr;
+    const Site* best = nullptr;
+    int best_distance = 2;
+    for (const auto& site : region().sites) {
+      const auto range = distance(location(site), position());
+      if (range > 1) continue;
+      if (!best || site.interaction_priority > best->interaction_priority ||
+          (site.interaction_priority == best->interaction_priority && range < best_distance)) {
+        best = &site;
+        best_distance = range;
+      }
+    }
+    return best;
   }
   const auto found = std::ranges::find(region().sites, target, &Site::id);
   return found != region().sites.end() && distance(location(*found), position()) <= 1 ? &*found

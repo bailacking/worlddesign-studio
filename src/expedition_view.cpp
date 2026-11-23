@@ -183,9 +183,7 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
   std::size_t ingredient_index = 0;
   std::vector<std::string> ingredients;
   do {
-    std::vector<const Site*> targets;
-    for (const auto& site : run.region().sites)
-      if (run.nearby(site.id)) targets.push_back(&site);
+    const auto targets = run.nearby_sites();
     if (IsKeyPressed(KEY_TAB)) ++selected;
     if (IsKeyPressed(KEY_Q)) ++recipe_index;
     const auto* site = targets.empty() ? nullptr : targets[selected % targets.size()];

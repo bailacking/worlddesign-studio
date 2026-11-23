@@ -30,6 +30,7 @@ struct Site {
   int venom = 0;
   std::vector<std::string> after_any{};
   std::string unlock_character{};
+  int interaction_priority = 0;
 };
 
 struct Eruption {
@@ -143,11 +144,13 @@ class Expedition {
   unsigned tide() const { return (state_.tick / 4) % 4; }
   std::string_view apply(Action action);
   const Site* nearby(std::string_view target) const;
+  std::vector<const Site*> nearby_sites() const;
   int terrain(TilePoint point) const;
   TilePoint location(const Site& site) const;
   bool uses_survival_rules() const;
   bool uses_exposure_rules() const;
   bool uses_story_rules() const { return !state_.completed_chapters.empty(); }
+  bool uses_interaction_rules() const;
 
  private:
   std::string_view interact(const Site& site, bool attack);

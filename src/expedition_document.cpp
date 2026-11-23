@@ -149,10 +149,13 @@ Region region(const Json& row, const std::string& location, std::set<std::string
     }
     if (entry.contains("unlock_character") && kind != "chapter")
       throw Invalid{path + "/unlock_character"};
-    result.sites.push_back({key, kind, where, token(entry, "target", path, true),
-                            token(entry, "item", path, true), token(entry, "reward", path, true),
-                            power, capacity, token(entry, "icon", path, true), venom,
-                            std::move(after_any), token(entry, "unlock_character", path, true)});
+    const auto priority = entry.contains("interaction_priority")
+                              ? integer(entry, "interaction_priority", 0, 100, path)
+                              : 0;
+    result.sites.push_back(
+        {key, kind, where, token(entry, "target", path, true), token(entry, "item", path, true),
+         token(entry, "reward", path, true), power, capacity, token(entry, "icon", path, true),
+         venom, std::move(after_any), token(entry, "unlock_character", path, true), priority});
   }
   return result;
 }

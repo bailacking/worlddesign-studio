@@ -355,7 +355,6 @@ def combined(cli, project, variants, destination):
         "wetness": [-1, 1, -1, -1], "heat": [0, 0, 0, 0],
         "eruption": {"interval": 4, "warning_ticks": 1, "season": 1, "damage": 2},
     }
-    path.write_text(json.dumps(document), encoding="utf-8")
     actions = [
         action("gather", "seed-mat"), action("gather", "herbs"), action("gather", "herbs"),
         action("gather", "bark-store"), action("gather", "remedy-supply"),
@@ -368,18 +367,47 @@ def combined(cli, project, variants, destination):
         action("cook", "kitchen", ["root", "herb"]), action("north"), action("use", "return"),
     ]
     inputs = {"actions": actions}
-    result = request(cli, destination, "expedition.replay", inputs)
-    assert all(row["code"] == "ok" for row in result["steps"]), [
-        (index, row["code"]) for index, row in enumerate(result["steps"]) if row["code"] != "ok"
-    ]
-    assert len(result["steps"]) == 26
-    assert result["state"]["ending"] and result["state"]["unlocked_characters"] == ["shorekeeper"]
-    assert any(slot["item"] == "stew" for slot in result["state"]["workshop"]["bag"])
-    assert {"plant", "eruption", "poison", "treated", "tool_broken", "spoilage", "harvest",
-            "cooked", "ending"} <= {
-        row["cause"] for step in result["steps"] for row in step["receipts"]
-    }
-    print("Integrated 26-action route from crafting gears through eruption to the story ending")
+    eruption_ticks = []
+    for seed in (53207, 53208):
+        document["seed"] = seed
+        path.write_text(json.dumps(document), encoding="utf-8")
+        result = request(cli, destination, "expedition.replay", inputs)
+        assert all(row["code"] == "ok" for row in result["steps"]), [
+            (index, row["code"]) for index, row in enumerate(result["steps"]) if row["code"] != "ok"
+        ]
+        assert len(result["steps"]) == 26
+        assert result["state"]["ending"] and result["state"]["unlocked_characters"] == ["shorekeeper"]
+        assert any(slot["item"] == "stew" for slot in result["state"]["workshop"]["bag"])
+        causes = {row["cause"] for step in result["steps"] for row in step["receipts"]}
+        assert {"plant", "eruption", "poison", "treated", "tool_broken", "spoilage", "harvest",
+                "cooked", "ending"} <= causes
+        eruption_ticks.append([step["tick"] for step in result["steps"]
+                               if any(row["cause"] == "eruption" for row in step["receipts"])])
+    assert eruption_ticks == [[12], [15]]
+    print("Integrated 26-action route on two seeds, with different eruption times")
+
+
+def controls(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    first = {"id": "high", "kind": "chapter", "at": [0, 1], "interaction_priority": 10}
+    document["regions"][0]["sites"].extend([
+        first, {"id": "near", "kind": "chapter", "at": [1, 1]},
+    ])
+
+    def replay():
+        path.write_text(json.dumps(document), encoding="utf-8")
+        actions = {"actions": [action("use"), action("use", "near")]}
+        return request(cli, destination, "expedition.replay", actions)["steps"]
+
+    steps = replay()
+    assert [step["chapter"] for step in steps] == ["high", "near"]
+    first["interaction_priority"] = 0
+    assert replay()[0]["chapter"] == "near"
+    first["interaction_priority"] = 10
+    assert replay()[0]["chapter"] == "high"
+    print("Interaction priority overrides proximity until a specific target is selected")
 
 
 def package(cli, project, root, capability, probe=None, *, graphics=True):
@@ -396,11 +424,15 @@ def package(cli, project, root, capability, probe=None, *, graphics=True):
         save_slot = destination / "expedition.slot-2.json"
         subprocess.run([probe, project, save_slot, "farm-start"], timeout=20, check=True)
         preserved = save_slot.read_bytes()
-        result = subprocess.run([destination / "Play.exe", "--check-save=2"], timeout=20)
+        result = subprocess.run([destination / "Play.exe", "--check-save=2"], env=runtime, timeout=20)
         assert result.returncode == 0 and save_slot.read_bytes() == preserved
         for invalid in ("--check-save=1", "--check-save=4"):
-            result = subprocess.run([destination / "Play.exe", invalid], timeout=20)
+            result = subprocess.run([destination / "Play.exe", invalid], env=runtime, timeout=20)
             assert result.returncode == 2 and save_slot.read_bytes() == preserved
+        damaged = destination / "expedition.slot-3.json"
+        damaged.write_bytes(b"{broken")
+        result = subprocess.run([destination / "Play.exe", "--check-save=3"], env=runtime, timeout=20)
+        assert result.returncode == 1 and damaged.read_bytes() == b"{broken"
 
     prior = root / "without-living-format"
     prior.mkdir()
@@ -447,6 +479,8 @@ def main():
         chronicle = root / "chronicle"
         story(args.cli.resolve(), project, chronicle)
         combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
+        control = root / "controls"
+        controls(args.cli.resolve(), project, control)
         if args.runtime:
             runtime = args.runtime.resolve()
             graphics = not args.no_graphics
@@ -455,6 +489,8 @@ def main():
             package(runtime, coast, root / "coast-package", "exposure_format", graphics=graphics)
             package(runtime, kiln, root / "kiln-package", "processing_format", graphics=graphics)
             package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
+            package(runtime, control, root / "actions-package", "interaction_format",
+                    graphics=graphics)
 
 
 if __name__ == "__main__":
