@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
-option(WDS_BUILD_W15_LAB "Build the W15 loopback server and layer preview" OFF)
+option(WDS_BUILD_W15_LAB "Build the W15 TCP/TLS server and layer preview" OFF)
 option(WDS_BUILD_RAYLIB_PREVIEW "Build the experimental raylib scene player" OFF)
 option(WDS_BUILD_WINDOWS_PLAYER "Build the statically linked Windows x64 export runtime" OFF)
 if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO AND NOT WDS_BUILD_W15_LAB)
@@ -179,6 +179,10 @@ if(WDS_BUILD_MODERN_STUDIO)
       DESTINATION "wds_studio_modern.app/Contents/PlugIns/platforms" COMPONENT Workbench)
   else()
     install(TARGETS wds_cli RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+    if(UNIX)
+      install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+        DESTINATION "plugins/platforms" COMPONENT Workbench)
+    endif()
   endif()
   install(FILES LICENSE DESTINATION . COMPONENT Workbench)
   install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION licenses
@@ -215,6 +219,10 @@ if(WDS_BUILD_W15_LAB)
       --cli $<TARGET_FILE:wds_cli> --server $<TARGET_FILE:wds_w15_server>
       --layers $<TARGET_FILE:wds_w15_layers> --output "${CMAKE_CURRENT_BINARY_DIR}/w15-evidence")
     set_tests_properties(w15_runtime_lab PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+    add_test(NAME w15_tls_lab COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/w15-lab/tls_probe.py"
+      --server $<TARGET_FILE:wds_w15_server> --work "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(w15_tls_lab PROPERTIES TIMEOUT 90)
   endif()
 endif()
 

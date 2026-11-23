@@ -112,12 +112,19 @@ def server(exe, surface, cavern, save, *flags):
 
 
 class Client:
-    def __init__(self, port, ticket=None):
+    def __init__(self, port, ticket=None, *, context=None, invite=None):
         self.connection = socket.create_connection(("127.0.0.1", port), timeout=4)
-        self.stream = self.connection.makefile("rb")
+        try:
+            if context is not None:
+                self.connection = context.wrap_socket(self.connection, server_hostname="127.0.0.1")
+            self.stream = self.connection.makefile("rb")
+        except Exception:
+            self.connection.close()
+            raise
         self.latest = None
         try:
-            self.send("hello", **({"ticket": ticket} if ticket else {}))
+            credentials = {"ticket": ticket} if ticket else {"invite": invite} if invite else {}
+            self.send("hello", **credentials)
             self.ticket = self.receive("welcome")["ticket"]
             self.observe()
         except Exception:

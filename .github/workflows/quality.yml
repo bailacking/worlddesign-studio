@@ -92,9 +92,9 @@ jobs:
           & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
           $qt = "$env:RUNNER_TEMP/Qt/6.8.3/msvc2022_64"
           $env:PATH = "$qt/bin;$env:PATH"
-          cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DCMAKE_PREFIX_PATH=$qt"
-          cmake --build build/studio --target wds_studio_modern
-          ctest --test-dir build/studio -R '^workbench_' --output-on-failure --no-tests=error
+          cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON -DWDS_BUILD_W15_LAB=ON "-DCMAKE_PREFIX_PATH=$qt"
+          cmake --build build/studio --target wds_studio_modern wds_w15_server wds_w15_layers
+          ctest --test-dir build/studio -R '^(workbench_|w15_)' --output-on-failure --no-tests=error
 
   posix-workbench:
     name: Workbench smoke (${{ matrix.os }})
@@ -133,6 +133,6 @@ jobs:
         run: |
           qt_config=$(find "$RUNNER_TEMP/Qt/6.8.3" -name Qt6Config.cmake -print -quit)
           test -n "$qt_config"
-          cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON "-DQt6_DIR=$(dirname "$qt_config")"
-          cmake --build build/studio --target wds_studio_modern --parallel 2
-          ctest --test-dir build/studio -R '^workbench_' --output-on-failure --no-tests=error
+          cmake --preset dev -B build/studio -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_MODERN_STUDIO=ON -DWDS_BUILD_W15_LAB=ON "-DQt6_DIR=$(dirname "$qt_config")"
+          cmake --build build/studio --target wds_studio_modern wds_w15_server wds_w15_layers --parallel 2
+          ctest --test-dir build/studio -R '^(workbench_|w15_)' --output-on-failure --no-tests=error

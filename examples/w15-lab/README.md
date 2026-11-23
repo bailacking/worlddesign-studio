@@ -19,3 +19,11 @@ ctest --test-dir build/w15 -R '^w15_runtime_lab$' --verbose
 - 分层预览用 `wds_w15_layers examples/w15-lab/assets` 启动。发布试用目录可省略参数，程序自动读取同级 `assets`。用下拉框切换提灯与行囊、栏杆前后。 `--compare ASSETS OUTPUT` 可导出帧供对照。
 
 角色本体和提灯沿用 W4 的原创素材，行囊使用单独的小图和挂点。 [W4 素材说明](../w4-lab/README.md) · [协议信息与验收记录](../../docs/project/w15-runtime-lab.md)
+
+## 局域网运行与复跑
+
+默认监听 `127.0.0.1`。要监听一张局域网网卡，用 `--bind` 指定主机实际的私网 IPv4。启动参数同时提供 `--tls-cert`、`--tls-key` 和 `--invite-file`，分别读取 PEM 证书链、PEM RSA 私钥和一行 64 位小写十六进制随机邀请凭据。
+
+客户端先验证 TLS 证书及其主机名或 IP，再按原换行 JSON 协议发送带 `invite` 的 `hello`。已加入的玩家用服务器签发的 `ticket` 重连。启用 `--read-only` 后，已有玩家可以读取快照，行动会被拒绝。
+
+使用 `ctest --test-dir build/w15 -R '^w15_tls_lab$' --verbose` 复跑。测试用临时证书在回环上验证 TLS、拒绝缺少或错误邀请、双客户端跨世界同步、重启后重连与只读存档。Windows 测试通过 PowerShell 7 生成临时证书，Ubuntu 和 macOS 用 OpenSSL 命令生成。
