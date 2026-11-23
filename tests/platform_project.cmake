@@ -6,14 +6,14 @@ if(NOT status STREQUAL "0")
 endif()
 set(expected_ids
   behavior.convert circuit.replay expedition.replay
-  project.create project.diff project.export project.imports project.index project.open
-  project.play project.recover project.resources project.validate
+  project.create project.diff project.export project.imports project.index project.merge project.open
+  project.play project.recover project.resources project.restore project.validate
   resource.field.preview resource.field.set resource.import.apply resource.import.preview
   scene.character.set scene.entity.apply scene.entity.preview scene.field.preview scene.field.set
   scene.inspect scene.landscape.environment scene.landscape.sample scene.merge scene.navigate scene.palette.set scene.restore scene.tile.set scene.voxel.actuate scene.voxel.cart scene.voxel.dynamics
 )
 set(writers
-  project.create project.recover resource.field.set resource.import.apply scene.field.set
+  project.create project.merge project.recover project.restore resource.field.set resource.import.apply scene.field.set
   scene.character.set scene.entity.apply scene.merge scene.palette.set scene.restore scene.tile.set scene.voxel.actuate scene.voxel.dynamics
 )
 list(LENGTH expected_ids expected_count)

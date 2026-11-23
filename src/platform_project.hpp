@@ -68,6 +68,11 @@ struct SceneVersion {
 
 FieldResult merge_project_scene(const SceneVersion& current, const SceneVersion& base,
                                 const SceneVersion& incoming, bool apply);
+std::string merge_project_resources(const SceneVersion& current, const SceneVersion& base,
+                                    const SceneVersion& incoming,
+                                    const std::vector<std::string>& resources, bool apply);
+std::string restore_project_resources(const SceneVersion& current, std::string_view change,
+                                      bool apply);
 
 struct SceneField {
   std::string_view name;

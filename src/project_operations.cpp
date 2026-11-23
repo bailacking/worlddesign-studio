@@ -193,6 +193,23 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
         {directory, revision},
         {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
         {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")}, apply)));
+  if (id == "project.merge") {
+    const auto resources = input.find("resources");
+    if (resources == input.end() || !resources->is_array() || resources->size() > 8 ||
+        !std::ranges::all_of(*resources, &Json::is_string))
+      return fail("invalid_argument", "/input/resources");
+    return Json::parse(merge_project_resources(
+        {directory, revision},
+        {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
+        {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")},
+        resources->get<std::vector<std::string>>(), apply));
+  }
+  if (id == "project.restore") {
+    const auto change = input.find("change");
+    if (change == input.end() || !change->is_object())
+      return fail("invalid_argument", "/input/change");
+    return Json::parse(restore_project_resources({directory, revision}, change->dump(), apply));
+  }
   if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
   if (id == "scene.voxel.cart" || id == "scene.voxel.dynamics")
     return workyard(directory, revision, id, apply, input);

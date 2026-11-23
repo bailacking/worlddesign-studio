@@ -12,6 +12,10 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 #endif
 
 #include <algorithm>
@@ -170,6 +174,55 @@ bool pending_edit(const fs::path& root) {
   return project_path(root, journal_name) != PathState::missing ||
          project_path(root, staging_name) != PathState::missing;
 }
+
+class ProjectWriteLock {
+ public:
+  explicit ProjectWriteLock(const fs::path& root) {
+#ifdef _WIN32
+    const auto directory = CreateFileW(
+        root.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (directory == INVALID_HANDLE_VALUE) return;
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool identified = GetFileInformationByHandle(directory, &info) != 0;
+    CloseHandle(directory);
+    if (!identified || !(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+      return;
+    const auto name = L"Global\\WDS-project-" + std::to_wstring(info.dwVolumeSerialNumber) + L"-" +
+                      std::to_wstring(info.nFileIndexHigh) + L"-" +
+                      std::to_wstring(info.nFileIndexLow);
+    handle_ = CreateMutexW(nullptr, FALSE, name.c_str());
+    if (!handle_) return;
+    const auto result = WaitForSingleObject(handle_, 0);
+    acquired_ = result == WAIT_OBJECT_0 || result == WAIT_ABANDONED;
+#else
+    handle_ = ::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (handle_ >= 0) acquired_ = flock(handle_, LOCK_EX | LOCK_NB) == 0;
+#endif
+  }
+
+  ~ProjectWriteLock() {
+#ifdef _WIN32
+    if (acquired_) ReleaseMutex(handle_);
+    if (handle_) CloseHandle(handle_);
+#else
+    if (handle_ >= 0) close(handle_);
+#endif
+  }
+
+  ProjectWriteLock(const ProjectWriteLock&) = delete;
+  ProjectWriteLock& operator=(const ProjectWriteLock&) = delete;
+  explicit operator bool() const { return acquired_; }
+
+ private:
+#ifdef _WIN32
+  HANDLE handle_ = nullptr;
+#else
+  int handle_ = -1;
+#endif
+  bool acquired_ = false;
+};
 
 bool valid_field(std::string_view field) {
   return !field.empty() && field.size() <= 64 && lower(field.front()) &&
@@ -534,6 +587,25 @@ FieldResult validate_scene_replacement(const Json& before, const Json& after) {
   return checked.code == "ok" ? validate(after) : checked;
 }
 
+FieldResult validate_scene_dependencies(const Project& project, const Resource& resource,
+                                        const Json& scene) {
+  const auto declared = [&](const Json& value, std::string_view kind) {
+    const auto& id = value.get_ref<const std::string&>();
+    const auto found = std::ranges::find(project.resources, id, &Resource::id);
+    return found != project.resources.end() && found->kind == kind &&
+           std::ranges::find(resource.refs, id) != resource.refs.end();
+  };
+  if (is_voxel_scene(scene)) {
+    if (!declared(scene["materials"], "text")) return {"invalid_voxel_materials", "/materials"};
+  } else if (const auto entities = scene.find("entities"); entities != scene.end()) {
+    for (const auto& entity : *entities)
+      if (const auto sprite = entity.find("sprite");
+          sprite != entity.end() && !declared(*sprite, "image"))
+        return {"invalid_sprite", "/entities"};
+  }
+  return {"ok"};
+}
+
 FieldResult change_scene(Json& json, const SceneEdit& edit) {
   std::vector<SceneEntity> entities;
   auto result = parse_scene(json, entities);
@@ -596,6 +668,8 @@ std::string commit_edit(const fs::path& root, const Resource& resource, Json jou
                         const std::string& before_manifest, const std::string& before_data,
                         Json& manifest, const std::string& next_data, std::uint64_t revision,
                         bool apply) {
+  if (!manifest.is_object() || !manifest.contains("revision") || manifest["revision"] != revision)
+    return "revision_conflict";
   manifest["revision"] = revision + 1;
   const auto next_manifest = manifest.dump(2) + "\n";
   if (next_manifest.size() > max_edit_bytes || next_data.size() > max_edit_bytes)
@@ -607,10 +681,19 @@ std::string commit_edit(const fs::path& root, const Resource& resource, Json jou
   journal["after_data"] = next_data;
   const auto encoded = journal.dump() + "\n";
   if (encoded.size() > max_manifest_bytes) return "edit_too_large";
-  if (apply && (!replace_file(root, root / journal_name, encoded) ||
-                !replace_file(root, root / resource.path, next_data) ||
-                !replace_file(root, root / manifest_name, next_manifest) ||
-                !remove_reserved(root, journal_name)))
+  if (!apply) return "ok";
+  const ProjectWriteLock lock(root);
+  if (!lock) return "project_busy";
+  if (pending_edit(root)) return "recovery_required";
+  if (read_bytes(root / manifest_name, max_edit_bytes) != before_manifest)
+    return "revision_conflict";
+  if (project_path(root, resource.path) != PathState::ok ||
+      read_bytes(root / resource.path, max_edit_bytes) != before_data)
+    return "project_content_conflict";
+  if (!replace_file(root, root / journal_name, encoded) ||
+      !replace_file(root, root / resource.path, next_data) ||
+      !replace_file(root, root / manifest_name, next_manifest) ||
+      !remove_reserved(root, journal_name))
     return "recovery_required";
   return "ok";
 }
@@ -1199,20 +1282,10 @@ FieldResult merge_project_scene(const SceneVersion& current, const SceneVersion&
     }
     const auto validated = validate_scene_replacement(left, merge.document);
     if (validated.code != "ok") return validated;
-    const auto declared = [&](std::string_view id, std::string_view kind) {
-      const auto found = std::ranges::find(project.resources, id, &Resource::id);
-      return found != project.resources.end() && found->kind == kind &&
-             std::ranges::find(resource.refs, id) != resource.refs.end();
-    };
-    if (is_voxel_scene(merge.document)) {
-      if (!declared(merge.document["materials"].get_ref<const std::string&>(), "text"))
-        return {"invalid_voxel_materials", "/materials", project.revision};
-    } else if (const auto entities = merge.document.find("entities");
-               entities != merge.document.end()) {
-      for (const auto& entity : *entities)
-        if (const auto sprite = entity.find("sprite");
-            sprite != entity.end() && !declared(sprite->get_ref<const std::string&>(), "image"))
-          return {"invalid_sprite", "/entities", project.revision};
+    auto dependencies = validate_scene_dependencies(project, resource, merge.document);
+    if (dependencies.code != "ok") {
+      dependencies.revision = project.revision;
+      return dependencies;
     }
     const bool changed = left != merge.document;
     auto after = changed ? merge.document.dump(2) + "\n" : *before;
@@ -1360,6 +1433,8 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
     const ImportRecord record{request.id,       request.kind, request.path, result.source_name,
                               imported->size(), digest,       revision + 1};
     auto manifest = parse_json(*manifest_bytes);
+    if (!manifest.is_object() || !manifest.contains("revision") || manifest["revision"] != revision)
+      return {"revision_conflict", "/revision", revision};
     manifest["resources"].push_back({{"id", request.id},
                                      {"kind", request.kind},
                                      {"path", request.path},
@@ -1384,6 +1459,15 @@ ImportResult import_resource(const fs::path& root, const ImportRequest& request,
                        {"after_data", binary ? encode_binary(*imported) : *imported}};
     const auto encoded = journal.dump() + "\n";
     if (encoded.size() > max_manifest_bytes) return {"import_too_large", "/path", revision};
+    const ProjectWriteLock lock(root);
+    if (!lock) return {"project_busy", "/path", revision};
+    if (pending_edit(root)) return {"recovery_required", journal_name};
+    if (read_bytes(root / manifest_name, max_edit_bytes) != *manifest_bytes)
+      return {"revision_conflict", "/revision", revision};
+    const auto current_provenance = read_provenance(root);
+    if (project_path(root, request.path) != PathState::missing ||
+        current_provenance.code != provenance.code || current_provenance.bytes != provenance.bytes)
+      return {"project_content_conflict", request.path, revision};
     if (!replace_file(root, root / journal_name, encoded) ||
         !replace_file(root, root / request.path, *imported) ||
         !replace_file(root, root / imports_name, next_provenance) ||
@@ -1556,13 +1640,318 @@ ProjectResult recover_import(const fs::path& root, const Json& journal) {
   }
 }
 
+constexpr std::size_t max_batch_resources = 8;
+constexpr std::size_t max_batch_bytes = 3 * max_edit_bytes;
+
+struct ResourceReplacement {
+  const Resource* resource;
+  std::string before;
+  std::string after;
+};
+
+const Resource* resource_by_id(const Project& project, std::string_view id) {
+  const auto found = std::ranges::find(project.resources, id, &Resource::id);
+  return found == project.resources.end() ? nullptr : &*found;
+}
+
+FieldResult validate_replacement(const Project& project, const ResourceReplacement& replacement) {
+  const auto& resource = *replacement.resource;
+  if (resource.kind == "scene") {
+    const auto before = parse_json(replacement.before);
+    const auto after = parse_json(replacement.after);
+    const auto checked = validate_scene_replacement(before, after);
+    if (checked.code != "ok") return checked;
+    const auto dependencies = validate_scene_dependencies(project, resource, before);
+    return dependencies.code == "ok" ? validate_scene_dependencies(project, resource, after)
+                                     : dependencies;
+  }
+  for (const auto* bytes : {&replacement.before, &replacement.after}) {
+    const auto content = imported_content_code(resource.kind, *bytes);
+    if (content != "ok") return {std::string(content), "/"};
+    if (resource.id == "expedition" &&
+        std::ranges::find(entry_resource(project).refs, resource.id) !=
+            entry_resource(project).refs.end())
+      if (const auto error = expedition::document_error(*bytes))
+        return {"invalid_expedition", *error};
+  }
+  return {"ok"};
+}
+
+Json batch_error(std::string_view code, std::string_view location) {
+  return {{"code", code}, {"location", location}};
+}
+
+struct ProjectSnapshot {
+  Project project;
+  std::string manifest;
+};
+
+std::optional<ProjectSnapshot> read_snapshot(const SceneVersion& version, std::string_view label,
+                                             Json& error) {
+  const auto location = "/input/" + std::string(label);
+  const auto opened = open_project(version.directory);
+  if (!opened.project) {
+    error = batch_error(opened.code, label.empty() ? opened.location : location + "_directory");
+    return {};
+  }
+  auto manifest = read_bytes(version.directory / manifest_name, max_edit_bytes);
+  if (!manifest) {
+    error = batch_error("edit_too_large", label.empty() ? manifest_name : location + "_directory");
+    return {};
+  }
+  auto parsed = validate_manifest(version.directory, parse_json(*manifest));
+  if (!parsed.project) {
+    error = batch_error(parsed.code, label.empty() ? parsed.location : location + "_directory");
+    return {};
+  }
+  if (parsed.project->revision != version.revision) {
+    error = batch_error("revision_conflict", label.empty() ? "/revision" : location + "_revision");
+    error["revision"] = parsed.project->revision;
+    return {};
+  }
+  return ProjectSnapshot{std::move(*parsed.project), std::move(*manifest)};
+}
+
+bool snapshot_is(const SceneVersion& version, const ProjectSnapshot& snapshot) {
+  return !pending_edit(version.directory) &&
+         read_bytes(version.directory / manifest_name, max_edit_bytes) == snapshot.manifest;
+}
+
+std::optional<std::vector<ResourceReplacement>> read_batch(const Project& project,
+                                                           const Json& change) {
+  if (!has_fields(change, {"project_id", "resources"}) || change["project_id"] != project.id ||
+      !change["resources"].is_array() || change["resources"].empty() ||
+      change["resources"].size() > max_batch_resources)
+    return {};
+  std::vector<ResourceReplacement> result;
+  std::set<std::string> selected;
+  std::size_t bytes = 0;
+  for (const auto& row : change["resources"]) {
+    if (!has_fields(row, {"id", "before", "after"}) || !row["id"].is_string() ||
+        !row["before"].is_string() || !row["after"].is_string())
+      return {};
+    const auto& id = row["id"].get_ref<const std::string&>();
+    const auto* resource = resource_by_id(project, id);
+    auto before = decode_binary(row["before"].get_ref<const std::string&>());
+    auto after = decode_binary(row["after"].get_ref<const std::string&>());
+    if (!resource || !selected.insert(id).second || !before || !after || *before == *after)
+      return {};
+    bytes += before->size() + after->size();
+    if (bytes > max_batch_bytes) return {};
+    result.push_back({resource, std::move(*before), std::move(*after)});
+  }
+  return result;
+}
+
+bool resource_is(const fs::path& root, const Resource& resource, std::string_view bytes) {
+  return project_path(root, resource.path) == PathState::ok &&
+         read_bytes(root / resource.path, max_edit_bytes) == bytes;
+}
+
+Json commit_batch(const fs::path& root, const Project& project, const std::string& before_manifest,
+                  const std::vector<ResourceReplacement>& changes, bool apply) {
+  auto ids = Json::array();
+  auto rows = Json::array();
+  std::size_t bytes = 0;
+  for (const auto& replacement : changes) {
+    const auto& resource = *replacement.resource;
+    if (replacement.before.size() > max_edit_bytes || replacement.after.size() > max_edit_bytes)
+      return batch_error("edit_too_large", resource.path);
+    bytes += replacement.before.size() + replacement.after.size();
+    if (bytes > max_batch_bytes) return batch_error("edit_too_large", "/input/resources");
+    const auto checked = validate_replacement(project, replacement);
+    if (checked.code != "ok") return batch_error(checked.code, resource.path + checked.location);
+    if (!resource_is(root, resource, replacement.before))
+      return batch_error("project_content_conflict", resource.path);
+    ids.push_back(resource.id);
+    rows.push_back({{"id", resource.id},
+                    {"before", encode_binary(replacement.before)},
+                    {"after", encode_binary(replacement.after)}});
+  }
+  Json result{{"code", "ok"},
+              {"revision", project.revision},
+              {"changed", !changes.empty()},
+              {"resources", std::move(ids)}};
+  if (changes.empty()) return result;
+  if (project.revision == max_revision) return batch_error("revision_exhausted", "/revision");
+  auto manifest = parse_json(before_manifest);
+  manifest["revision"] = project.revision + 1;
+  const auto after_manifest = manifest.dump(2) + "\n";
+  if (after_manifest.size() > max_edit_bytes) return batch_error("edit_too_large", manifest_name);
+  const Json change{{"project_id", project.id}, {"resources", std::move(rows)}};
+  const auto encoded = Json{{"version", 7},
+                            {"before_manifest", before_manifest},
+                            {"after_manifest", after_manifest},
+                            {"change", change}}
+                           .dump() +
+                       "\n";
+  if (encoded.size() > max_manifest_bytes) return batch_error("edit_too_large", journal_name);
+  if (!apply) return result;
+
+  const ProjectWriteLock lock(root);
+  if (!lock) return batch_error("project_busy", manifest_name);
+  if (pending_edit(root)) return batch_error("recovery_required", journal_name);
+  if (read_bytes(root / manifest_name, max_edit_bytes) != before_manifest)
+    return batch_error("revision_conflict", "/revision");
+  for (const auto& row : changes)
+    if (!resource_is(root, *row.resource, row.before))
+      return batch_error("project_content_conflict", row.resource->path);
+  if (!replace_file(root, root / journal_name, encoded))
+    return batch_error("recovery_required", journal_name);
+  for (const auto& row : changes)
+    if (!resource_is(root, *row.resource, row.before) ||
+        !replace_file(root, root / row.resource->path, row.after))
+      return batch_error("recovery_required", journal_name);
+  if (read_bytes(root / manifest_name, max_edit_bytes) != before_manifest ||
+      !replace_file(root, root / manifest_name, after_manifest) ||
+      !remove_reserved(root, journal_name))
+    return batch_error("recovery_required", journal_name);
+  result["revision"] = project.revision + 1;
+  result["change"] = change;
+  return result;
+}
+
+ProjectResult recover_batch(const fs::path& root, const Json& journal) {
+  const auto blocked = [] { return failure("recovery_required", journal_name); };
+  if (!has_fields(journal, {"version", "before_manifest", "after_manifest", "change"}) ||
+      !journal["before_manifest"].is_string() || !journal["after_manifest"].is_string())
+    return blocked();
+  const auto& before = journal["before_manifest"].get_ref<const std::string&>();
+  const auto& after = journal["after_manifest"].get_ref<const std::string&>();
+  if (before.size() > max_edit_bytes || after.size() > max_edit_bytes) return blocked();
+  auto manifest = parse_json(before);
+  const auto project = validate_manifest(root, manifest);
+  if (!project.project || project.project->revision == max_revision) return blocked();
+  manifest["revision"] = project.project->revision + 1;
+  if (manifest != parse_json(after)) return blocked();
+  const auto changes = read_batch(*project.project, journal["change"]);
+  if (!changes) return blocked();
+  const auto actual = read_bytes(root / manifest_name, max_edit_bytes);
+  const bool committed = actual == after;
+  if (!committed && actual != before) return blocked();
+  for (const auto& row : *changes) {
+    if (validate_replacement(*project.project, row).code != "ok" ||
+        (!resource_is(root, *row.resource, row.after) &&
+         (committed || !resource_is(root, *row.resource, row.before))))
+      return blocked();
+  }
+  if (!remove_reserved(root, staging_name)) return blocked();
+  if (!committed) {
+    for (const auto& row : *changes)
+      if (!resource_is(root, *row.resource, row.before) &&
+          (!resource_is(root, *row.resource, row.after) ||
+           !replace_file(root, root / row.resource->path, row.before)))
+        return blocked();
+  }
+  if (!remove_reserved(root, journal_name)) return blocked();
+  return open_project(root);
+}
+
 }  // namespace
+
+std::string merge_project_resources(const SceneVersion& current, const SceneVersion& base,
+                                    const SceneVersion& incoming,
+                                    const std::vector<std::string>& ids, bool apply) {
+  if (ids.empty() || ids.size() > max_batch_resources ||
+      std::set<std::string>(ids.begin(), ids.end()).size() != ids.size())
+    return batch_error("invalid_argument", "/input/resources").dump();
+  try {
+    Json error;
+    const auto local = read_snapshot(current, "", error);
+    if (!local) return error.dump();
+    const auto ancestor = read_snapshot(base, "base", error);
+    if (!ancestor) return error.dump();
+    const auto remote = read_snapshot(incoming, "other", error);
+    if (!remote) return error.dump();
+    if (ancestor->project.id != local->project.id)
+      return batch_error("different_project", "/input/base_directory").dump();
+    if (remote->project.id != local->project.id)
+      return batch_error("different_project", "/input/other_directory").dump();
+    std::vector<ResourceReplacement> changes;
+    auto conflicts = Json::array();
+    for (const auto& id : ids) {
+      const auto* target = resource_by_id(local->project, id);
+      const auto* original = resource_by_id(ancestor->project, id);
+      const auto* source = resource_by_id(remote->project, id);
+      if (!target || !original || !source || target->kind != original->kind ||
+          target->kind != source->kind)
+        return batch_error("invalid_resource", "/input/resources").dump();
+      const auto read = [](const SceneVersion& version, const Resource& resource) {
+        return project_path(version.directory, resource.path) == PathState::ok
+                   ? read_bytes(version.directory / resource.path, max_edit_bytes)
+                   : std::nullopt;
+      };
+      auto left = read(current, *target);
+      const auto common = read(base, *original);
+      auto right = read(incoming, *source);
+      if (!left || !common || !right)
+        return batch_error("unreadable_resource", target->path).dump();
+      if (*left == *right || *common == *right) continue;
+      if (target->kind == "scene" || target->kind == "data") {
+        const auto before = parse_json(*left);
+        const auto from = parse_json(*common);
+        const auto other = parse_json(*right);
+        if (!before.is_object() || !from.is_object() || !other.is_object())
+          return batch_error("invalid_content", target->path).dump();
+        auto merged = merge_scene_documents(from, before, other);
+        if (!merged.conflicts.empty()) {
+          for (const auto& field : merged.conflicts)
+            conflicts.push_back({{"resource", id}, {"path", field}});
+          continue;
+        }
+        if (merged.document == before) continue;
+        if (merged.document != other) *right = merged.document.dump(2) + "\n";
+      } else if (*left != *common) {
+        conflicts.push_back({{"resource", id}, {"path", "/"}});
+        continue;
+      }
+      changes.push_back({target, std::move(*left), std::move(*right)});
+    }
+    if (!snapshot_is(base, *ancestor))
+      return batch_error("revision_conflict", "/input/base_revision").dump();
+    if (!snapshot_is(incoming, *remote))
+      return batch_error("revision_conflict", "/input/other_revision").dump();
+    if (!snapshot_is(current, *local)) return batch_error("revision_conflict", "/revision").dump();
+    if (!conflicts.empty()) {
+      auto result = batch_error("merge_conflict", "/input/resources");
+      result["revision"] = local->project.revision;
+      result["conflicts"] = std::move(conflicts);
+      return result.dump();
+    }
+    return commit_batch(current.directory, local->project, local->manifest, changes, apply).dump();
+  } catch (const fs::filesystem_error&) {
+    return batch_error("io_error", manifest_name).dump();
+  } catch (const Json::exception&) {
+    return batch_error("invalid_content", "/input/resources").dump();
+  }
+}
+
+std::string restore_project_resources(const SceneVersion& current, std::string_view request,
+                                      bool apply) {
+  if (request.size() > max_manifest_bytes)
+    return batch_error("edit_too_large", "/input/change").dump();
+  try {
+    Json error;
+    const auto local = read_snapshot(current, "", error);
+    if (!local) return error.dump();
+    const auto changes = read_batch(local->project, parse_json(request));
+    if (!changes) return batch_error("invalid_argument", "/input/change").dump();
+    if (!snapshot_is(current, *local)) return batch_error("revision_conflict", "/revision").dump();
+    return commit_batch(current.directory, local->project, local->manifest, *changes, apply).dump();
+  } catch (const fs::filesystem_error&) {
+    return batch_error("io_error", manifest_name).dump();
+  } catch (const Json::exception&) {
+    return batch_error("invalid_argument", "/input/change").dump();
+  }
+}
 
 ProjectResult recover_project(const fs::path& root) {
   const auto blocked = [] { return failure("recovery_required", journal_name); };
   try {
     if (node(root, true) != PathState::ok || project_path(root, manifest_name) != PathState::ok)
       return blocked();
+    const ProjectWriteLock lock(root);
+    if (!lock) return failure("project_busy", journal_name);
     const auto journal_state = project_path(root, journal_name);
     if (journal_state == PathState::missing) {
       // Before journal publication, no resource or manifest can have been replaced.
@@ -1576,6 +1965,7 @@ ProjectResult recover_project(const fs::path& root) {
         !journal["version"].is_number_integer())
       return blocked();
     if (journal["version"] == 5 || journal["version"] == 6) return recover_import(root, journal);
+    if (journal["version"] == 7) return recover_batch(root, journal);
     const bool scene_edit = journal["version"] == 2;
     const bool entity_edit = journal["version"] == 3;
     const bool scene_restore = journal["version"] == 4;
@@ -1895,7 +2285,8 @@ Json build_operation_specs() {
        {"other_directory", "path to another checkout of the same project"},
        {"other_revision", "integer"}},
       diff_errors);
-  add("project.recover", "project recover DIRECTORY", true, path_input, {"recovery_required"});
+  add("project.recover", "project recover DIRECTORY", true, path_input,
+      {"recovery_required", "project_busy"});
   add("circuit.replay", "project request DIRECTORY", false,
       {{"directory", "path"},
        {"ticks", "integer 1 through 256"},
@@ -1926,7 +2317,8 @@ Json build_operation_specs() {
       false, import_input, import_errors);
   auto apply_import_input = import_input;
   apply_import_input["expected_digest"] = "optional digest from preview";
-  import_errors.push_back("source_changed");
+  for (const auto code : {"source_changed", "project_busy", "project_content_conflict"})
+    import_errors.push_back(code);
   add("resource.import.apply",
       "project import DIRECTORY SOURCE ID KIND PATH REVISION [--expect-digest DIGEST]", true,
       std::move(apply_import_input), import_errors);
@@ -2023,14 +2415,16 @@ Json build_operation_specs() {
     edit_errors.push_back(code);
   add("resource.field.preview", "project preview-field DIRECTORY RESOURCE FIELD REVISION VALUE",
       false, edit_input, edit_errors);
+  edit_errors.push_back("project_busy");
+  edit_errors.push_back("project_content_conflict");
   add("resource.field.set", "project set-field DIRECTORY RESOURCE FIELD REVISION VALUE", true,
       edit_input, edit_errors);
   add("scene.inspect", "project scene DIRECTORY REVISION", false,
       {{"directory", "path"}, {"expected_revision", "integer"}}, scene_errors);
   operations.back()["errors"].push_back("invalid_voxel_materials");
   operations.back()["errors"].push_back("invalid_voxel_world");
-  for (const auto* code :
-       {"invalid_entity", "invalid_field", "edit_too_large", "revision_exhausted"})
+  for (const auto* code : {"invalid_entity", "invalid_field", "edit_too_large",
+                           "revision_exhausted", "project_busy", "project_content_conflict"})
     scene_errors.push_back(code);
   const Json scene_input{{"directory", "path"},
                          {"entity_id", "entity identifier"},
@@ -2114,12 +2508,31 @@ Json build_operation_specs() {
        {"expected_revision", "integer"},
        {"change", "scene_change JSON with expected before bytes and replacement after bytes"}},
       scene_errors);
+  auto batch_errors = merge_errors;
+  for (const auto code : {"unreadable_resource", "invalid_png", "invalid_utf8", "invalid_content",
+                          "image_too_large", "invalid_expedition"})
+    batch_errors.push_back(code);
+  add("project.merge", "project request DIRECTORY", true,
+      {{"directory", "current checkout"},
+       {"expected_revision", "current revision"},
+       {"base_directory", "common ancestor checkout"},
+       {"base_revision", "ancestor revision"},
+       {"other_directory", "incoming checkout"},
+       {"other_revision", "incoming revision"},
+       {"resources", "array of 1 to 8 existing resource IDs"}},
+      batch_errors);
+  add("project.restore", "project request DIRECTORY", true,
+      {{"directory", "current checkout"},
+       {"expected_revision", "current revision"},
+       {"change", "project.merge change object with before and after hex bytes"}},
+      batch_errors);
   for (auto& operation : operations) {
     const auto& id = operation["id"].get_ref<const std::string&>();
     if (id == "resource.field.set" || id == "scene.field.set" || id == "scene.entity.apply" ||
         id == "resource.import.apply" || id == "scene.tile.set" || id == "scene.palette.set" ||
         id == "scene.character.set" || id == "scene.voxel.actuate" ||
-        id == "scene.voxel.dynamics" || id == "scene.merge") {
+        id == "scene.voxel.dynamics" || id == "scene.merge" || id == "project.merge" ||
+        id == "project.restore") {
       operation["modes"] = {"preview", "apply", "cancel"};
     } else if (id.ends_with(".preview")) {
       operation["modes"] = {"preview"};
