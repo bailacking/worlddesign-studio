@@ -86,15 +86,16 @@ int propagated_light(const World& world, Cell origin, int daylight, bool open_sk
   constexpr int width = range * 2 + 1;
   constexpr std::array neighbors{Cell{1, 0, 0},  Cell{-1, 0, 0}, Cell{0, 1, 0},
                                  Cell{0, -1, 0}, Cell{0, 0, 1},  Cell{0, 0, -1}};
-  const auto index = [x, z](int column, int row, int depth) {
-    return static_cast<std::size_t>((row * width + depth - z + range) * width + column - x + range);
+  const auto index = [](int column_offset, int row, int depth_offset) {
+    return static_cast<std::size_t>((row * width + depth_offset + range) * width + column_offset +
+                                    range);
   };
   struct Probe {
     Cell cell;
     int distance;
   };
   std::array<bool, width * width * World::height> visited{};
-  visited[index(x, y, z)] = true;
+  visited[index(0, y, 0)] = true;
   std::vector<Probe> pending{{origin, 0}};
   int light = open_sky ? daylight : 0;
   const int brightest = std::max(daylight, emitted_light(Block::vent));
@@ -112,7 +113,7 @@ int propagated_light(const World& world, Cell origin, int daylight, bool open_sk
           depth < -SeededTerrain::limit || depth >= SeededTerrain::limit || row < 0 ||
           row >= World::height)
         continue;
-      auto& seen = visited[index(column, row, depth)];
+      auto& seen = visited[index(column - x, row, depth - z)];
       if (seen) continue;
       seen = true;
       if (!solid(world.block(column, row, depth)))
