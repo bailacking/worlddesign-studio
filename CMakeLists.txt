@@ -232,6 +232,9 @@ if(WDS_BUILD_MODERN_STUDIO)
     RENAME nlohmann-json.txt COMPONENT Workbench)
   install(FILES third_party/lodepng/LICENSE DESTINATION licenses
     RENAME lodepng.txt COMPONENT Workbench)
+  install(DIRECTORY examples/scene-editing examples/voxel-workyard examples/w25-lab
+    DESTINATION examples COMPONENT Workbench
+    FILES_MATCHING PATTERN "*.json" PATTERN "*.txt" PATTERN "__pycache__" EXCLUDE)
   qt_generate_deploy_app_script(TARGET wds_studio_modern OUTPUT_SCRIPT studio_deploy
     NO_UNSUPPORTED_PLATFORM_ERROR ${studio_deploy_options})
   install(SCRIPT "${studio_deploy}" COMPONENT Workbench)
@@ -338,8 +341,7 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME workbench_install COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/workbench_install.py"
       --cmake "${CMAKE_COMMAND}" --build "${CMAKE_CURRENT_BINARY_DIR}"
-      --source "${CMAKE_CURRENT_SOURCE_DIR}/examples" --qt-config "${Qt6_DIR}"
-      --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>")
+      --qt-config "${Qt6_DIR}" --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>")
     set_tests_properties(workbench_install PROPERTIES TIMEOUT 170)
   endif()
   add_test(NAME expedition_replay COMMAND "${Python3_EXECUTABLE}"

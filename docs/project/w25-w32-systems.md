@@ -123,7 +123,7 @@ Windows 验收用安装后的工具分别导出两款候选的原始修订和修
 
 Ubuntu、macOS 和 Windows 的验收均使用安装后的 CLI 运行 `examples/w25-lab/verify.py`，覆盖同一套电路、方块工场及远征样例。三个平台以相同的 Qt 版本离屏打开二维、方块、方块工场和行为场景。Windows 另验独立发行包和远征存档槽。净机桌面发行和设备输入另行验收。
 
-`Workbench` 组件安装工作台、同目录 CLI 与 Qt 运行依赖。`workbench_install` 将安装目录改名后，从新目录启动，检查方块视口并用属性面板提交二维场景新修订。 [构建与安装](../engineering/development.md#运行现代工作台)
+`Workbench` 组件安装工作台、同目录 CLI、Qt 运行依赖与三个项目样例。`workbench_install` 将安装目录改名后，从新目录打开随包的块石工场和风园，并用属性面板在二维项目的副本中提交新修订。通过验收后，`Quality` 在 Windows、Ubuntu、macOS 各附一个试用安装包。 [构建与安装](../engineering/development.md#运行现代工作台)
 
 2026 年 11 月 23 日，GitHub Actions 使用 Chrome 从静态服务加载风园，完成种植、跨区往返、收获和烹饪。第 13 步背包含炉具与炖食各一份。回归还验证重新开始回到第 0 步，以及页面仅请求静态资源。引擎和项目内容一起编入 WebAssembly，可从验收任务下载静态目录。 [风园浏览器试玩](../../examples/web-garden/README.md) · [浏览器验收](https://github.com/bailacking/worlddesign-studio/actions/runs/45200343861/job/137781855557)
 
