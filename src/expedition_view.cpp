@@ -184,12 +184,12 @@ std::optional<Action> input(const Expedition& run, const Site* selected, std::st
 }  // namespace
 
 bool play_expedition(Expedition& run, const expedition::Icons& icons,
-                     std::filesystem::path save_file, bool smoke, ExpeditionSlots slots) {
+                     std::filesystem::path save_file, ExpeditionWindow window,
+                     ExpeditionSlots slots) {
   std::string status;
-  if (smoke) {
-    if (run.apply({Command::east}) != "ok") return false;
-    SetConfigFlags(FLAG_WINDOW_HIDDEN);
-  }
+  const bool render_smoke = window == ExpeditionWindow::render_smoke;
+  if (render_smoke && run.apply({Command::east}) != "ok") return false;
+  if (window != ExpeditionWindow::interactive) SetConfigFlags(FLAG_WINDOW_HIDDEN);
   InitWindow(1050, 630, run.rules().voxel ? "Copper Relay" : "Drift Naturalists");
   if (!IsWindowReady()) return false;
   SetExitKey(KEY_NULL);
@@ -386,7 +386,7 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
         }
       }
     }
-  } while (!smoke && !WindowShouldClose());
+  } while (!render_smoke && !WindowShouldClose());
   for (const auto& [id, texture] : textures) {
     (void)id;
     UnloadTexture(texture);

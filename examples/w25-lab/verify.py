@@ -808,12 +808,16 @@ def input_remapping(cli, probe, project, destination):
     print("Expedition binding overrides, reserved keys and collisions, old save resumes")
 
 
+def runtime_environment():
+    return {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
+
+
 def package(cli, project, root, capability, probe=None, *, graphics=True):
     root.mkdir()
     destination = root / "release"
     export = [cli, "project", "export", project, "0", "windows-x64", destination]
     subprocess.run(export, timeout=30, check=True, capture_output=True)
-    runtime = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
+    runtime = runtime_environment()
     modes = ("--check", "--expedition-smoke") if graphics else ("--check",)
     for mode in modes:
         subprocess.run([destination / "Play.exe", mode], cwd=root, env=runtime,
@@ -858,6 +862,7 @@ def package(cli, project, root, capability, probe=None, *, graphics=True):
     assert result["location"].endswith("/" + capability) and not rejected.exists()
     label = "with graphics smoke" if graphics else "headless"
     print(f"Standalone Windows validation {label}, older runtime rejection")
+    return destination
 
 
 def main():
@@ -868,7 +873,11 @@ def main():
     parser.add_argument("--runtime", type=Path)
     parser.add_argument("--no-graphics", action="store_true",
                         help="check packaging and saves without opening a graphics window")
+    parser.add_argument("--window-input", action="store_true",
+                        help="send keys to the remapped Windows game's hidden window")
     args = parser.parse_args()
+    if args.window_input and (os.name != "nt" or not args.runtime):
+        parser.error("--window-input requires Windows and --runtime")
     args.work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="w25-", dir=args.work) as folder:
         root = Path(folder)
@@ -917,8 +926,12 @@ def main():
                     graphics=False)
             package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
                     graphics=graphics)
-            package(runtime, remapped, root / "input-package", "expedition_input_format",
-                    graphics=graphics)
+            release = package(runtime, remapped, root / "input-package", "expedition_input_format",
+                              graphics=graphics)
+            if args.window_input:
+                from window_input import verify_window_input
+
+                verify_window_input(release, remapped, args.probe.resolve(), runtime_environment())
 
 
 if __name__ == "__main__":

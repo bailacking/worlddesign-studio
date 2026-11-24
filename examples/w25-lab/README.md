@@ -18,3 +18,5 @@ python examples/w25-lab/verify.py --cli build/native/wds_cli.exe --probe build/n
 ```
 
 CMake 回归名为 `living_systems`。可在支持的桌面构建中运行无界面用例。Windows 可用 `--runtime` 加跑发行包自检和图形启动。
+
+在具备 OpenGL 3.3 的 Windows 桌面上，可给上面的验证命令追加 `--no-graphics --window-input`。这会只为键位与存档回归创建一个隐藏游戏窗口。脚本经窗口消息完成种植、跨区往返、收获和烹饪，并验证两个存档槽独立推进以及坏槽拒绝和重开恢复。

@@ -16,8 +16,11 @@ struct ExpeditionSlots {
   std::function<std::string(int, expedition::Expedition&, std::filesystem::path&)> select;
 };
 
+enum class ExpeditionWindow { interactive, render_smoke, input_smoke };
+
 bool play_expedition(expedition::Expedition& run, const expedition::Icons& icons,
-                     std::filesystem::path save_file, bool smoke = false,
+                     std::filesystem::path save_file,
+                     ExpeditionWindow window = ExpeditionWindow::interactive,
                      ExpeditionSlots slots = {});
 
 bool play_scene(platform::SceneSession& session, const char* title);

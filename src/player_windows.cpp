@@ -68,17 +68,20 @@ class SaveSlots {
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
   using namespace wds::platform;
+  using wds::player::ExpeditionWindow;
   const auto option = std::wstring_view(arguments);
   const bool check_only = option == L"--check";
   const bool smoke = option == L"--expedition-smoke";
+  const bool input_smoke = option == L"--expedition-input-smoke";
   const bool check_save = option.starts_with(L"--check-save=");
   const bool check_switch = option == L"--check-slot-switch";
   const bool choose_save = option.starts_with(L"--slot=");
   const auto slot = check_save    ? expedition_slot(option, L"--check-save=")
                     : choose_save ? expedition_slot(option, L"--slot=")
                                   : 1;
-  const auto failure = [check_only, smoke, check_save, check_switch](std::string message) {
-    if (!check_only && !smoke && !check_save && !check_switch) {
+  const bool quiet = check_only || smoke || input_smoke || check_save || check_switch;
+  const auto failure = [quiet](std::string message) {
+    if (!quiet) {
       const int length = MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0);
       std::wstring text(static_cast<std::size_t>(length), L'\0');
       MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, text.data(), length);
@@ -104,11 +107,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
     return failure("Could not load expedition: " + journey.location);
   if (check_only) return 0;
   if (smoke)
-    return journey.expedition &&
-                   wds::player::play_expedition(*journey.expedition, journey.icons, {}, true)
+    return journey.expedition && wds::player::play_expedition(*journey.expedition, journey.icons,
+                                                              {}, ExpeditionWindow::render_smoke)
                ? 0
                : 1;
-  if ((check_save || choose_save || check_switch) && !journey.expedition)
+  if ((check_save || choose_save || check_switch || input_smoke) && !journey.expedition)
     return failure("This game has no expedition saves.");
   if (journey.expedition) {
     auto save = folder / save_name(slot);
@@ -131,8 +134,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
     const auto select = [&](int target, Expedition& expedition, fs::path& destination) {
       return slots.select(target, expedition, destination);
     };
+    const auto window = input_smoke ? ExpeditionWindow::input_smoke : ExpeditionWindow::interactive;
     const bool played =
-        wds::player::play_expedition(run, journey.icons, std::move(save), false, {slot, select});
+        wds::player::play_expedition(run, journey.icons, std::move(save), window, {slot, select});
     return played ? 0 : failure("Could not open the expedition graphics.");
   }
   const bool played = scene.voxel_scene ? wds::player::play_voxel(*scene.voxel_scene, nullptr)
