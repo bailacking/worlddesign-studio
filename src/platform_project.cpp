@@ -2537,7 +2537,9 @@ Json build_operation_specs() {
        {"z", "starting rail z"},
        {"dx", "east or west step, or zero"},
        {"dz", "south or north step, or zero"},
-       {"steps", "integer from 1 to 64"}},
+       {"steps", "integer from 1 to 64"},
+       {"directions",
+        "optional list of 1 to 64 east/west/south/north instead of dx, dz and steps"}},
       cart_errors);
   auto dynamics_errors = scene_errors;
   for (const auto code : {"unsupported_terrain", "edit_limit"}) dynamics_errors.push_back(code);

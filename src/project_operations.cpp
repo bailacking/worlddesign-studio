@@ -163,18 +163,37 @@ Json workyard(const fs::path& directory, std::uint64_t revision, std::string_vie
   if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
   auto& scene = *loaded.voxel_scene;
   const auto x = number<int>(input, "x"), z = number<int>(input, "z");
-  const auto steps = number<int>(input, "steps");
   if (id == "scene.voxel.cart") {
-    const auto route = scene.world.cart_route(
-        {x, number<int>(input, "y"), z}, number<int>(input, "dx"), number<int>(input, "dz"), steps);
+    const voxel::Cell start{x, number<int>(input, "y"), z};
+    voxel::CartRoute route;
+    const auto moves = input.find("directions");
+    if (moves != input.end()) {
+      if (input.contains("dx") || input.contains("dz") || input.contains("steps") ||
+          !moves->is_array() || moves->empty() || moves->size() > voxel::World::cart_max_steps)
+        return fail("invalid_argument", "/input/directions");
+      constexpr std::array<std::string_view, 4> names{"east", "west", "south", "north"};
+      constexpr std::array offsets{std::array{1, 0}, std::array{-1, 0}, std::array{0, 1},
+                                   std::array{0, -1}};
+      std::vector<std::array<int, 2>> directions;
+      for (const auto& move : *moves) {
+        if (!move.is_string()) return fail("invalid_argument", "/input/directions");
+        const auto found = std::ranges::find(names, move.get_ref<const std::string&>());
+        if (found == names.end()) return fail("invalid_argument", "/input/directions");
+        directions.push_back(offsets[static_cast<std::size_t>(found - names.begin())]);
+      }
+      route = scene.world.cart_route(start, directions);
+    } else {
+      route = scene.world.cart_route(start, number<int>(input, "dx"), number<int>(input, "dz"),
+                                     number<int>(input, "steps"));
+    }
     if (route.code != "ok") return fail(route.code, "/input");
     return {{"code", "ok"},
             {"revision", revision},
             {"positions", route.positions},
             {"blocked", route.blocked}};
   }
-  const auto change = scene.world.step_dynamics(x, z, number<int>(input, "width"),
-                                                number<int>(input, "depth"), steps);
+  const auto change = scene.world.step_dynamics(
+      x, z, number<int>(input, "width"), number<int>(input, "depth"), number<int>(input, "steps"));
   if (change.code != "ok") return fail(change.code, "/input");
   auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
   saved.scene_change.reset();

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "voxel_terrain.hpp"
@@ -80,6 +81,7 @@ class World {
   static constexpr int height = 12;
   static constexpr int depth = 24;
   static constexpr int push_capacity = 8;
+  static constexpr int cart_max_steps = 64;
   explicit World(Content content = {});
 
   [[nodiscard]] Block block(int x, int y, int z) const;
@@ -89,6 +91,7 @@ class World {
   [[nodiscard]] BlockShift shift_blocks(int x, int y, int z, int dx, int dz, int capacity);
   [[nodiscard]] bool cart_track(Cell position) const;
   [[nodiscard]] CartRoute cart_route(Cell start, int dx, int dz, int steps) const;
+  [[nodiscard]] CartRoute cart_route(Cell start, std::span<const std::array<int, 2>> steps) const;
   [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps);
   [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
                                                              std::uint32_t tick) const;

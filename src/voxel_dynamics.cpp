@@ -137,14 +137,24 @@ bool World::cart_track(Cell position) const {
 
 CartRoute World::cart_route(Cell start, int dx, int dz, int steps) const {
   if (!terrain_ || !terrain_->workyard()) return {"unsupported_terrain", {}, false};
-  if (std::ranges::find(directions, std::array{dx, dz}) == directions.end() || steps < 1 ||
-      steps > 64)
+  if (steps < 1 || steps > cart_max_steps) return {"invalid_argument", {}, false};
+  std::array<std::array<int, 2>, cart_max_steps> moves;
+  std::fill_n(moves.begin(), steps, std::array{dx, dz});
+  return cart_route(start, std::span(moves.data(), static_cast<std::size_t>(steps)));
+}
+
+CartRoute World::cart_route(Cell start, std::span<const std::array<int, 2>> steps) const {
+  if (!terrain_ || !terrain_->workyard()) return {"unsupported_terrain", {}, false};
+  if (steps.empty() || steps.size() > cart_max_steps ||
+      std::ranges::any_of(steps, [](const auto& step) {
+        return std::ranges::find(directions, step) == directions.end();
+      }))
     return {"invalid_argument", {}, false};
   if (!cart_track(start)) return {"invalid_track", {}, false};
 
   CartRoute route{"ok", {start}};
   auto [x, y, z] = start;
-  for (int step = 0; step < steps; ++step) {
+  for (const auto& [dx, dz] : steps) {
     x += dx;
     z += dz;
     if (!cart_track({x, y, z})) {

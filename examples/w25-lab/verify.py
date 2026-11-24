@@ -80,6 +80,15 @@ def workyard(cli, project, destination):
     reverse = request(cli, destination, "scene.voxel.cart", {**rail, "x": 18, "dx": -1, "steps": 3})
     assert reverse["positions"] == [[x, 2, 17] for x in (18, 17, 16, 15)]
     assert not reverse["blocked"]
+    junction = {"x": 15, "y": 2, "z": 17,
+                "directions": ["east", "east", "south", "south", "west", "west"]}
+    curved = request(cli, destination, "scene.voxel.cart", junction)
+    assert curved["positions"] == [
+        [15, 2, 17], [16, 2, 17], [17, 2, 17], [17, 2, 18], [17, 2, 19], [16, 2, 19],
+    ] and curved["blocked"]
+    request(cli, destination, "scene.voxel.cart", {**junction, "directions": ["northeast"]},
+            "invalid_argument")
+    request(cli, destination, "scene.voxel.cart", {**junction, "steps": 5}, "invalid_argument")
     request(cli, destination, "scene.voxel.cart", {**rail, "x": 19}, "invalid_track")
     request(cli, destination, "scene.voxel.cart", {**rail, "dz": 1}, "invalid_argument")
 
@@ -136,7 +145,19 @@ def workyard(cli, project, destination):
     assert after["terrain"]["profile"] == "workyard-v2"
     quenched = request(cli, destination, "scene.landscape.environment", sample, revision=3)
     assert quenched["light"] == 0 and not quenched["open_sky"]
-    print("Cart, fire and fluids cross chunks, lava meets water, replay and save agree")
+
+    stream = {"x": 15, "z": 9, "width": 1, "depth": 1, "steps": 1}
+    closed = dynamics(stream, revision=3, mode="preview")
+    assert closed["water_updates"] == 0 and "15 7 9 3" in world()
+    gate = {"x": 15, "y": 7, "z": 9, "dx": 1, "dz": 0, "trigger": "gate",
+            "circuit": {"ticks": 1, "nodes": {"gate": {"kind": "lever", "inputs": []}},
+                        "events": [{"tick": 0, "id": "gate", "level": 15}]}}
+    opened = request(cli, destination, "scene.voxel.actuate", gate, revision=3, mode="apply")
+    assert opened["revision"] == 4 and opened["to"] == [16, 7, 9]
+    water = dynamics(stream, revision=4, mode="apply")
+    assert water["revision"] == 5 and water["water_updates"] == 1
+    assert {"15 7 9 11", "16 7 9 3"} <= world()
+    print("Cart turns at a junction, water crosses the circuit gate, lava cools and persists")
 
 
 def action(command, target=None, ingredients=None):
