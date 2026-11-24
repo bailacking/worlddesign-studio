@@ -619,6 +619,7 @@ FieldResult change_scene(Json& json, const SceneEdit& edit) {
   const auto where = "/entities/" + std::to_string(index) + "/" + edit.field;
   if (field == scene_fields.end()) return {"invalid_field", where};
   const auto old = (*entity).*(field->member);
+  if (edit.expected_value && old != *edit.expected_value) return {"scene_content_conflict", where};
   if (old != edit.value) json["entities"][index][edit.field] = edit.value;
   return {"ok", where, edit.revision, old, edit.value, old != edit.value};
 }
@@ -2488,11 +2489,14 @@ Json build_operation_specs() {
                          {"entity_id", "entity identifier"},
                          {"field", "scene field"},
                          {"expected_revision", "integer"},
-                         {"value", "integer"}};
+                         {"value", "integer"},
+                         {"expected_value", "optional integer matching the current field value"}};
+  auto field_errors = scene_errors;
+  field_errors.push_back("scene_content_conflict");
   add("scene.field.preview", "project preview-scene-field DIRECTORY ENTITY FIELD REVISION VALUE",
-      false, scene_input, scene_errors);
+      false, scene_input, field_errors);
   add("scene.field.set", "project set-scene-field DIRECTORY ENTITY FIELD REVISION VALUE", true,
-      scene_input, scene_errors);
+      scene_input, field_errors);
   operations.back()["input"]["capture_change"] = "optional boolean";
   const Json entity_input{{"directory", "path"},
                           {"operation", "add | copy | remove | move"},

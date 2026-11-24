@@ -90,6 +90,7 @@ struct SceneEdit {
   std::string field;
   std::uint64_t revision;
   std::int64_t value;
+  std::optional<std::int64_t> expected_value = std::nullopt;
 };
 
 struct EntityEdit {

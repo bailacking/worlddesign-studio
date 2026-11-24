@@ -140,6 +140,30 @@ def test(cli, git_binary, root):
     assert (left / ART).read_bytes() == ours and (left / other_art).read_bytes() == theirs
     print("Two Git worktrees, semantic merge, both binary versions, relocation and scene recovery")
 
+    external = root / "external-edit"
+    shutil.copytree(baseline, external)
+    draft = {"entity_id": "drifter", "field": "vx", "value": 31, "expected_value": 8}
+    request("scene.field.set", draft, 0, "preview", project=external)
+    scene = read(external / SCENE)
+    drifter = next(row for row in scene["entities"] if row["id"] == "drifter")
+    drifter.update(vx=17, y=63)
+    put(external / SCENE, scene)
+    external_bytes = (external / SCENE).read_bytes()
+    manifest_bytes = (external / MANIFEST).read_bytes()
+    for mode in ("preview", "apply"):
+        rejected = request("scene.field.set", draft, 0, mode, "scene_content_conflict",
+                           project=external)
+        assert rejected["location"].endswith("/vx")
+    assert (external / SCENE).read_bytes() == external_bytes
+    assert (external / MANIFEST).read_bytes() == manifest_bytes
+    request("scene.field.set", {**draft, "expected_value": "17"}, 0, "preview",
+            "invalid_argument", project=external)
+    saved = request("scene.field.set", {**draft, "expected_value": 17}, 0, "apply",
+                    project=external)
+    assert saved["old_value"] == 17 and saved["revision"] == 1
+    drifter = next(row for row in read(external / SCENE)["entities"] if row["id"] == "drifter")
+    assert drifter["vx"] == 31 and drifter["y"] == 63
+
     local = root / "semantic-local"
     remote = root / "semantic-incoming"
     shutil.copytree(baseline, local)

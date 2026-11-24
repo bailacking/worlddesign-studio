@@ -187,6 +187,7 @@ class Workbench final : public QMainWindow {
     project_menu_ = menuBar()->addMenu(QString{});
     open_ = project_menu_->addAction(QString{}, this, &Workbench::chooseProject);
     open_->setShortcut(QKeySequence::Open);
+    reload_ = project_menu_->addAction(QString{}, this, [this] { openProject(root_); });
     create_ = project_menu_->addAction(QString{}, this, &Workbench::createProject);
     create_->setShortcut(QKeySequence::New);
     save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
@@ -388,6 +389,7 @@ class Workbench final : public QMainWindow {
     settings_menu_->setTitle(tr("Se&ttings"));
     settings_action_->setText(tr("Interface Language…"));
     open_->setText(tr("&Open Project…"));
+    reload_->setText(tr("Reload Project"));
     create_->setText(tr("&New Project…"));
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
@@ -1289,8 +1291,11 @@ class Workbench final : public QMainWindow {
     if (!dirty_ || busy_ || !revision_) return;
     const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
     const auto value = fields_[editing_]->value();
-    const QJsonObject input{
-        {"entity_id", selected_}, {"field", field}, {"value", value}, {"capture_change", true}};
+    const QJsonObject input{{"entity_id", selected_},
+                            {"field", field},
+                            {"value", value},
+                            {"expected_value", committed_[editing_]},
+                            {"capture_change", true}};
     setBusy(true);
     bridge_.request(root_, "scene.field.set", "preview", revision_, input,
                     [this, input](const QJsonObject& preview) {
@@ -1598,6 +1603,7 @@ class Workbench final : public QMainWindow {
     voxel_view_->setEnabled(!busy_);
     resources_->setEnabled(!busy_);
     open_->setEnabled(!busy_);
+    reload_->setEnabled(!busy_ && !root_.isEmpty());
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
     import_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
@@ -1675,6 +1681,7 @@ class Workbench final : public QMainWindow {
   QDockWidget* output_dock_;
   QAction* settings_action_;
   QAction* open_;
+  QAction* reload_;
   QAction* create_;
   QAction* close_;
   QAction* import_;

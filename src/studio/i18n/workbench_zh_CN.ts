@@ -527,6 +527,10 @@
             <translation>打开项目(&amp;O)…</translation>
         </message>
         <message>
+            <source>Reload Project</source>
+            <translation>重新载入项目</translation>
+        </message>
+        <message>
             <source>&amp;New Project…</source>
             <translation>新建项目(&amp;N)…</translation>
         </message>
