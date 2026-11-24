@@ -506,6 +506,26 @@ def processing(cli, project, destination):
     assert steps[10]["receipts"][-1]["cause"] == "tool_broken"
     assert steps[10]["encounters"]["sentinel"] == 1 and steps[11]["encounters"]["sentinel"] == 0
     assert steps[12]["tick"] == steps[11]["tick"] == 10
+
+    original = path.read_bytes()
+    extra = {"method": "craft", "output": {"item": "vial", "count": 1},
+             "ingredients": [{"item": "herb", "count": 1}]}
+    inventory["recipes"].update({
+        "a-press": {**extra, "station": "refine", "unlocks": "press"},
+        "cross-left": {**extra, "station": "right", "unlocks": "left"},
+        "cross-right": {**extra, "station": "left", "unlocks": "right"},
+    })
+
+    def progression():
+        path.write_text(json.dumps(document), encoding="utf-8")
+        return request(cli, destination, "expedition.recipes", {})
+
+    graph = progression()
+    assert graph["reachable_stations"] == ["hearth", "press", "refine"]
+    assert graph["unlocked_stations"] == [] and graph["station_unlocks"]["left"] == ["cross-left"]
+    inventory["recipes"]["unlock-left"] = {**extra, "unlocks": "left"}
+    assert progression()["reachable_stations"] == ["hearth", "left", "press", "refine", "right"]
+    path.write_bytes(original)
     print("Two processing stages and unlocks, durability across travel, breakage and fallback")
 
 
@@ -736,6 +756,7 @@ def play_modes(cli, probe, project, root):
             {"selector": "root", "count": 1}, {"selector": "#aromatic", "count": 1},
         ]
         assert recipes["station_unlocks"]["hearth"] == ["build-stove"]
+        assert recipes["reachable_stations"] == (["hearth"] if mode in ("build", "trial") else [])
         assert recipes["items"]["stew"]["recipes"] == ["garden-stew"]
         assert "aromatic" in recipes["items"]["herb"]["tags"]
         assert recipes["items"]["root"]["sources"] == [
@@ -917,7 +938,7 @@ def main():
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--runtime", type=Path)
     parser.add_argument("--no-graphics", action="store_true",
-                        help="check packaging and saves without opening a graphics window")
+                        help="skip the graphics smoke for each exported package")
     parser.add_argument("--window-input", action="store_true",
                         help="send keys to the remapped Windows game's hidden window")
     args = parser.parse_args()

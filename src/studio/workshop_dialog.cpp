@@ -235,13 +235,13 @@ void show_recipe_graph(QWidget* parent, const QJsonObject& graph) {
     const auto station = recipe.value("station").toString();
     if (!station.isEmpty()) {
       const bool unlocked = graph.value("unlocked_stations").toArray().contains(station);
-      auto* node = new QTreeWidgetItem(
-          tree,
-          QStringList{
-              (unlocked
-                   ? dependency_text(QT_TRANSLATE_NOOP("RecipeGraph", "Station %1 · Available"))
-                   : dependency_text(QT_TRANSLATE_NOOP("RecipeGraph", "Station %1 · Locked")))
-                  .arg(station)});
+      const auto paths = graph.value("reachable_stations");
+      const bool reachable = !paths.isArray() || paths.toArray().contains(station);
+      const auto label = unlocked ? QT_TRANSLATE_NOOP("RecipeGraph", "Station %1 · Available")
+                         : reachable
+                             ? QT_TRANSLATE_NOOP("RecipeGraph", "Station %1 · Locked")
+                             : QT_TRANSLATE_NOOP("RecipeGraph", "Station %1 · No unlock path");
+      auto* node = new QTreeWidgetItem(tree, QStringList{dependency_text(label).arg(station)});
       recipe_links(node, unlocks.value(station).toArray());
     }
     const auto granted = recipe.value("unlocks").toString();

@@ -629,21 +629,25 @@ std::string recipe_graph(const Expedition& expedition) {
     }
   auto recipes = Json::object();
   auto stations = Json::object();
+  std::vector<const items::Recipe*> unlock_routes;
+  const bool can_craft = expedition.allows(Command::craft);
+  const bool can_cook = expedition.allows(Command::cook);
   const auto ingredient = [](const items::Ingredient& part) {
     return Json{{"selector", part.selector}, {"count", part.count}};
   };
   for (const auto& [id, recipe] : catalog.recipes) {
     auto& entry = recipes[id];
+    const bool allowed = recipe.priority ? can_cook : can_craft;
     entry = {{"method", recipe.method},
              {"output", {{"id", recipe.output.id}, {"count", recipe.output.count}}},
-             {"command_allowed",
-              expedition.allows(recipe.method == "cook" ? Command::cook : Command::craft)}};
+             {"command_allowed", allowed}};
     products[recipe.output.id]["recipes"].push_back(id);
     if (recipe.priority) entry["priority"] = *recipe.priority;
     if (!recipe.requires_station.empty()) entry["station"] = recipe.requires_station;
     if (!recipe.unlocks.empty()) {
       entry["unlocks"] = recipe.unlocks;
       stations[recipe.unlocks].push_back(id);
+      if (allowed || can_craft) unlock_routes.push_back(&recipe);
     }
     if (recipe.pattern.empty()) {
       entry["ingredients"] = Json::array();
@@ -654,11 +658,20 @@ std::string recipe_graph(const Expedition& expedition) {
         entry["pattern"].push_back(part ? ingredient(*part) : Json(nullptr));
     }
   }
+  auto reachable = workshop.state().unlocked;
+  std::size_t previous_count;
+  do {
+    previous_count = reachable.size();
+    for (const auto* recipe : unlock_routes)
+      if (recipe->requires_station.empty() || reachable.contains(recipe->requires_station))
+        reachable.insert(recipe->unlocks);
+  } while (reachable.size() != previous_count);
   return Json{{"code", "ok"},
               {"mode", play_mode_name(expedition.mode())},
               {"items", std::move(products)},
               {"recipes", std::move(recipes)},
               {"station_unlocks", std::move(stations)},
+              {"reachable_stations", std::move(reachable)},
               {"unlocked_stations", workshop.state().unlocked}}
       .dump();
 }

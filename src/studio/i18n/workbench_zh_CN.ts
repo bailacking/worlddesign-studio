@@ -1081,6 +1081,10 @@
             <translation>工位 %1 · 未解锁</translation>
         </message>
         <message>
+            <source>Station %1 · No unlock path</source>
+            <translation>工位 %1 · 当前模式无解锁路径</translation>
+        </message>
+        <message>
             <source>Unlocks %1</source>
             <translation>解锁 %1</translation>
         </message>
