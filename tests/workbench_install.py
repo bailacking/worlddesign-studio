@@ -64,6 +64,8 @@ def verify(args):
             )
         subprocess.run([studio, "--smoke-recipes", examples / "w25-lab"], cwd=root,
                        env=environment, check=True, timeout=30)
+        subprocess.run([studio, "--smoke-weather", examples / "voxel-workyard"], cwd=root,
+                       env=environment, check=True, timeout=30)
         subprocess.run([studio, "--smoke-edit", project], cwd=root, env=environment,
                        check=True, timeout=30)
         result = subprocess.run(

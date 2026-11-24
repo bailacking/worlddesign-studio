@@ -160,4 +160,20 @@ int main() {
   check(climber.move_cart(graded, 1, 0) && climber.cart == Cell{17, 2, 17} && climber.feet.y == 2 &&
             climber.grounded,
         "rider descends with the cart and stays grounded");
+
+  World rain_yard;
+  rain_yard.use_seed(53207, TerrainProfile::graded_workyard);
+  std::istringstream exposed_flame("wds-voxel-workyard-v3 53207\n14 8 14 12\n15 8 14 6\n");
+  check(rain_yard.read(exposed_flame), "weather yard reads the outdoor fire");
+  const Player observer;
+  SkyPreview preview;
+  auto dry_yard = rain_yard;
+  check(dry_yard.light_field(observer.feet, preview.tick()).weather() == "clear" &&
+            observer.advance_workyard(dry_yard, preview.tick()).ignited == 1,
+        "the initial clear preview permits fire to spread outdoors");
+  ++preview.day;
+  check(rain_yard.light_field(observer.feet, preview.tick()).weather() == "rain" &&
+            observer.advance_workyard(rain_yard, preview.tick()).weather_extinguished == 1 &&
+            rain_yard.block(15, 8, 14) == Block::timber,
+        "the next day's preview extinguishes the same outdoor fire before it spreads");
 }

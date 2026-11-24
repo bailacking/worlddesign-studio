@@ -367,6 +367,8 @@ bool play_voxel(VoxelScene& scene, const char* title) {
     voxel::Player player;
     const auto& terrain = scene.world.terrain();
     const bool workyard = terrain && terrain->workyard();
+    voxel::SkyPreview sky;
+    std::optional<voxel::LightField> light;
     WorkshopPanel workshop;
     SceneInput blocked;
     bool needs_frame = true;
@@ -396,10 +398,18 @@ bool play_voxel(VoxelScene& scene, const char* title) {
                                       2 * std::numbers::pi);
           player.pitch =
               std::clamp(player.pitch + axis(SceneKey::up, SceneKey::down) * dt * 1.4, -1.3, 1.3);
+          if (terrain && (IsKeyPressed(KEY_L) || IsKeyPressed(KEY_P))) {
+            if (IsKeyPressed(KEY_L)) sky.night = !sky.night;
+            if (IsKeyPressed(KEY_P)) ++sky.day;
+            light.reset();
+            needs_frame = true;
+          }
           if (workyard) {
             if (IsKeyPressed(KEY_E)) player.toggle_cart(scene.world);
-            if (IsKeyPressed(KEY_F))
-              needs_frame = player.advance_workyard(scene.world).changed || needs_frame;
+            if (IsKeyPressed(KEY_F) && player.advance_workyard(scene.world, sky.tick()).changed) {
+              light.reset();
+              needs_frame = true;
+            }
           }
           if (player.cart) {
             const int dx = IsKeyPressed(KEY_D) - IsKeyPressed(KEY_A);
@@ -410,10 +420,13 @@ bool play_voxel(VoxelScene& scene, const char* title) {
               player.step(scene.world, axis(key("W"), key("S")), axis(key("D"), key("A")),
                           step == 0 && IsKeyPressed(KEY_SPACE), dt * .5);
           }
-          if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
-            needs_frame = scene.edit(player.feet, player.eye(), player.view(),
-                                     IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) ||
-                          needs_frame;
+          if ((IsMouseButtonPressed(MOUSE_BUTTON_LEFT) ||
+               IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) &&
+              scene.edit(player.feet, player.eye(), player.view(),
+                         IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+            light.reset();
+            needs_frame = true;
+          }
           needs_frame = needs_frame || before.yaw != player.yaw || before.pitch != player.pitch ||
                         before.feet.x != player.feet.x || before.feet.y != player.feet.y ||
                         before.feet.z != player.feet.z;
@@ -422,11 +435,14 @@ bool play_voxel(VoxelScene& scene, const char* title) {
       had_focus = focused;
       if (needs_frame) {
         const auto camera = player.camera();
+        if (terrain && (!light || !light->covers(player.feet)))
+          light = scene.world.light_field(player.feet, sky.tick());
+        const auto* lighting = light ? &*light : nullptr;
         for (int y = 0; y < frame_height; ++y) {
           for (int x = 0; x < frame_width; ++x) {
             const auto ray =
                 camera.ray(1.5 * (x + .5) / frame_width - .75, .47 - .94 * (y + .5) / frame_height);
-            const auto rgb = voxel::pixel(scene.world, camera.eye, ray);
+            const auto rgb = voxel::pixel(scene.world, camera.eye, ray, lighting);
             pixels[static_cast<std::size_t>(y * frame_width + x)] = {
                 static_cast<unsigned char>((rgb >> 16) & 255),
                 static_cast<unsigned char>((rgb >> 8) & 255), static_cast<unsigned char>(rgb & 255),
@@ -443,7 +459,12 @@ bool play_voxel(VoxelScene& scene, const char* title) {
                      {0, 0, static_cast<float>(width), static_cast<float>(height)}, {}, 0, WHITE);
       DrawLine(width / 2 - 8, height / 2, width / 2 + 8, height / 2, WHITE);
       DrawLine(width / 2, height / 2 - 8, width / 2, height / 2 + 8, WHITE);
-      DrawRectangle(0, height - 34, width, 34, {16, 21, 31, 200});
+      const int hint_height = light ? 48 : 34;
+      DrawRectangle(0, height - hint_height, width, hint_height, {16, 21, 31, 200});
+      if (light) {
+        const auto weather = std::string(light->weather()) + "   L daylight   P next day";
+        DrawText(weather.c_str(), 12, height - 43, 13, RAYWHITE);
+      }
       DrawText(workyard ? (player.cart ? "A west   D east   W north   S south   E exit"
                                        : "WASD move   E board cart   F advance water and fire")
                         : "WASD move   Arrows look   Space jump",

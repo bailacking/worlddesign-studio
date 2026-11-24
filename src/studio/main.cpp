@@ -15,6 +15,7 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QJsonDocument>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -1763,6 +1764,26 @@ void run_recipe_smoke(QApplication& app, Workbench& window, const QString& proje
   window.openProject(project);
 }
 
+bool weather_preview_ok(QWidget* viewport) {
+  if (!viewport || !viewport->isVisible()) return false;
+  const auto frame = [viewport] {
+    const auto image = viewport->grab().toImage();
+    return image.copy(image.width() / 4, image.height() / 5, image.width() / 2, image.height() / 2);
+  };
+  const auto press = [viewport](Qt::Key key) {
+    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+    QApplication::sendEvent(viewport, &event);
+  };
+  const auto clear = frame();
+  press(Qt::Key_P);
+  const auto rain = frame();
+  press(Qt::Key_L);
+  const auto night = frame();
+  press(Qt::Key_L);
+  return !clear.isNull() && !rain.isNull() && !night.isNull() && clear != rain && rain != night &&
+         frame() == rain;
+}
+
 }  // namespace
 }  // namespace wds::studio
 
@@ -1775,9 +1796,10 @@ int main(int argc, char** argv) {
       (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
   const bool edit_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-edit";
   const bool recipe_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-recipes";
+  const bool weather_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-weather";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName(smoke || edit_smoke || recipe_smoke ? "WDS Studio Smoke"
-                                                                           : "WDS Studio");
+  QCoreApplication::setApplicationName(
+      smoke || edit_smoke || recipe_smoke || weather_smoke ? "WDS Studio Smoke" : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
@@ -1803,6 +1825,13 @@ int main(int argc, char** argv) {
     window.openProject(arguments.at(2));
   } else if (recipe_smoke) {
     wds::studio::run_recipe_smoke(app, window, arguments.at(2));
+  } else if (weather_smoke) {
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      auto* viewport = window.findChild<QWidget*>("voxelViewport");
+      app.exit(ready && wds::studio::weather_preview_ok(viewport) ? 0 : 1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
   } else if (arguments.size() == 2) {
     window.openProject(arguments.at(1));
   }

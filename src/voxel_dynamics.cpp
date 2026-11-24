@@ -264,10 +264,12 @@ bool Player::move_cart(const World& world, int dx, int dz) {
   return true;
 }
 
-DynamicsStep Player::advance_workyard(World& world) const {
+DynamicsStep Player::advance_workyard(World& world, std::uint32_t tick) const {
   const auto x = static_cast<int>(std::floor(feet.x)) - 8;
   const auto z = static_cast<int>(std::floor(feet.z)) - 8;
-  const auto change = world.step_dynamics(x, z, 17, 17, 1);
+  const auto weather =
+      world.terrain() && world.terrain()->graded_workyard() ? std::optional{tick} : std::nullopt;
+  const auto change = world.step_dynamics(x, z, 17, 17, 1, weather);
   world.stream(feet);
   return change;
 }

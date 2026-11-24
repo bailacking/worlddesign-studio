@@ -49,7 +49,10 @@ void VoxelViewport::setWorld(platform::VoxelScene* scene, bool reset_camera) {
   scene_ = scene;
   world_ = scene ? &scene->world : nullptr;
   light_.reset();
-  if (reset_camera) player_ = {};
+  if (reset_camera) {
+    player_ = {};
+    sky_ = {};
+  }
   if (player_.cart && (!world_ || !world_->cart_track(*player_.cart))) player_.cart.reset();
   if (world_) {
     world_->stream(player_.feet);
@@ -91,9 +94,12 @@ void VoxelViewport::keyPressEvent(QKeyEvent* event) {
     QWidget::keyPressEvent(event);
     return;
   }
-  if (world_ && world_->terrain() && event->key() == Qt::Key_L) {
+  if (world_ && world_->terrain() && (event->key() == Qt::Key_L || event->key() == Qt::Key_P)) {
     if (!event->isAutoRepeat()) {
-      night_ = !night_;
+      if (event->key() == Qt::Key_L)
+        sky_.night = !sky_.night;
+      else
+        ++sky_.day;
       light_.reset();
       invalidateFrame();
     }
@@ -106,7 +112,7 @@ void VoxelViewport::keyPressEvent(QKeyEvent* event) {
       if (event->key() == Qt::Key_E) {
         if (player_.toggle_cart(*world_)) invalidateFrame();
       } else {
-        if (player_.advance_workyard(*world_).changed) {
+        if (player_.advance_workyard(*world_, sky_.tick()).changed) {
           light_.reset();
           invalidateFrame();
           changed_();
@@ -199,7 +205,7 @@ void VoxelViewport::paintEvent(QPaintEvent*) {
     frame_ = QImage(samples, rows, QImage::Format_RGB32);
     const double aspect = static_cast<double>(width()) / height();
     if (world_->terrain() && (!light_ || !light_->covers(player_.feet)))
-      light_ = world_->light_field(player_.feet, night_ ? 230 : 90);
+      light_ = world_->light_field(player_.feet, sky_.tick());
     const auto* light = light_ ? &*light_ : nullptr;
     for (int y = 0; y < rows; ++y) {
       auto* row = reinterpret_cast<QRgb*>(frame_.scanLine(y));
@@ -230,9 +236,15 @@ void VoxelViewport::paintEvent(QPaintEvent*) {
   const auto bounds = rect().adjusted(12, 12, -12, -12);
   auto hint = QCoreApplication::translate(
       "VoxelViewport", "WASD move · Arrows look · Space jump · Left break · Right place");
-  if (world_->terrain())
+  if (light_) {
+    const auto weather = light_->weather();
+    const auto* label = weather == "storm"  ? QT_TRANSLATE_NOOP("VoxelViewport", "Storm")
+                        : weather == "rain" ? QT_TRANSLATE_NOOP("VoxelViewport", "Rain")
+                                            : QT_TRANSLATE_NOOP("VoxelViewport", "Clear");
     hint += QStringLiteral("\n") +
-            QCoreApplication::translate("VoxelViewport", "L switch daylight preview");
+            QCoreApplication::translate("VoxelViewport", "%1 · L daylight · P next day")
+                .arg(QCoreApplication::translate("VoxelViewport", label));
+  }
   if (world_->terrain() && world_->terrain()->workyard())
     hint +=
         QStringLiteral("\n") +

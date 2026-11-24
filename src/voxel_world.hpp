@@ -37,12 +37,21 @@ struct EnvironmentSample {
   int light;
 };
 
+struct SkyPreview {
+  static constexpr std::uint32_t day_ticks = 240;
+  std::uint32_t day = 0;
+  bool night = false;
+
+  [[nodiscard]] std::uint32_t tick() const { return day * day_ticks + (night ? 230U : 90U); }
+};
+
 using Cell = std::array<int, 3>;
 
 class LightField {
  public:
   [[nodiscard]] bool covers(Vec3 center) const;
   [[nodiscard]] int at(Cell cell) const;
+  [[nodiscard]] std::string_view weather() const { return weather_; }
 
  private:
   friend class World;
@@ -51,6 +60,7 @@ class LightField {
   int left_ = 0;
   int front_ = 0;
   int daylight_ = 0;
+  std::string_view weather_;
   std::vector<std::uint8_t> cells_;
 };
 
@@ -129,7 +139,7 @@ struct Player {
             int jump_speed = 6);
   bool toggle_cart(const World& world);
   bool move_cart(const World& world, int dx, int dz);
-  [[nodiscard]] DynamicsStep advance_workyard(World& world) const;
+  [[nodiscard]] DynamicsStep advance_workyard(World& world, std::uint32_t tick) const;
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
   [[nodiscard]] Camera camera() const;

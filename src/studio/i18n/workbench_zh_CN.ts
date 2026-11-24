@@ -1014,8 +1014,20 @@
     <context>
         <name>VoxelViewport</name>
         <message>
-            <source>L switch daylight preview</source>
-            <translation>L 切换昼夜照明预览</translation>
+            <source>%1 · L daylight · P next day</source>
+            <translation>%1 · L 切换昼夜 · P 预览下一天</translation>
+        </message>
+        <message>
+            <source>Clear</source>
+            <translation>晴天</translation>
+        </message>
+        <message>
+            <source>Rain</source>
+            <translation>雨天</translation>
+        </message>
+        <message>
+            <source>Storm</source>
+            <translation>暴雨</translation>
         </message>
         <message>
             <source>3D voxel viewport</source>

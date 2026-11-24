@@ -92,7 +92,7 @@ SkyLight sky_light(std::uint32_t seed, std::uint32_t tick) {
   constexpr std::array attenuation{0, 2, 4};
   const auto roll = coordinate_hash(seed, static_cast<int>(tick / 120), 0) % 10U;
   const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
-  const int time = static_cast<int>(tick % 240);
+  const int time = static_cast<int>(tick % SkyPreview::day_ticks);
   const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, max_light - 1) + 1;
   return {weather_names[weather], std::max(1, daytime - attenuation[weather])};
 }
@@ -383,7 +383,9 @@ LightField World::light_field(Vec3 center, std::uint32_t tick) const {
   constexpr int span = LightField::span;
   field.left_ = (chunk_coordinate(center.x) - SeededTerrain::radius) * SeededTerrain::chunk_size;
   field.front_ = (chunk_coordinate(center.z) - SeededTerrain::radius) * SeededTerrain::chunk_size;
-  field.daylight_ = sky_light(terrain_->seed(), tick).level;
+  const auto sky = sky_light(terrain_->seed(), tick);
+  field.daylight_ = sky.level;
+  field.weather_ = sky.weather;
   field.cells_.resize(span * span * height);
   std::array<std::vector<Cell>, max_light + 1> frontiers;
   for (int z = 0; z < span; ++z)
