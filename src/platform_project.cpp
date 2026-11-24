@@ -1853,11 +1853,28 @@ ProjectResult recover_batch(const fs::path& root, const Json& journal) {
 
 std::string merge_project_resources(const SceneVersion& current, const SceneVersion& base,
                                     const SceneVersion& incoming,
-                                    const std::vector<std::string>& ids, bool apply) {
+                                    const std::vector<std::string>& ids, bool apply,
+                                    std::string_view resolutions, std::string_view token) {
   if (ids.empty() || ids.size() > max_batch_resources ||
       std::set<std::string>(ids.begin(), ids.end()).size() != ids.size())
     return batch_error("invalid_argument", "/input/resources").dump();
   try {
+    std::map<std::string, MergeChoices, std::less<>> choices;
+    const auto selected = parse_json(resolutions);
+    if (!selected.is_array() || selected.size() > 512)
+      return batch_error("invalid_argument", "/input/resolutions").dump();
+    for (const auto& row : selected) {
+      if (!has_fields(row, {"resource", "path", "side"}) || !row["resource"].is_string() ||
+          !row["path"].is_string() || (row["side"] != "current" && row["side"] != "incoming"))
+        return batch_error("invalid_argument", "/input/resolutions").dump();
+      const auto& id = row["resource"].get_ref<const std::string&>();
+      const auto& field = row["path"].get_ref<const std::string&>();
+      if (std::ranges::find(ids, id) == ids.end() || !field.starts_with('/') ||
+          !choices[id]
+               .emplace(field, row["side"] == "current" ? MergeSide::current : MergeSide::incoming)
+               .second)
+        return batch_error("invalid_argument", "/input/resolutions").dump();
+    }
     Json error;
     const auto local = read_snapshot(current, "", error);
     if (!local) return error.dump();
@@ -1871,6 +1888,9 @@ std::string merge_project_resources(const SceneVersion& current, const SceneVers
       return batch_error("different_project", "/input/other_directory").dump();
     std::vector<ResourceReplacement> changes;
     auto conflicts = Json::array();
+    auto versions = Json::array();
+    Json fingerprints = {digest64(local->manifest), digest64(ancestor->manifest),
+                         digest64(remote->manifest)};
     for (const auto& id : ids) {
       const auto* target = resource_by_id(local->project, id);
       const auto* original = resource_by_id(ancestor->project, id);
@@ -1888,24 +1908,40 @@ std::string merge_project_resources(const SceneVersion& current, const SceneVers
       auto right = read(incoming, *source);
       if (!left || !common || !right)
         return batch_error("unreadable_resource", target->path).dump();
+      fingerprints.push_back({id, digest64(*left), digest64(*common), digest64(*right)});
       if (*left == *right || *common == *right) continue;
+      auto& preferences = choices[id];
       if (target->kind == "scene" || target->kind == "data") {
         const auto before = parse_json(*left);
         const auto from = parse_json(*common);
         const auto other = parse_json(*right);
         if (!before.is_object() || !from.is_object() || !other.is_object())
           return batch_error("invalid_content", target->path).dump();
-        auto merged = merge_scene_documents(from, before, other);
+        auto merged = merge_scene_documents(from, before, other, &preferences);
         if (!merged.conflicts.empty()) {
           for (const auto& field : merged.conflicts)
             conflicts.push_back({{"resource", id}, {"path", field}});
+          for (auto& version : merged.versions) {
+            version["resource"] = id;
+            versions.push_back(std::move(version));
+          }
           continue;
         }
         if (merged.document == before) continue;
         if (merged.document != other) *right = merged.document.dump(2) + "\n";
       } else if (*left != *common) {
-        conflicts.push_back({{"resource", id}, {"path", "/"}});
-        continue;
+        const auto chosen = preferences.find("/");
+        if (chosen == preferences.end()) {
+          conflicts.push_back({{"resource", id}, {"path", "/"}});
+          versions.push_back({{"resource", id},
+                              {"path", "/"},
+                              {"current", digest64(*left)},
+                              {"incoming", digest64(*right)}});
+          continue;
+        }
+        const auto side = chosen->second;
+        preferences.erase(chosen);
+        if (side == MergeSide::current) continue;
       }
       changes.push_back({target, std::move(*left), std::move(*right)});
     }
@@ -1914,13 +1950,25 @@ std::string merge_project_resources(const SceneVersion& current, const SceneVers
     if (!snapshot_is(incoming, *remote))
       return batch_error("revision_conflict", "/input/other_revision").dump();
     if (!snapshot_is(current, *local)) return batch_error("revision_conflict", "/revision").dump();
+    const auto fingerprint = digest64(fingerprints.dump());
+    if ((!selected.empty() || !token.empty()) && token != fingerprint)
+      return batch_error("merge_input_changed", "/input/merge_token").dump();
+    for (const auto& [id, pending] : choices)
+      if (!pending.empty())
+        return batch_error("invalid_resolution", id + pending.begin()->first).dump();
     if (!conflicts.empty()) {
       auto result = batch_error("merge_conflict", "/input/resources");
       result["revision"] = local->project.revision;
       result["conflicts"] = std::move(conflicts);
+      result["versions"] = std::move(versions);
+      result["merge_token"] = fingerprint;
       return result.dump();
     }
-    return commit_batch(current.directory, local->project, local->manifest, changes, apply).dump();
+    auto committed =
+        commit_batch(current.directory, local->project, local->manifest, changes, apply);
+    if (committed["code"] == "ok" && !apply && !selected.empty())
+      committed["merge_token"] = fingerprint;
+    return committed.dump();
   } catch (const fs::filesystem_error&) {
     return batch_error("io_error", manifest_name).dump();
   } catch (const Json::exception&) {
@@ -2530,8 +2578,12 @@ Json build_operation_specs() {
        {"base_revision", "ancestor revision"},
        {"other_directory", "incoming checkout"},
        {"other_revision", "incoming revision"},
-       {"resources", "array of 1 to 8 existing resource IDs"}},
+       {"resources", "array of 1 to 8 existing resource IDs"},
+       {"resolutions", "optional array of resource, conflict path and current/incoming choice"},
+       {"merge_token", "snapshot token returned by the conflict preview"}},
       batch_errors);
+  operations.back()["errors"].push_back("merge_input_changed");
+  operations.back()["errors"].push_back("invalid_resolution");
   add("project.restore", "project request DIRECTORY", true,
       {{"directory", "current checkout"},
        {"expected_revision", "current revision"},

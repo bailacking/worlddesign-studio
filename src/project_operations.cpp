@@ -209,11 +209,14 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     if (resources == input.end() || !resources->is_array() || resources->size() > 8 ||
         !std::ranges::all_of(*resources, &Json::is_string))
       return fail("invalid_argument", "/input/resources");
+    const auto resolutions = input.find("resolutions");
+    const auto token = input.contains("merge_token") ? text(input, "merge_token") : "";
     return Json::parse(merge_project_resources(
         {directory, revision},
         {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
         {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")},
-        resources->get<std::vector<std::string>>(), apply));
+        resources->get<std::vector<std::string>>(), apply,
+        resolutions == input.end() ? "[]" : resolutions->dump(), token));
   }
   if (id == "project.restore") {
     const auto change = input.find("change");

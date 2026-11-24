@@ -12,6 +12,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QHeaderView>
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
@@ -30,6 +31,7 @@
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QTreeWidget>
@@ -99,6 +101,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resolution"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_runtime_dependency"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
@@ -107,6 +110,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_materials"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_world"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "merge_input_changed"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
@@ -600,7 +604,7 @@ class Workbench final : public QMainWindow {
     bridge_.request(root_, "project.merge", "preview", revision_, input,
                     [this, input](const QJsonObject& result) {
                       if (result.value("code") == "merge_conflict") {
-                        showMergeConflicts(input, result.value("conflicts").toArray());
+                        showMergeConflicts(input, result);
                         return;
                       }
                       if (result.value("code") != "ok") {
@@ -639,9 +643,72 @@ class Workbench final : public QMainWindow {
                     });
   }
 
-  void showMergeConflicts(QJsonObject input, const QJsonArray& conflicts) {
+  bool chooseMergeVersions(QJsonObject& input, const QJsonObject& result) {
+    const auto versions = result.value("versions").toArray();
+    if (versions.isEmpty() || !result.value("merge_token").isString()) return false;
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Choose Conflict Versions"));
+    dialog.resize(830, 380);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(tr("Choose a version for each conflict."), &dialog));
+    auto* table = new QTableWidget(static_cast<int>(versions.size()), 5, &dialog);
+    table->setHorizontalHeaderLabels(
+        {tr("Resource"), tr("Field"), tr("Current Version"), tr("Incoming Version"), tr("Choice")});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->verticalHeader()->hide();
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    layout->addWidget(table);
+    auto* actions = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto* preview = actions->button(QDialogButtonBox::Ok);
+    preview->setText(tr("Preview Merge"));
+    preview->setEnabled(false);
+    std::vector<QComboBox*> choices;
+    int row = 0;
+    for (const auto entry : versions) {
+      const auto version = entry.toObject();
+      const auto summary = [this, &version](const char* side) {
+        const auto value = version.value(side);
+        return value.isNull() ? tr("Deleted") : value.toString();
+      };
+      const QStringList columns{version.value("resource").toString(),
+                                version.value("path").toString(), summary("current"),
+                                summary("incoming")};
+      for (int column = 0; column < columns.size(); ++column) {
+        auto* cell = new QTableWidgetItem(columns.at(column));
+        cell->setToolTip(cell->text().toHtmlEscaped());
+        table->setItem(row, column, cell);
+      }
+      auto* select = new QComboBox(table);
+      select->addItem(tr("Select version"));
+      select->addItem(tr("Current Version"), "current");
+      select->addItem(tr("Incoming Version"), "incoming");
+      choices.push_back(select);
+      table->setCellWidget(row++, 4, select);
+      connect(select, &QComboBox::currentIndexChanged, &dialog, [&choices, preview] {
+        preview->setEnabled(std::ranges::all_of(
+            choices, [](const QComboBox* choice) { return choice->currentIndex() > 0; }));
+      });
+    }
+    connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(actions);
+    if (dialog.exec() != QDialog::Accepted) return false;
+    auto resolutions = input.value("resolutions").toArray();
+    for (qsizetype index = 0; index < versions.size(); ++index) {
+      const auto version = versions.at(index).toObject();
+      resolutions.append(QJsonObject{
+          {"resource", version.value("resource")},
+          {"path", version.value("path")},
+          {"side", choices[static_cast<std::size_t>(index)]->currentData().toString()}});
+    }
+    input["resolutions"] = resolutions;
+    input["merge_token"] = result.value("merge_token");
+    return true;
+  }
+
+  void showMergeConflicts(QJsonObject input, const QJsonObject& result) {
     QStringList ids, paths;
-    for (const auto conflict : conflicts) {
+    for (const auto conflict : result.value("conflicts").toArray()) {
       const auto entry = conflict.toObject();
       const auto id = entry.value("resource").toString();
       ids.append(id);
@@ -654,13 +721,18 @@ class Workbench final : public QMainWindow {
                         tr("The listed resources contain changes on both sides."),
                         QMessageBox::Cancel, this);
     summary.setDetailedText(paths.join(u'\n'));
+    auto* choose = summary.addButton(tr("Choose Conflict Versions"), QMessageBox::ActionRole);
     QPushButton* continue_merge = nullptr;
     if (!selected.isEmpty())
       continue_merge =
           summary.addButton(tr("Keep Conflicting Resources and Continue"), QMessageBox::AcceptRole);
     summary.exec();
-    if (continue_merge && summary.clickedButton() == continue_merge) {
+    if (summary.clickedButton() == choose && chooseMergeVersions(input, result)) {
+      previewResourceMerge(input);
+    } else if (continue_merge && summary.clickedButton() == continue_merge) {
       input["resources"] = selected;
+      input.remove("resolutions");
+      input.remove("merge_token");
       previewResourceMerge(input);
     } else {
       cancelPreview("project.merge", input);

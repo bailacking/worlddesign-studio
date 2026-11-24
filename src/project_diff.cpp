@@ -113,8 +113,21 @@ std::vector<std::string> ids(const Json& entities) {
   return result;
 }
 
+Json preview_value(const Json* value) {
+  if (!value) return nullptr;
+  auto summary = value->dump(-1, ' ', true);
+  constexpr std::size_t summary_limit = 256;
+  if (summary.size() > summary_limit) {
+    summary.resize(summary_limit);
+    summary += "...";
+  }
+  return summary;
+}
+
 struct Merge {
+  MergeChoices* choices;
   std::vector<std::string> conflicts;
+  Json versions = Json::array();
 
   std::optional<Json> value(const Json* base, const Json* current, const Json* incoming,
                             const std::string& path) {
@@ -141,7 +154,18 @@ struct Merge {
         }
       }
     }
-    conflicts.push_back(path.empty() ? "/" : path);
+    const std::string key = path.empty() ? "/" : path;
+    if (choices) {
+      if (const auto choice = choices->find(key); choice != choices->end()) {
+        const auto* selected = choice->second == MergeSide::current ? current : incoming;
+        choices->erase(choice);
+        return selected ? std::optional(*selected) : std::nullopt;
+      }
+    }
+    conflicts.push_back(key);
+    versions.push_back({{"path", key},
+                        {"current", preview_value(current)},
+                        {"incoming", preview_value(incoming)}});
     return {};
   }
 
@@ -214,10 +238,12 @@ void describe_content(const Resource& before, const Resource& after, const std::
 
 }  // namespace
 
-SceneMerge merge_scene_documents(const Json& base, const Json& current, const Json& incoming) {
-  Merge merge;
+SceneMerge merge_scene_documents(const Json& base, const Json& current, const Json& incoming,
+                                 MergeChoices* choices) {
+  Merge merge{choices, {}};
   auto document = merge.value(&base, &current, &incoming, "");
-  return {std::move(document).value_or(Json{}), std::move(merge.conflicts)};
+  return {std::move(document).value_or(Json{}), std::move(merge.conflicts),
+          std::move(merge.versions)};
 }
 
 Json compare_projects(const fs::path& before, std::uint64_t before_revision, const fs::path& after,

@@ -267,15 +267,44 @@ def test(cli, git_binary, root):
 
     next(row for row in remote_scene["entities"] if row["id"] == "drifter")["vx"] = 15
     put(renamed, remote_scene)
+    local_scene = read(local / SCENE)
+    next(row for row in local_scene["entities"] if row["id"] == "drifter")["y"] = 55
+    put(local / SCENE, local_scene)
     shutil.copyfile(png / "hazard.png", local / ART)
     conflicted = state(local)
     reply = request("project.merge", batch, 5, "apply", "merge_conflict", project=local)
     assert reply["conflicts"] == [
         {"resource": "field", "path": "/entities/drifter/vx"},
+        {"resource": "field", "path": "/entities/drifter/y"},
         {"resource": "art", "path": "/"},
     ]
+    assert {k: reply["versions"][0][k] for k in ("current", "incoming")} == {
+        "current": "12", "incoming": "15",
+    }
     assert state(local) == conflicted
-    print("Atomic scene, data and PNG merge, inverse receipt, recovery, and parallel writers")
+    resolutions = [
+        {**conflict, "side": "incoming" if index == 0 else "current"}
+        for index, conflict in enumerate(reply["conflicts"])
+    ]
+    planned = {**batch, "resolutions": resolutions, "merge_token": reply["merge_token"]}
+    preview = request("project.merge", planned, 5, "preview", project=local)
+    assert preview["resources"] == ["field", "tuning"] and state(local) == conflicted
+    rules_bytes = (remote / rules_path).read_bytes()
+    put(remote / rules_path, {**read(remote / rules_path), "steps_to_converge": 27})
+    request("project.merge", planned, 5, "apply", "merge_input_changed", project=local)
+    assert state(local) == conflicted
+    (remote / rules_path).write_bytes(rules_bytes)
+    wrong_path = {"resource": "field", "path": "/entities/removed", "side": "current"}
+    request("project.merge", {**planned, "resolutions": [wrong_path]}, 5, "apply",
+            "invalid_resolution", project=local)
+    assert state(local) == conflicted
+    resolved = request("project.merge", planned, 5, "apply", project=local)
+    assert resolved["revision"] == 6
+    drifter = next(row for row in read(local / SCENE)["entities"] if row["id"] == "drifter")
+    assert drifter["vx"] == 15 and drifter["y"] == 55
+    assert (local / ART).read_bytes() == conflicted[ART]
+    assert read(local / rules_path)["steps_to_converge"] == 24
+    print("Atomic batch recovery, parallel writers and snapshot-bound field resolutions")
 
 
 if __name__ == "__main__":

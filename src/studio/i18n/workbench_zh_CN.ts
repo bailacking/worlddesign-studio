@@ -99,6 +99,14 @@
             <translation>操作参数无效</translation>
         </message>
         <message>
+            <source>invalid_resolution</source>
+            <translation>选取的字段不再是有效冲突</translation>
+        </message>
+        <message>
+            <source>merge_input_changed</source>
+            <translation>预览后工程内容已变更，请重新预览合并</translation>
+        </message>
+        <message>
             <source>invalid_entity</source>
             <translation>找不到指定实体</translation>
         </message>
@@ -811,6 +819,42 @@
         <message>
             <source>Keep Conflicting Resources and Continue</source>
             <translation>保留本地冲突资源并继续</translation>
+        </message>
+        <message>
+            <source>Choose Conflict Versions</source>
+            <translation>选择冲突版本</translation>
+        </message>
+        <message>
+            <source>Choose a version for each conflict.</source>
+            <translation>请为每处冲突选择要保留的版本。</translation>
+        </message>
+        <message>
+            <source>Resource</source>
+            <translation>资源</translation>
+        </message>
+        <message>
+            <source>Field</source>
+            <translation>字段</translation>
+        </message>
+        <message>
+            <source>Current Version</source>
+            <translation>本地版本</translation>
+        </message>
+        <message>
+            <source>Incoming Version</source>
+            <translation>来件版本</translation>
+        </message>
+        <message>
+            <source>Choice</source>
+            <translation>保留版本</translation>
+        </message>
+        <message>
+            <source>Select version</source>
+            <translation>请选择</translation>
+        </message>
+        <message>
+            <source>Deleted</source>
+            <translation>已删除</translation>
         </message>
         <message>
             <source>Export for Windows x64…</source>
