@@ -16,6 +16,9 @@
 namespace {
 
 constexpr auto capability = "example.palette";
+constexpr auto palette_file = "palette" WDS_PALETTE_MODULE_SUFFIX;
+constexpr uint32_t default_rgb = 0x526980;
+namespace fs = std::filesystem;
 
 class Library {
  public:
@@ -75,9 +78,49 @@ uint32_t preview(const std::filesystem::path& path) {
   if (host.start() != wds::HostState::ready) throw std::runtime_error("plugin_start_failed");
   const auto* provider = std::any_cast<MapRgb>(host.capability(capability));
   if (!provider) throw std::runtime_error("provider_missing");
-  const auto rgb = (*provider)(0x526980);
+  const auto rgb = (*provider)(default_rgb);
   if (rgb > 0xffffffu) throw std::runtime_error("invalid_color");
   return rgb;
+}
+
+fs::path installed_palette(const fs::path& root) {
+  if (!fs::is_directory(fs::symlink_status(root))) throw std::runtime_error("invalid_store");
+  const auto palette = root / palette_file;
+  const auto status = fs::symlink_status(palette);
+  if (fs::exists(status) && !fs::is_regular_file(status)) throw std::runtime_error("invalid_store");
+  return palette;
+}
+
+class PendingPalette {
+ public:
+  explicit PendingPalette(const fs::path& root)
+      : staging_(root / ".palette-staging"), library_(staging_ / palette_file) {
+    if (!fs::create_directory(staging_)) throw std::runtime_error("store_busy");
+  }
+  PendingPalette(const PendingPalette&) = delete;
+  PendingPalette& operator=(const PendingPalette&) = delete;
+
+  ~PendingPalette() {
+    std::error_code ignored;
+    fs::remove(library_, ignored);
+    fs::remove(staging_, ignored);
+  }
+
+  const fs::path& library() const { return library_; }
+
+ private:
+  fs::path staging_;
+  fs::path library_;
+};
+
+void install_palette(const fs::path& root, const fs::path& source) {
+  if (!fs::is_regular_file(fs::symlink_status(source))) throw std::runtime_error("invalid_library");
+  fs::create_directory(root);
+  const auto installed = installed_palette(root);
+  const PendingPalette pending(root);
+  fs::copy_file(source, pending.library());
+  (void)preview(pending.library());
+  fs::rename(pending.library(), installed);
 }
 
 }  // namespace
@@ -87,8 +130,27 @@ int wmain(int argc, wchar_t** argv) {
 #else
 int main(int argc, char** argv) {
 #endif
-  if (argc != 4) return 1;
   try {
+    if (argc >= 3) {
+      const fs::path command(argv[1]);
+      const fs::path directory(argv[2]);
+      if (argc == 4 && command == "--install") {
+        install_palette(directory, argv[3]);
+        return 0;
+      }
+      if (argc == 3 && command == "--preview") {
+        const auto palette = installed_palette(directory);
+        std::cout << std::hex << (fs::exists(palette) ? preview(palette) : default_rgb) << '\n';
+        return 0;
+      }
+      if (argc == 3 && command == "--remove") {
+        const auto palette = installed_palette(directory);
+        const PendingPalette pending(directory);
+        fs::remove(palette);
+        return 0;
+      }
+    }
+    if (argc != 4) return 1;
     if (preview(argv[1]) != 0x5269c0 || preview(argv[2]) != 0x526960) return 2;
     try {
       (void)preview(argv[3]);

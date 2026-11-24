@@ -666,7 +666,7 @@ class Workbench final : public QMainWindow {
     int row = 0;
     for (const auto entry : versions) {
       const auto version = entry.toObject();
-      const auto summary = [this, &version](const char* side) {
+      const auto summary = [&version](const char* side) {
         const auto value = version.value(side);
         return value.isNull() ? tr("Deleted") : value.toString();
       };

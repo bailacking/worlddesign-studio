@@ -110,7 +110,7 @@ install(FILES src/plugin_host.hpp src/plugin_host.cpp
   DESTINATION share/wds/plugin-sdk/src COMPONENT PluginSDK)
 install(FILES examples/plugin-sdk/CMakeLists.txt examples/plugin-sdk/demo.cpp
   examples/plugin-sdk/palette_abi.h examples/plugin-sdk/native_palette.cpp
-  examples/plugin-sdk/native_demo.cpp
+  examples/plugin-sdk/native_demo.cpp examples/plugin-sdk/verify_store.cmake
   examples/plugin-sdk/README.md LICENSE DESTINATION share/wds/plugin-sdk COMPONENT PluginSDK)
 
 if(WIN32)
