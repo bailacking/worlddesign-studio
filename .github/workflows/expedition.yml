@@ -61,7 +61,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        include:
+          - os: ubuntu-24.04
+            seed: 16431
+          - os: macos-15
+            seed: 4294967295
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -80,6 +84,16 @@ jobs:
         run: >
           python examples/w25-lab/verify.py --cli build/installed/bin/wds_cli
           --probe build/dev/wds_expedition_save --work build/installed-replay
+      - name: Verify both expedition content catalogs with installed tools
+        run: >
+          python examples/w24-expeditions/verify.py --cli build/installed/bin/wds_cli
+          --probe build/dev/wds_expedition_save --work build/candidate-verify
+          --seed ${{ matrix.seed }} --report build/candidate-verify/coverage.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wds-candidate-coverage-${{ matrix.os }}
+          path: build/candidate-verify/coverage.json
+          if-no-files-found: error
       - run: cmake --install build/dev --component PluginSDK --prefix build/installed
       - run: cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo
       - run: cmake --build build/sdk-demo --parallel 2
