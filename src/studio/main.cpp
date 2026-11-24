@@ -32,6 +32,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -217,6 +218,8 @@ class Workbench final : public QMainWindow {
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     workshop_ = scene_menu_->addAction(QString{}, this, &Workbench::openWorkshop);
     workshop_->setShortcut(QKeySequence(Qt::Key_F6));
+    recipes_ = scene_menu_->addAction(QString{}, this, &Workbench::openRecipeGraph);
+    recipes_->setObjectName("expeditionRecipes");
     palette_ = scene_menu_->addAction(QString{}, this, &Workbench::changePalette);
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
@@ -399,6 +402,7 @@ class Workbench final : public QMainWindow {
     move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
     workshop_->setText(QCoreApplication::translate("WorkshopDialog", "Items and recipes"));
+    recipes_->setText(tr("Crafting Dependencies…"));
     palette_->setText(tr("Voxel Palette…"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
@@ -886,6 +890,7 @@ class Workbench final : public QMainWindow {
     field_schema_ = {};
     entities_ = {};
     resources_model_ = {};
+    has_expedition_ = false;
     resources_->setImportRecords({});
     resources_->setPreview({});
     selected_.clear();
@@ -910,6 +915,12 @@ class Workbench final : public QMainWindow {
           project_id_ = result.value("project_id").toString();
           revision_ = result.value("revision").toInteger();
           resources_model_ = result.value("resources").toArray();
+          const auto entry = result.value("entry_scene");
+          has_expedition_ = std::ranges::any_of(resources_model_, [entry](const auto& row) {
+            const auto resource = row.toObject();
+            return resource.value("id") == entry &&
+                   resource.value("refs").toArray().contains("expedition");
+          });
           resources_->setResources(resources_model_);
           const auto imports = result.value("imports").toObject();
           const bool ok = imports.value("code") == "ok";
@@ -1362,6 +1373,19 @@ class Workbench final : public QMainWindow {
     }
   }
 
+  void openRecipeGraph() {
+    if (!recipes_->isEnabled()) return;
+    setBusy(true);
+    bridge_.request(root_, "expedition.recipes", "read", revision_, {},
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") == "ok")
+                        show_recipe_graph(this, result);
+                      else
+                        report({nullptr, {}, result});
+                      setBusy(false);
+                    });
+  }
+
   void play() {
     if (busy_ || playing() || hasDraft() || !revision_) return;
     if (voxel_scene_) {
@@ -1533,6 +1557,7 @@ class Workbench final : public QMainWindow {
     palette_->setEnabled(voxel_scene_ && !busy_ && !playing() && !hasDraft() && revision_);
     workshop_->setEnabled(
         !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
+    recipes_->setEnabled(!busy_ && !playing() && revision_ && has_expedition_);
     project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
     const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
     revision_label_->setText(revision + (hasDraft() ? tr(" · Unsaved") : QString{}));
@@ -1594,6 +1619,7 @@ class Workbench final : public QMainWindow {
   QAction* play_;
   QAction* stop_;
   QAction* workshop_;
+  QAction* recipes_;
   QAction* palette_;
   QAction* add_entity_;
   QAction* copy_entity_;
@@ -1617,8 +1643,46 @@ class Workbench final : public QMainWindow {
   bool dirty_ = false;
   bool voxel_dirty_ = false;
   bool scene_ready_ = false;
+  bool has_expedition_ = false;
   std::size_t editing_ = 0;
 };
+
+void run_recipe_smoke(QApplication& app, Workbench& window, const QString& project) {
+  QObject::connect(&window, &Workbench::inspectionFinished, &app, [&](bool ready) {
+    auto* action = window.findChild<QAction*>("expeditionRecipes");
+    if (!ready || !action || !action->isEnabled()) {
+      app.exit(1);
+      return;
+    }
+    auto* watch = new QTimer(&app);
+    QObject::connect(watch, &QTimer::timeout, &app, [&, watch] {
+      auto* dialog = window.findChild<QDialog*>("recipeGraph");
+      if (!dialog || !dialog->isVisible()) return;
+      watch->stop();
+      auto* selection = dialog->findChild<QComboBox*>("dependencyRecipe");
+      auto* tree = dialog->findChild<QTreeWidget*>("dependencyTree");
+      bool checked = false;
+      if (selection && tree && selection->findText("garden-stew") >= 0) {
+        selection->setCurrentText("garden-stew");
+        constexpr auto matching = Qt::MatchContains | Qt::MatchRecursive;
+        const auto links = tree->findItems("build-stove", matching);
+        checked = !tree->findItems("#aromatic", matching).empty() &&
+                  !tree->findItems("wind-garden / plot", matching).empty() && links.size() == 1;
+        if (checked) {
+          tree->itemActivated(links.front(), 0);
+          checked = selection->currentText() == "build-stove" &&
+                    !tree->findItems("hearth", matching).empty();
+        }
+      }
+      dialog->reject();
+      app.exit(checked ? 0 : 1);
+    });
+    watch->start(10);
+    action->trigger();
+  });
+  QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+  window.openProject(project);
+}
 
 }  // namespace
 }  // namespace wds::studio
@@ -1631,8 +1695,10 @@ int main(int argc, char** argv) {
   const bool smoke =
       (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
   const bool edit_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-edit";
+  const bool recipe_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-recipes";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName(smoke || edit_smoke ? "WDS Studio Smoke" : "WDS Studio");
+  QCoreApplication::setApplicationName(smoke || edit_smoke || recipe_smoke ? "WDS Studio Smoke"
+                                                                           : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
@@ -1656,6 +1722,8 @@ int main(int argc, char** argv) {
     });
     QTimer::singleShot(20000, &app, [&] { app.exit(2); });
     window.openProject(arguments.at(2));
+  } else if (recipe_smoke) {
+    wds::studio::run_recipe_smoke(app, window, arguments.at(2));
   } else if (arguments.size() == 2) {
     window.openProject(arguments.at(1));
   }

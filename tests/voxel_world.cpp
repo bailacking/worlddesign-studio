@@ -114,6 +114,21 @@ int main() {
   thermal.use_seed(53207, TerrainProfile::thermal_workyard);
   std::istringstream vents("wds-voxel-workyard-v2 53207\n15 8 10 13\n16 7 10 8\n");
   check(thermal.read(vents), "thermal workyard reads both sources");
+  const auto night = thermal.light_field({15, 8, 10}, 230);
+  for (const auto& sample : {Cell{15, 8, 10}, Cell{16, 8, 10}, Cell{17, 8, 10}, Cell{16, 7, 10}}) {
+    const auto queried = thermal.environment(sample[0], sample[1], sample[2], 230);
+    check(queried && night.at(sample) == queried->light,
+          "cached rendering light agrees with single-cell environment queries");
+  }
+  check(night.at({15, 8, 10}) == 13 && night.at({16, 8, 10}) == 12 && night.at({17, 8, 10}) == 11 &&
+            night.covers({15.8, 8, 10}) && !night.covers({16, 8, 10}),
+        "light crosses chunk boundaries and the field tracks the camera chunk");
+  const auto day = thermal.light_field({15, 8, 10}, 90);
+  const auto ground_ray = Vec3{0, -1, 0};
+  const auto ground_eye = Vec3{15.5, 6.0, 17.5};
+  check(
+      pixel(thermal, ground_eye, ground_ray, &day) > pixel(thermal, ground_eye, ground_ray, &night),
+      "the renderer shades terrain using the selected daylight");
   const auto falling = thermal.step_dynamics(15, 10, 2, 1, 1);
   check(falling.lava_updates == 1 && falling.water_updates == 1 && falling.solidified == 0 &&
             thermal.block(15, 7, 10) == Block::lava_high,
@@ -122,6 +137,8 @@ int main() {
   check(cooled.solidified == 1 && thermal.block(15, 7, 10) == Block::basalt &&
             thermal.block(16, 7, 10) == Block::spring && solid(Block::basalt),
         "adjacent water cools lava into solid basalt across the chunk boundary");
+  check(thermal.light_field({15, 8, 10}, 230).at({15, 7, 10}) == 0,
+        "rebuilding after a world edit stops light at the cooled solid cell");
   std::stringstream heat_save;
   thermal.write(heat_save);
   World reloaded_thermal;

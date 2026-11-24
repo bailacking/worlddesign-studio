@@ -411,6 +411,10 @@
             <translation>方块配色…</translation>
         </message>
         <message>
+            <source>Crafting Dependencies…</source>
+            <translation>制作依赖…</translation>
+        </message>
+        <message>
             <source>Voxel Palette</source>
             <translation>方块配色</translation>
         </message>
@@ -962,6 +966,10 @@
     <context>
         <name>VoxelViewport</name>
         <message>
+            <source>L switch daylight preview</source>
+            <translation>L 切换昼夜照明预览</translation>
+        </message>
+        <message>
             <source>3D voxel viewport</source>
             <translation>三维方块视口</translation>
         </message>
@@ -984,6 +992,65 @@
         <message>
             <source>E board cart near rail · F advance water and fire</source>
             <translation>靠近轨道按 E 登车 · 按 F 推进一轮水火</translation>
+        </message>
+    </context>
+    <context>
+        <name>RecipeGraph</name>
+        <message>
+            <source>Crafting Dependencies</source>
+            <translation>制作依赖</translation>
+        </message>
+        <message>
+            <source>Recipe</source>
+            <translation>配方</translation>
+        </message>
+        <message>
+            <source>Recipe %1</source>
+            <translation>配方 %1</translation>
+        </message>
+        <message>
+            <source>No recipes in this project.</source>
+            <translation>此项目没有配方。</translation>
+        </message>
+        <message>
+            <source>%1 · %2 permitted</source>
+            <translation>%1 · 允许 %2 命令</translation>
+        </message>
+        <message>
+            <source>%1 · %2 disabled</source>
+            <translation>%1 · 禁用 %2 命令</translation>
+        </message>
+        <message>
+            <source>Produces %1 × %2</source>
+            <translation>产出 %1 × %2</translation>
+        </message>
+        <message>
+            <source>Station %1 · Available</source>
+            <translation>工位 %1 · 已解锁</translation>
+        </message>
+        <message>
+            <source>Station %1 · Locked</source>
+            <translation>工位 %1 · 未解锁</translation>
+        </message>
+        <message>
+            <source>Unlocks %1</source>
+            <translation>解锁 %1</translation>
+        </message>
+        <message>
+            <source>Pattern slots</source>
+            <translation>配方格位</translation>
+        </message>
+        <message>
+            <source>Ingredients</source>
+            <translation>原料</translation>
+        </message>
+        <message>
+            <source>Empty slot</source>
+            <translation>空格</translation>
+        </message>
+        <message>
+            <source> · Requires %1</source>
+            <translation> · 需要 %1</translation>
         </message>
     </context>
     <context>

@@ -48,6 +48,7 @@ VoxelViewport::VoxelViewport(std::function<void()> changed, QWidget* parent)
 void VoxelViewport::setWorld(platform::VoxelScene* scene, bool reset_camera) {
   scene_ = scene;
   world_ = scene ? &scene->world : nullptr;
+  light_.reset();
   if (reset_camera) player_ = {};
   if (player_.cart && (!world_ || !world_->cart_track(*player_.cart))) player_.cart.reset();
   if (world_) {
@@ -90,6 +91,15 @@ void VoxelViewport::keyPressEvent(QKeyEvent* event) {
     QWidget::keyPressEvent(event);
     return;
   }
+  if (world_ && world_->terrain() && event->key() == Qt::Key_L) {
+    if (!event->isAutoRepeat()) {
+      night_ = !night_;
+      light_.reset();
+      invalidateFrame();
+    }
+    event->accept();
+    return;
+  }
   if (world_ && world_->terrain() && world_->terrain()->workyard() &&
       (event->key() == Qt::Key_E || event->key() == Qt::Key_F)) {
     if (!event->isAutoRepeat()) {
@@ -97,6 +107,7 @@ void VoxelViewport::keyPressEvent(QKeyEvent* event) {
         if (player_.toggle_cart(*world_)) invalidateFrame();
       } else {
         if (player_.advance_workyard(*world_).changed) {
+          light_.reset();
           invalidateFrame();
           changed_();
         }
@@ -141,6 +152,7 @@ void VoxelViewport::mousePressEvent(QMouseEvent* event) {
   setFocus(Qt::MouseFocusReason);
   if (scene_->edit(player_.feet, player_.eye(), player_.view(),
                    event->button() == Qt::RightButton)) {
+    light_.reset();
     invalidateFrame();
     changed_();
   }
@@ -186,12 +198,15 @@ void VoxelViewport::paintEvent(QPaintEvent*) {
         static_cast<int>(std::lround(samples * static_cast<double>(height()) / width())), 90, 200);
     frame_ = QImage(samples, rows, QImage::Format_RGB32);
     const double aspect = static_cast<double>(width()) / height();
+    if (world_->terrain() && (!light_ || !light_->covers(player_.feet)))
+      light_ = world_->light_field(player_.feet, night_ ? 230 : 90);
+    const auto* light = light_ ? &*light_ : nullptr;
     for (int y = 0; y < rows; ++y) {
       auto* row = reinterpret_cast<QRgb*>(frame_.scanLine(y));
       const double v = (1 - 2 * (y + 0.5) / rows) * 0.58;
       for (int x = 0; x < samples; ++x) {
         const double h = (2 * (x + 0.5) / samples - 1) * 0.58 * aspect;
-        row[x] = 0xff000000U | voxel::pixel(*world_, camera.eye, camera.ray(h, v));
+        row[x] = 0xff000000U | voxel::pixel(*world_, camera.eye, camera.ray(h, v), light);
       }
     }
   }
@@ -215,6 +230,9 @@ void VoxelViewport::paintEvent(QPaintEvent*) {
   const auto bounds = rect().adjusted(12, 12, -12, -12);
   auto hint = QCoreApplication::translate(
       "VoxelViewport", "WASD move · Arrows look · Space jump · Left break · Right place");
+  if (world_->terrain())
+    hint += QStringLiteral("\n") +
+            QCoreApplication::translate("VoxelViewport", "L switch daylight preview");
   if (world_->terrain() && world_->terrain()->workyard())
     hint +=
         QStringLiteral("\n") +

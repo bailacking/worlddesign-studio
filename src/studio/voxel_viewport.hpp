@@ -36,6 +36,8 @@ class VoxelViewport final : public QWidget {
   std::function<void()> changed_;
   platform::VoxelScene* scene_ = nullptr;
   voxel::World* world_ = nullptr;
+  std::optional<voxel::LightField> light_;
+  bool night_ = false;
   voxel::Player player_;
   QImage frame_;
   QSize rendered_size_;

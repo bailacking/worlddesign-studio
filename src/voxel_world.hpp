@@ -38,6 +38,21 @@ struct EnvironmentSample {
 
 using Cell = std::array<int, 3>;
 
+class LightField {
+ public:
+  [[nodiscard]] bool covers(Vec3 center) const;
+  [[nodiscard]] int at(Cell cell) const;
+
+ private:
+  friend class World;
+  static constexpr int span = (SeededTerrain::radius * 2 + 1) * SeededTerrain::chunk_size;
+  static std::size_t index(int x, int y, int z);
+  int left_ = 0;
+  int front_ = 0;
+  int daylight_ = 0;
+  std::vector<std::uint8_t> cells_;
+};
+
 struct BlockShift {
   std::string_view code;
   int moved = 0;
@@ -77,6 +92,7 @@ class World {
   [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps);
   [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
                                                              std::uint32_t tick) const;
+  [[nodiscard]] LightField light_field(Vec3 center, std::uint32_t tick) const;
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }
@@ -111,6 +127,7 @@ struct Player {
   [[nodiscard]] Camera camera() const;
 };
 
-[[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction);
+[[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction,
+                                  const LightField* light = nullptr);
 
 }  // namespace wds::voxel

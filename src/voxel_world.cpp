@@ -16,6 +16,9 @@ namespace {
 constexpr double radius = 0.27;
 constexpr double body_height = 1.75;
 constexpr double epsilon = 1e-7;
+constexpr std::array adjacent{Cell{1, 0, 0},  Cell{-1, 0, 0}, Cell{0, 1, 0},
+                              Cell{0, -1, 0}, Cell{0, 0, 1},  Cell{0, 0, -1}};
+constexpr int max_light = 15;
 
 int cell(double value) { return static_cast<int>(std::floor(value)); }
 
@@ -79,13 +82,31 @@ int emitted_light(Block block) {
   }
 }
 
+struct SkyLight {
+  std::string_view weather;
+  int level;
+};
+
+SkyLight sky_light(std::uint32_t seed, std::uint32_t tick) {
+  constexpr std::array weather_names{"clear", "rain", "storm"};
+  constexpr std::array attenuation{0, 2, 4};
+  const auto roll = coordinate_hash(seed, static_cast<int>(tick / 120), 0) % 10U;
+  const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
+  const int time = static_cast<int>(tick % 240);
+  const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, max_light - 1) + 1;
+  return {weather_names[weather], std::max(1, daytime - attenuation[weather])};
+}
+
+int chunk_coordinate(double coordinate) {
+  constexpr double edge = SeededTerrain::limit;
+  return floor_div(cell(std::clamp(coordinate, -edge, edge - 1)), SeededTerrain::chunk_size);
+}
+
 int propagated_light(const World& world, Cell origin, int daylight, bool open_sky) {
   const auto [x, y, z] = origin;
   if (solid(world.block(x, y, z))) return 0;
-  constexpr int range = 14;
+  constexpr int range = max_light - 1;
   constexpr int width = range * 2 + 1;
-  constexpr std::array neighbors{Cell{1, 0, 0},  Cell{-1, 0, 0}, Cell{0, 1, 0},
-                                 Cell{0, -1, 0}, Cell{0, 0, 1},  Cell{0, 0, -1}};
   const auto index = [](int column_offset, int row, int depth_offset) {
     return static_cast<std::size_t>((row * width + depth_offset + range) * width + column_offset +
                                     range);
@@ -107,7 +128,7 @@ int propagated_light(const World& world, Cell origin, int daylight, bool open_sk
     light = std::max(light, emitted_light(world.block(u, v, w)) - distance);
     if (daylight - distance > light && exposed_to_sky(world, u, v, w)) light = daylight - distance;
     if (brightest - distance - 1 <= light) continue;
-    for (const auto& [du, dv, dw] : neighbors) {
+    for (const auto& [du, dv, dw] : adjacent) {
       const int column = u + du, row = v + dv, depth = w + dw;
       if (column < -SeededTerrain::limit || column >= SeededTerrain::limit ||
           depth < -SeededTerrain::limit || depth >= SeededTerrain::limit || row < 0 ||
@@ -327,15 +348,70 @@ std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::ui
     return {};
   stream({static_cast<double>(x), 0, static_cast<double>(z)});
   const bool open_sky = exposed_to_sky(*this, x, y, z);
-  constexpr std::array weather_names{"clear", "rain", "storm"};
-  constexpr std::array attenuation{0, 2, 4};
-  const auto roll = coordinate_hash(terrain_->seed(), static_cast<int>(tick / 120), 0) % 10U;
-  const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
-  const int time = static_cast<int>(tick % 240);
-  const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, 14) + 1;
-  const int daylight = std::max(1, daytime - attenuation[weather]);
-  return EnvironmentSample{weather_names[weather], open_sky, open_sky ? daylight : 0,
-                           propagated_light(*this, {x, y, z}, daylight, open_sky)};
+  const auto sky = sky_light(terrain_->seed(), tick);
+  return EnvironmentSample{sky.weather, open_sky, open_sky ? sky.level : 0,
+                           propagated_light(*this, {x, y, z}, sky.level, open_sky)};
+}
+
+std::size_t LightField::index(int x, int y, int z) {
+  return static_cast<std::size_t>((y * span + z) * span + x);
+}
+
+bool LightField::covers(Vec3 center) const {
+  return !cells_.empty() && std::isfinite(center.x) && std::isfinite(center.z) &&
+         left_ ==
+             (chunk_coordinate(center.x) - SeededTerrain::radius) * SeededTerrain::chunk_size &&
+         front_ == (chunk_coordinate(center.z) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+}
+
+int LightField::at(Cell cell) const {
+  const auto [x, y, z] = cell;
+  if (y >= World::height) return daylight_;
+  if (cells_.empty() || x < left_ || x >= left_ + span || z < front_ || z >= front_ + span || y < 0)
+    return 0;
+  return std::max(0, static_cast<int>(cells_[index(x - left_, y, z - front_)]) - 1);
+}
+
+LightField World::light_field(Vec3 center, std::uint32_t tick) const {
+  LightField field;
+  if (!terrain_ || !std::isfinite(center.x) || !std::isfinite(center.z)) return field;
+  stream(center);
+  constexpr int span = LightField::span;
+  field.left_ = (chunk_coordinate(center.x) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+  field.front_ = (chunk_coordinate(center.z) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+  field.daylight_ = sky_light(terrain_->seed(), tick).level;
+  field.cells_.resize(span * span * height);
+  std::array<std::vector<Cell>, max_light + 1> frontiers;
+  for (int z = 0; z < span; ++z)
+    for (int x = 0; x < span; ++x) {
+      const int column = field.left_ + x, row = field.front_ + z;
+      if (!terrain_->resident(column, row)) continue;
+      bool open_sky = true;
+      for (int y = height - 1; y >= 0; --y) {
+        const auto material = block(column, y, row);
+        if (solid(material)) {
+          open_sky = false;
+          continue;
+        }
+        // Zero marks a blocked cell. A passable cell stores its light level plus one.
+        const int level = std::max(open_sky ? field.daylight_ : 0, emitted_light(material));
+        field.cells_[LightField::index(x, y, z)] = static_cast<std::uint8_t>(level + 1);
+        if (level > 1) frontiers[level].push_back({x, y, z});
+      }
+    }
+  for (int level = max_light; level > 1; --level)
+    for (const auto& [x, y, z] : frontiers[level]) {
+      if (field.cells_[LightField::index(x, y, z)] != level + 1) continue;
+      for (const auto& [dx, dy, dz] : adjacent) {
+        const int u = x + dx, v = y + dy, w = z + dz;
+        if (u < 0 || u >= span || v < 0 || v >= height || w < 0 || w >= span) continue;
+        auto& neighbor = field.cells_[LightField::index(u, v, w)];
+        if (neighbor == 0 || neighbor >= level) continue;
+        neighbor = static_cast<std::uint8_t>(level);
+        if (level > 2) frontiers[level - 1].push_back({u, v, w});
+      }
+    }
+  return field;
 }
 
 bool World::read(std::istream& input) {
@@ -441,14 +517,18 @@ Vec3 Camera::ray(double horizontal, double vertical) const {
           forward.z + horizontal * right.z + vertical * up.z};
 }
 
-std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction) {
+std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction, const LightField* light) {
   const auto hit = world.cast(origin, direction, 36);
-  if (hit.block == Block::air) return world.content().sky;
-  const auto color = world.content().style(hit.block).color;
-  const double shade = (hit.side == 1   ? 1.0
-                        : hit.side == 0 ? 0.76
-                                        : 0.86) *
-                       std::max(0.45, 1 - hit.distance * 0.014);
+  const bool sky = hit.block == Block::air;
+  const auto color = sky ? world.content().sky : world.content().style(hit.block).color;
+  const double side = hit.side == 1 ? 1.0 : hit.side == 0 ? 0.76 : 0.86;
+  double shade = sky ? 1.0 : side * std::max(0.45, 1 - hit.distance * 0.014);
+  if (light) {
+    Cell sample{hit.x, sky ? World::height : hit.y, hit.z};
+    if (solid(hit.block) && hit.normal) sample[hit.side] += hit.normal;
+    const int level = std::max(light->at(sample), emitted_light(hit.block));
+    shade *= 0.22 + 0.78 * level / max_light;
+  }
   const auto scale = [shade](std::uint32_t value) {
     return static_cast<std::uint32_t>((value & 255U) * shade);
   };
