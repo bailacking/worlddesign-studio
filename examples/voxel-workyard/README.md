@@ -10,7 +10,9 @@
 | 项目操作 | 模式 | 输入 |
 | --- | --- | --- |
 | `scene.voxel.cart` | `read` | 起点 `x`、`y`、`z`。可指定直线的 `dx`、`dz` 和 `steps`，也可用 `directions` 列出逐格方向。最多 64 步。返回经过的格子和是否遇断轨。 |
-| `scene.voxel.dynamics` | `preview`、`apply`、`cancel` | 最小 `x`、`z`，各为 1–24 格的 `width`、`depth`，及 1–32 步。返回水格更新、被引燃的木材和被水熄灭的火格数。`workyard-v2` 同时返回 `lava_updates` 和 `solidified`。 |
+| `scene.voxel.dynamics` | `preview`、`apply`、`cancel` | 最小 `x`、`z`，各为 1–24 格的 `width`、`depth`，及 1–32 步。可传入 `weather_tick` 选择天气对应的时刻。返回水格更新、被引燃的木材和熄灭的火格数。`workyard-v2` 同时返回 `lava_updates` 和 `solidified`。 |
+
+本示例种子在时间点 `90` 为晴天，`330` 为雨天，`450` 为暴雨。把对应值作为 `weather_tick` 可复跑相同天气。下雨时有实心屋顶遮挡的火可在屋顶下传播，露天火会直接熄灭。可先用 `scene.landscape.environment` 检查目标格的 `weather` 和 `open_sky`。
 
 水优先下落，有承托才在同一高度向四邻降级扩散。水和火按每轮开始的快照计算，水先于同轮火的传播生效。火一轮后消失，可引燃四邻木材。区域边界封闭，工作台的 **F** 使用以玩家为中心的 17×17 区域。提交通过项目修订检查。矿车的乘坐位置属于临时试玩状态。
 

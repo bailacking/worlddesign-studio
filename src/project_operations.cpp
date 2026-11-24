@@ -192,8 +192,11 @@ Json workyard(const fs::path& directory, std::uint64_t revision, std::string_vie
             {"positions", route.positions},
             {"blocked", route.blocked}};
   }
-  const auto change = scene.world.step_dynamics(
-      x, z, number<int>(input, "width"), number<int>(input, "depth"), number<int>(input, "steps"));
+  std::optional<std::uint32_t> weather_tick;
+  if (input.contains("weather_tick")) weather_tick = number<std::uint32_t>(input, "weather_tick");
+  const auto change =
+      scene.world.step_dynamics(x, z, number<int>(input, "width"), number<int>(input, "depth"),
+                                number<int>(input, "steps"), weather_tick);
   if (change.code != "ok") return fail(change.code, "/input");
   auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
   saved.scene_change.reset();
@@ -202,6 +205,7 @@ Json workyard(const fs::path& directory, std::uint64_t revision, std::string_vie
     reply["water_updates"] = change.water_updates;
     reply["ignited"] = change.ignited;
     reply["extinguished"] = change.extinguished;
+    if (weather_tick) reply["weather_extinguished"] = change.weather_extinguished;
     if (scene.world.terrain()->thermal_workyard()) {
       reply["lava_updates"] = change.lava_updates;
       reply["solidified"] = change.solidified;

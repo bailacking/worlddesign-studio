@@ -342,6 +342,10 @@ BlockShift World::shift_blocks(int x, int y, int z, int dx, int dz, int capacity
   return {"ok", moved};
 }
 
+bool World::precipitating(std::uint32_t tick) const {
+  return terrain_ && sky_light(terrain_->seed(), tick).weather != "clear";
+}
+
 std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::uint32_t tick) const {
   if (!terrain_ || x < -SeededTerrain::limit || x >= SeededTerrain::limit ||
       z < -SeededTerrain::limit || z >= SeededTerrain::limit || y < 0 || y >= height)

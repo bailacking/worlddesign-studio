@@ -84,9 +84,20 @@ bool touches_water(const Region& region, const std::vector<Block>& cells, int x,
              directions, [&](const auto& offset) { return wet(x + offset[0], y, z + offset[1]); });
 }
 
-void evolve(const Region& region, std::vector<Block>& cells, bool thermal, DynamicsStep& result) {
+void evolve(const Region& region, std::vector<Block>& cells, bool thermal, bool precipitating,
+            DynamicsStep& result) {
   const auto wet = flow(region, cells, water);
   const auto hot = thermal ? flow(region, cells, lava) : std::vector<int>(cells.size());
+  std::vector<int> roof;
+  if (precipitating) {
+    roof.resize(static_cast<std::size_t>(region.width * region.depth));
+    region.each([&](int x, int y, int z) {
+      if (solid(cells[region.index(x, y, z)])) roof[region.index(x, 0, z)] = y;
+    });
+  }
+  const auto exposed = [&](int x, int y, int z) {
+    return precipitating && roof[region.index(x, 0, z)] <= y;
+  };
   auto next = cells;
   region.each([&](int x, int y, int z) {
     const auto index = region.index(x, y, z);
@@ -103,8 +114,13 @@ void evolve(const Region& region, std::vector<Block>& cells, bool thermal, Dynam
       next[index] = lava.at(hot[index]);
     } else if (old == Block::flame) {
       next[index] = Block::air;
+      if (exposed(x, y, z)) {
+        ++result.extinguished;
+        ++result.weather_extinguished;
+        return;
+      }
       for (const auto& [dx, dz] : directions) {
-        if (!region.contains(x + dx, z + dz)) continue;
+        if (!region.contains(x + dx, z + dz) || exposed(x + dx, y, z + dz)) continue;
         const auto neighbor = region.index(x + dx, y, z + dz);
         if (cells[neighbor] != Block::timber || next[neighbor] == Block::flame) continue;
         next[neighbor] = Block::flame;
@@ -166,7 +182,8 @@ CartRoute World::cart_route(Cell start, std::span<const std::array<int, 2>> step
   return route;
 }
 
-DynamicsStep World::step_dynamics(int x, int z, int columns, int rows, int steps) {
+DynamicsStep World::step_dynamics(int x, int z, int columns, int rows, int steps,
+                                  std::optional<std::uint32_t> weather_tick) {
   if (!terrain_ || !terrain_->workyard()) return {"unsupported_terrain"};
   if (!in_world(x) || !in_world(z) || columns < 1 || columns > 24 || rows < 1 || rows > 24 ||
       !in_world(x + columns - 1) || !in_world(z + rows - 1) || steps < 1 || steps > 32)
@@ -181,8 +198,9 @@ DynamicsStep World::step_dynamics(int x, int z, int columns, int rows, int steps
   });
   const auto before = cells;
   DynamicsStep result{"ok"};
+  const bool raining = weather_tick && precipitating(*weather_tick);
   for (int step = 0; step < steps; ++step)
-    evolve(region, cells, candidate.thermal_workyard(), result);
+    evolve(region, cells, candidate.thermal_workyard(), raining, result);
   if (before == cells) return result;
 
   // Reclaim edit slots before adding records whose generated block is different.

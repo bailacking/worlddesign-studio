@@ -160,6 +160,51 @@ def workyard(cli, project, destination):
     print("Cart turns at a junction, water crosses the circuit gate, lava cools and persists")
 
 
+def weather_shelter(cli, project, destination):
+    shutil.copytree(project, destination)
+    source = destination / "assets" / "yard.json"
+    document = json.loads(source.read_text(encoding="utf-8"))
+    document["world"] += "15 8 8 12\n16 8 8 6\n17 8 8 12\n18 8 8 6\n17 9 8 3\n18 9 8 3\n"
+    source.write_text(json.dumps(document), encoding="utf-8")
+    initial = source.read_bytes()
+    region = {"x": 15, "z": 8, "width": 4, "depth": 1, "steps": 1}
+
+    def dynamics(tick, **options):
+        return request(cli, destination, "scene.voxel.dynamics", {**region, "weather_tick": tick},
+                       **options)
+
+    def environment(x, tick, revision=0):
+        return request(cli, destination, "scene.landscape.environment",
+                       {"x": x, "y": 8, "z": 8, "tick": tick}, revision=revision)
+
+    for tick, weather in ((90, "clear"), (330, "rain"), (450, "storm")):
+        assert environment(15, tick)["weather"] == weather
+        assert environment(15, tick)["open_sky"] and not environment(17, tick)["open_sky"]
+        preview = dynamics(tick, mode="preview")
+        exposed = int(weather != "clear")
+        assert preview["ignited"] == 2 - exposed and preview["weather_extinguished"] == exposed
+        assert preview["extinguished"] == exposed and source.read_bytes() == initial
+    invalid = request(cli, destination, "scene.voxel.dynamics", {**region, "weather_tick": -1},
+                      "invalid_argument", mode="apply")
+    assert invalid["location"] == "/input/weather_tick" and source.read_bytes() == initial
+
+    rain = dynamics(330, mode="apply")
+    assert rain["revision"] == 1 and rain["ignited"] == rain["weather_extinguished"] == 1
+    saved_cells = set(json.loads(source.read_text(encoding="utf-8"))["world"].splitlines())
+    assert {"16 8 8 6", "18 8 8 12"} <= saved_cells
+    assert {"15 8 8 12", "16 8 8 12", "17 8 8 12"}.isdisjoint(saved_cells)
+    roof = {"x": 18, "y": 9, "z": 8, "dx": 1, "dz": 0, "trigger": "roof",
+            "circuit": {"ticks": 1, "nodes": {"roof": {"kind": "lever", "inputs": []}},
+                        "events": [{"tick": 0, "id": "roof", "level": 15}]}}
+    moved = request(cli, destination, "scene.voxel.actuate", roof, revision=1, mode="apply")
+    assert moved["revision"] == 2 and moved["to"] == [19, 9, 8]
+    assert environment(18, 330, 2)["open_sky"]
+    quenched = dynamics(330, revision=2, mode="apply")
+    assert quenched["revision"] == 3 and quenched["weather_extinguished"] == 1
+    assert "18 8 8 12" not in json.loads(source.read_text(encoding="utf-8"))["world"].splitlines()
+    print("Clear, rain and storm split fire spread across a chunk boundary; opening a roof quenches fire")
+
+
 def action(command, target=None, ingredients=None):
     data = {"command": command}
     if target:
@@ -888,6 +933,7 @@ def main():
         actuate(args.cli.resolve(), root / "actuator-bench")
         yard = SAMPLE.parent / "voxel-workyard"
         workyard(args.cli.resolve(), yard, root / "workyard")
+        weather_shelter(args.cli.resolve(), yard, root / "workyard-roof")
         garden(args.cli.resolve(), project, args.probe.resolve(), root / "adventure.json")
         coast = root / "coast"
         conditions(args.cli.resolve(), project, coast)

@@ -73,6 +73,7 @@ struct DynamicsStep {
   bool changed = false;
   int lava_updates = 0;
   int solidified = 0;
+  int weather_extinguished = 0;
 };
 
 class World {
@@ -92,7 +93,8 @@ class World {
   [[nodiscard]] bool cart_track(Cell position) const;
   [[nodiscard]] CartRoute cart_route(Cell start, int dx, int dz, int steps) const;
   [[nodiscard]] CartRoute cart_route(Cell start, std::span<const std::array<int, 2>> steps) const;
-  [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps);
+  [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps,
+                                           std::optional<std::uint32_t> weather_tick = {});
   [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
                                                              std::uint32_t tick) const;
   [[nodiscard]] LightField light_field(Vec3 center, std::uint32_t tick) const;
@@ -107,6 +109,7 @@ class World {
   [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
  private:
+  [[nodiscard]] bool precipitating(std::uint32_t tick) const;
   std::array<Block, width * height * depth> blocks_{};
   Content content_;
   std::optional<SeededTerrain> terrain_;

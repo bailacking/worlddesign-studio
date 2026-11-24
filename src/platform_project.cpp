@@ -2554,7 +2554,8 @@ Json build_operation_specs() {
        {"z", "minimum world z"},
        {"width", "integer from 1 to 24"},
        {"depth", "integer from 1 to 24"},
-       {"steps", "integer from 1 to 32"}},
+       {"steps", "integer from 1 to 32"},
+       {"weather_tick", "optional unsigned tick for seeded precipitation"}},
       dynamics_errors);
   scene_errors.push_back("scene_content_conflict");
   auto merge_errors = scene_errors;
