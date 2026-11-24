@@ -11,7 +11,7 @@
 
 namespace wds::voxel {
 
-enum class TerrainProfile { seeded, frontier, workyard, thermal_workyard };
+enum class TerrainProfile { seeded, frontier, workyard, thermal_workyard, graded_workyard };
 
 class SeededTerrain {
  public:
@@ -27,7 +27,10 @@ class SeededTerrain {
   std::uint32_t seed() const { return seed_; }
   bool frontier() const { return profile_ != TerrainProfile::seeded; }
   bool workyard() const { return profile_ == TerrainProfile::workyard || thermal_workyard(); }
-  bool thermal_workyard() const { return profile_ == TerrainProfile::thermal_workyard; }
+  bool thermal_workyard() const {
+    return profile_ == TerrainProfile::thermal_workyard || graded_workyard();
+  }
+  bool graded_workyard() const { return profile_ == TerrainProfile::graded_workyard; }
   std::string_view profile_name() const;
   std::string_view biome(int x, int z) const;
   std::string_view landmark(int x, int z) const;

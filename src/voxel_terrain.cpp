@@ -78,6 +78,7 @@ SeededTerrain::SeededTerrain(std::uint32_t seed, TerrainProfile profile)
     : seed_(seed), profile_(profile), chunks_(diameter * diameter) {}
 
 std::string_view SeededTerrain::profile_name() const {
+  if (graded_workyard()) return "workyard-v3";
   if (thermal_workyard()) return "workyard-v2";
   if (workyard()) return "workyard-v1";
   return frontier() ? "frontier-v1" : "seeded-v1";

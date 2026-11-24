@@ -145,4 +145,19 @@ int main() {
   reloaded_thermal.use_seed(53207, TerrainProfile::thermal_workyard);
   check(reloaded_thermal.read(heat_save) && reloaded_thermal.block(15, 7, 10) == Block::basalt,
         "thermal workyard round trips cooled material");
+
+  World graded;
+  graded.use_seed(53207, TerrainProfile::graded_workyard);
+  std::istringstream graded_tracks(
+      "wds-voxel-workyard-v3 53207\n15 2 17 7\n16 2 17 3\n16 3 17 7\n17 2 17 7\n");
+  check(graded.read(graded_tracks), "graded workyard reads a supported elevation change");
+  Player climber;
+  climber.feet = {15.5, 2, 17.5};
+  climber.grounded = true;
+  check(climber.toggle_cart(graded) && climber.move_cart(graded, 1, 0) &&
+            climber.cart == Cell{16, 3, 17} && climber.feet.y == 3,
+        "an occupied cart climbs to the supported rail across a chunk boundary");
+  check(climber.move_cart(graded, 1, 0) && climber.cart == Cell{17, 2, 17} && climber.feet.y == 2 &&
+            climber.grounded,
+        "rider descends with the cart and stays grounded");
 }

@@ -81,11 +81,30 @@ def workyard(cli, project, destination):
     assert reverse["positions"] == [[x, 2, 17] for x in (18, 17, 16, 15)]
     assert not reverse["blocked"]
     junction = {"x": 15, "y": 2, "z": 17,
-                "directions": ["east", "east", "south", "south", "west", "west"]}
+                "directions": ["east", "east", "south", "south", "west", "west", "west", "west"]}
     curved = request(cli, destination, "scene.voxel.cart", junction)
     assert curved["positions"] == [
         [15, 2, 17], [16, 2, 17], [17, 2, 17], [17, 2, 18], [17, 2, 19], [16, 2, 19],
+        [15, 3, 19], [14, 2, 19],
     ] and curved["blocked"]
+    climb = {"x": 16, "y": 2, "z": 19, "directions": ["west"]}
+    descent = {"x": 15, "y": 3, "z": 19, "directions": ["east"]}
+    reverse_grade = request(cli, destination, "scene.voxel.cart", descent)
+    assert reverse_grade["positions"] == [[15, 3, 19], [16, 2, 19]] and not reverse_grade["blocked"]
+    assert source.read_bytes() == original
+    blocked = json.loads(original)
+    blocked["world"] += "16 4 19 3\n"
+    source.write_text(json.dumps(blocked), encoding="utf-8")
+    for entry in (climb, descent):
+        stopped = request(cli, destination, "scene.voxel.cart", entry)
+        assert stopped["blocked"] and stopped["positions"] == [[entry[axis] for axis in "xyz"]]
+    legacy = json.loads(original)
+    legacy["terrain"]["profile"] = "workyard-v2"
+    legacy["world"] = legacy["world"].replace("workyard-v3", "workyard-v2", 1)
+    source.write_text(json.dumps(legacy), encoding="utf-8")
+    flat_only = request(cli, destination, "scene.voxel.cart", climb)
+    assert flat_only["blocked"] and flat_only["positions"] == [[16, 2, 19]]
+    source.write_bytes(original)
     request(cli, destination, "scene.voxel.cart", {**junction, "directions": ["northeast"]},
             "invalid_argument")
     request(cli, destination, "scene.voxel.cart", {**junction, "steps": 5}, "invalid_argument")
@@ -110,7 +129,7 @@ def workyard(cli, project, destination):
     assert {"15 4 13 11", "16 4 14 10", "17 4 12 12", "17 4 14 6"} <= cells
     assert {"16 4 12 12", "14 4 13 10", "15 4 12 10", "18 4 12 12"}.isdisjoint(cells)
     reopened = request(cli, destination, "scene.inspect", {}, revision=1)
-    assert reopened["terrain"]["profile"] == "workyard-v2"
+    assert reopened["terrain"]["profile"] == "workyard-v3"
     second = dynamics(area, revision=1, mode="apply")
     assert second["revision"] == 2 and second["ignited"] == 1
     cells = world()
@@ -142,7 +161,7 @@ def workyard(cli, project, destination):
     assert thermal["revision"] == 3 and thermal["solidified"] == 1
     assert {"14 6 10 15", "15 6 10 13", "16 6 10 17", "17 6 10 8", "18 6 10 10"} <= world()
     after = request(cli, destination, "scene.inspect", {}, revision=3)
-    assert after["terrain"]["profile"] == "workyard-v2"
+    assert after["terrain"]["profile"] == "workyard-v3"
     quenched = request(cli, destination, "scene.landscape.environment", sample, revision=3)
     assert quenched["light"] == 0 and not quenched["open_sky"]
 
@@ -157,7 +176,7 @@ def workyard(cli, project, destination):
     water = dynamics(stream, revision=4, mode="apply")
     assert water["revision"] == 5 and water["water_updates"] == 1
     assert {"15 7 9 11", "16 7 9 3"} <= world()
-    print("Cart turns at a junction, water crosses the circuit gate, lava cools and persists")
+    print("Cart turns, climbs across a chunk boundary and brakes under a low roof; water and lava persist")
 
 
 def weather_shelter(cli, project, destination):
@@ -990,6 +1009,8 @@ def main():
             package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
                     graphics=False)
             package(runtime, yard, root / "thermal-workyard-package", "voxel_thermal_format",
+                    graphics=False)
+            package(runtime, yard, root / "graded-workyard-package", "voxel_grade_format",
                     graphics=False)
             package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
                     graphics=graphics)

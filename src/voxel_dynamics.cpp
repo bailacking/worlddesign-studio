@@ -151,6 +151,20 @@ bool World::cart_track(Cell position) const {
          block(x, y + 1, z) == Block::air;
 }
 
+std::optional<Cell> World::adjacent_track(Cell start, int dx, int dz) const {
+  const auto [x, y, z] = start;
+  const Cell level{x + dx, y, z + dz};
+  if (cart_track(level)) return level;
+  if (!terrain_ || !terrain_->graded_workyard() || (dx == 0 && dz == 0) || !cart_track(start))
+    return {};
+  for (const int rise : {1, -1}) {
+    const Cell next{level[0], y + rise, level[2]};
+    const auto& lower = rise > 0 ? start : next;
+    if (cart_track(next) && block(lower[0], lower[1] + 2, lower[2]) == Block::air) return next;
+  }
+  return {};
+}
+
 CartRoute World::cart_route(Cell start, int dx, int dz, int steps) const {
   if (!terrain_ || !terrain_->workyard()) return {"unsupported_terrain", {}, false};
   if (steps < 1 || steps > cart_max_steps) return {"invalid_argument", {}, false};
@@ -169,15 +183,13 @@ CartRoute World::cart_route(Cell start, std::span<const std::array<int, 2>> step
   if (!cart_track(start)) return {"invalid_track", {}, false};
 
   CartRoute route{"ok", {start}};
-  auto [x, y, z] = start;
   for (const auto& [dx, dz] : steps) {
-    x += dx;
-    z += dz;
-    if (!cart_track({x, y, z})) {
+    const auto next = adjacent_track(route.positions.back(), dx, dz);
+    if (!next) {
       route.blocked = true;
       break;
     }
-    route.positions.push_back({x, y, z});
+    route.positions.push_back(*next);
   }
   return route;
 }
@@ -242,11 +254,11 @@ bool Player::move_cart(const World& world, int dx, int dz) {
   if (!cart || (std::array{dx, dz} != std::array{0, 0} &&
                 std::ranges::find(directions, std::array{dx, dz}) == directions.end()))
     return false;
-  const auto [x, y, z] = *cart;
-  const Cell target{x + dx, y, z + dz};
-  if (!world.cart_track(target)) return false;
+  const auto target = world.adjacent_track(*cart, dx, dz);
+  if (!target) return false;
   cart = target;
-  feet = {target[0] + 0.5, static_cast<double>(y), target[2] + 0.5};
+  const auto [x, y, z] = *target;
+  feet = {x + 0.5, static_cast<double>(y), z + 0.5};
   fall_speed = 0;
   grounded = true;
   return true;

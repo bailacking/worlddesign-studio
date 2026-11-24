@@ -3,14 +3,14 @@
 从仓库根目录运行 `python scripts/launch.py voxel`。构建目录与默认值 `build/native` 不同时，用 `--build` 指定。
 
 1. 点击方块视口，站在出生点附近，按 **E** 登车。
-2. 按 **D** 向东穿过区块边界。主轨在 X=18 结束。在 X=17 可按 **S** 两次进入岔道，再按 **A** 转向西侧。用 **E** 下车。
+2. 按 **D** 向东穿过区块边界。主轨在 X=18 结束。在 X=17 按 **S** 两次进入岔道，再按 **A** 向西。矿车在 X=15 升高一格，随后在 X=14 降回原高度。用 **E** 下车。
 3. 摄像机朝北。按 **F** 推进一轮流体和火。北面的石台上有泉水下落、火被水扑灭，以及另一处木材逐块引燃。更北的高石台上，水与熔岩在 X=16、Y=6、Z=10 交会形成玄武岩。
 4. 在工作台按 **Ctrl+S** 保存方块状态。要保留初始布局，可以复制项目目录，再以 `--project` 打开副本。
 
 | 项目操作 | 模式 | 输入 |
 | --- | --- | --- |
-| `scene.voxel.cart` | `read` | 起点 `x`、`y`、`z`。可指定直线的 `dx`、`dz` 和 `steps`，也可用 `directions` 列出逐格方向。最多 64 步。返回经过的格子和是否遇断轨。 |
-| `scene.voxel.dynamics` | `preview`、`apply`、`cancel` | 最小 `x`、`z`，各为 1–24 格的 `width`、`depth`，及 1–32 步。可传入 `weather_tick` 选择天气对应的时刻。返回水格更新、被引燃的木材和熄灭的火格数。`workyard-v2` 同时返回 `lava_updates` 和 `solidified`。 |
+| `scene.voxel.cart` | `read` | 起点 `x`、`y`、`z`。可指定直线的 `dx`、`dz` 和 `steps`，也可用 `directions` 列出逐格方向。最多 64 步。返回经过的坐标与是否受阻，坐标包含轨道的实际高度。 |
+| `scene.voxel.dynamics` | `preview`、`apply`、`cancel` | 最小 `x`、`z`，各为 1–24 格的 `width`、`depth`，及 1–32 步。可传入 `weather_tick` 选择天气对应的时刻。返回水格更新、被引燃的木材和熄灭的火格数。`workyard-v2` 和 `workyard-v3` 同时返回 `lava_updates` 和 `solidified`。 |
 
 本示例种子在时间点 `90` 为晴天，`330` 为雨天，`450` 为暴雨。把对应值作为 `weather_tick` 可复跑相同天气。下雨时有实心屋顶遮挡的火可在屋顶下传播，露天火会直接熄灭。可先用 `scene.landscape.environment` 检查目标格的 `weather` 和 `open_sky`。
 

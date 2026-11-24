@@ -19,6 +19,7 @@
   "interaction_format": 1,
   "voxel_dynamics_format": 1,
   "voxel_thermal_format": 1,
+  "voxel_grade_format": 1,
   "minimum_environment": {
     "os": "Windows 10 x64",
     "graphics": "OpenGL 3.3"

@@ -558,6 +558,8 @@ FieldResult parse_voxel_scene(const Json& json, voxel::World& world,
         profile = voxel::TerrainProfile::workyard;
       else if (terrain["profile"] == "workyard-v2")
         profile = voxel::TerrainProfile::thermal_workyard;
+      else if (terrain["profile"] == "workyard-v3")
+        profile = voxel::TerrainProfile::graded_workyard;
       else
         return {"invalid_voxel_world", "/terrain/profile"};
     }

@@ -109,6 +109,8 @@ class World {
   [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
  private:
+  friend struct Player;
+  [[nodiscard]] std::optional<Cell> adjacent_track(Cell start, int dx, int dz) const;
   [[nodiscard]] bool precipitating(std::uint32_t tick) const;
   std::array<Block, width * height * depth> blocks_{};
   Content content_;
