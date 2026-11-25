@@ -92,6 +92,10 @@ OPS-01 确定平台操作的公共语义。GUI、CLI 与 Agent 将参数转成�
 
 现代工作台可撤销、重做本次打开项目以来的最近 32 次场景结构修改和属性保存。每次撤销或重做也是一次保存，修订递增。保存新改动后清空重做记录，重新打开项目后开始新的操作历史。
 
+通过 `project request` 调用 `scene.field.set` 或 `scene.field.preview` 时，可用 `input.expected_value` 声明最初读取到的字段值。预览与提交都会核对该值。若外部修改了同一字段，即使清单修订号相同也返回 `scene_content_conflict`。工作台的二维属性保存携带该值，可通过「项目 → 重新载入项目」读取最新状态。
+
+`resource.field.set` 和 `resource.field.preview` 也接受 `input.expected_value`。工作台提交顶层整数修改时携带预览中的原值。外部编辑改过同一字段会返回 `project_content_conflict`，定位到文件和字段。重新预览后可继续提交，其余字段按磁盘上的内容保留。
+
 CLI 的 `set-scene-field` 与 `edit-entity` 可在参数末尾追加 `--capture-change`。发生修改时额外返回 `scene_change`，包含 `project_id`、`scene_id`、`resource_path` 和场景文件的 `before`、`after` 字节文本。将这一对象作为 UTF-8 JSON 从标准输入传给 `project restore-scene DIRECTORY REVISION`。撤销时交换 `before`、`after`，重做时使用原对象。恢复会核对项目和入口资源身份、修订及当前场景字节。
 
 恢复只写入口场景与清单修订，验证源与目标场景格式。若文件被外部修改，即使修订号相同也返回 `scene_content_conflict`。恢复使用事务记录版本 4，已有版本的恢复规则继续有效。

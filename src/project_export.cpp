@@ -106,7 +106,13 @@ bool valid_runtime(const Json& metadata) {
   for (const auto& [name, value] : spec.items()) {
     // Earlier players can export scenes that use only the capabilities they advertise.
     if ((name == "behavior_format" || name == "terrain_format" || name == "workshop_format" ||
-         name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format") &&
+         name == "voxel_format" || name == "world_ecology_format" || name == "expedition_format" ||
+         name == "survival_format" || name == "exposure_format" || name == "processing_format" ||
+         name == "story_format" || name == "interaction_format" ||
+         name == "voxel_dynamics_format" || name == "voxel_thermal_format" ||
+         name == "voxel_grade_format" || name == "inscription_format" ||
+         name == "expedition_rules_format" || name == "expedition_input_format" ||
+         name == "expedition_character_format") &&
         !metadata.contains(name))
       continue;
     if (!metadata.contains(name) || metadata[name] != value) return false;
@@ -292,6 +298,18 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
 
     if (scene.voxel_scene && !metadata.contains("voxel_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_format");
+    if (scene.voxel_scene && scene.voxel_scene->world.terrain() &&
+        scene.voxel_scene->world.terrain()->workyard() &&
+        !metadata.contains("voxel_dynamics_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_dynamics_format");
+    if (scene.voxel_scene && scene.voxel_scene->world.terrain() &&
+        scene.voxel_scene->world.terrain()->thermal_workyard() &&
+        !metadata.contains("voxel_thermal_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_thermal_format");
+    if (scene.voxel_scene && scene.voxel_scene->world.terrain() &&
+        scene.voxel_scene->world.terrain()->graded_workyard() &&
+        !metadata.contains("voxel_grade_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/voxel_grade_format");
     if (scene.session && scene.session->snapshot().behavior_state &&
         !metadata.contains("behavior_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/behavior_format");
@@ -302,6 +320,38 @@ ExportResult export_project(const fs::path& project, std::uint64_t revision,
       fail(route.code.c_str(), route.location);
     if (route.expedition && !metadata.contains("expedition_format"))
       fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_format");
+    if (route.expedition && route.expedition->rules().pack &&
+        !metadata.contains("expedition_rules_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_rules_format");
+    if (route.expedition && !route.expedition->rules().keys.empty() &&
+        !metadata.contains("expedition_input_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/expedition_input_format");
+    if (route.expedition && route.expedition->uses_character_rules() &&
+        !metadata.contains("expedition_character_format"))
+      fail("invalid_runtime_dependency",
+           portable(kit / kit_manifest) + "/expedition_character_format");
+    const bool survival = (route.expedition && route.expedition->uses_survival_rules()) ||
+                          (scene.session && scene.session->workshop() &&
+                           scene.session->workshop()->uses_survival_rules()) ||
+                          (scene.voxel_scene && scene.voxel_scene->workshop &&
+                           scene.voxel_scene->workshop->uses_survival_rules());
+    if (survival && !metadata.contains("survival_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/survival_format");
+    if (route.expedition && route.expedition->uses_exposure_rules() &&
+        !metadata.contains("exposure_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/exposure_format");
+    if (route.expedition && route.expedition->workshop().uses_processing_rules() &&
+        !metadata.contains("processing_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/processing_format");
+    if (route.expedition && route.expedition->workshop().uses_inscriptions() &&
+        !metadata.contains("inscription_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/inscription_format");
+    if (route.expedition && route.expedition->uses_story_rules() &&
+        !metadata.contains("story_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/story_format");
+    if (route.expedition && route.expedition->uses_interaction_rules() &&
+        !metadata.contains("interaction_format"))
+      fail("invalid_runtime_dependency", portable(kit / kit_manifest) + "/interaction_format");
     const bool frontier = scene.voxel_scene && scene.voxel_scene->world.terrain() &&
                           scene.voxel_scene->world.terrain()->frontier();
     const bool ecology =

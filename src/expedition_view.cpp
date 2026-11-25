@@ -124,23 +124,59 @@ void ui_text(int x, int y, std::string text, int size = 17, Color color = ink) {
   DrawText(text.c_str(), x, y, size, color);
 }
 
-std::optional<Action> input(const Expedition& run, const Site* selected, std::string recipe) {
-  if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)) return Action{Command::north};
-  if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) return Action{Command::south};
-  if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT)) return Action{Command::west};
-  if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT)) return Action{Command::east};
-  if (IsKeyPressed(KEY_PERIOD)) return Action{Command::wait};
-  if (IsKeyPressed(KEY_R)) return Action{Command::revive};
-  if (IsKeyPressed(KEY_C) && !recipe.empty()) return Action{Command::craft, std::move(recipe)};
-  if (IsKeyPressed(KEY_E)) {
+int input_key(std::string_view name) {
+  if (const auto key = platform::scene_key(name)) {
+    const auto index = static_cast<int>(*key);
+    constexpr auto first_arrow = static_cast<int>(platform::SceneKey::left);
+    if (index < first_arrow) return KEY_A + index;
+    constexpr std::array arrows{KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
+    return arrows.at(static_cast<std::size_t>(index - first_arrow));
+  }
+  if (name == "Space") return KEY_SPACE;
+  if (name == "Tab") return KEY_TAB;
+  if (name == "Period") return KEY_PERIOD;
+  return name == "Backspace" ? KEY_BACKSPACE : KEY_NULL;
+}
+
+bool pressed(const Expedition& run, std::string_view action) {
+  const auto& list = run.input_keys().find(action)->second;
+  return std::ranges::any_of(list, [](const auto& key) { return IsKeyPressed(input_key(key)); });
+}
+
+std::string key_hint(const Expedition& run, std::string_view action, std::string_view label) {
+  return run.input_keys().find(action)->second.front() + " " + std::string(label);
+}
+
+std::optional<Action> input(const Expedition& run, const Site* selected, std::string recipe,
+                            const std::vector<std::string>& ingredients, std::string supply) {
+  if (pressed(run, "north")) return Action{Command::north};
+  if (pressed(run, "south")) return Action{Command::south};
+  if (pressed(run, "west")) return Action{Command::west};
+  if (pressed(run, "east")) return Action{Command::east};
+  if (pressed(run, "supply") && !supply.empty()) return Action{Command::supply, std::move(supply)};
+  if (pressed(run, "survey-region") && run.allows(Command::survey_region)) {
+    const auto& regions = run.rules().regions;
+    return Action{Command::survey_region, regions[(run.state().region + 1) % regions.size()].id};
+  }
+  if (pressed(run, "wait")) return Action{Command::wait};
+  if (pressed(run, "revive")) return Action{Command::revive};
+  if (pressed(run, "craft") && !recipe.empty()) return Action{Command::craft, std::move(recipe)};
+  if (pressed(run, "eat")) {
+    if (run.state().poison > 0)
+      for (const auto& slot : run.workshop().state().bag)
+        if (run.workshop().catalog().items.at(slot.id).tags.contains("antidote"))
+          return Action{Command::treat, slot.id};
     for (const auto& slot : run.workshop().state().bag)
       if (run.workshop().catalog().items.at(slot.id).tags.contains("food"))
         return Action{Command::eat, slot.id};
   }
   if (selected) {
-    if (IsKeyPressed(KEY_F)) return Action{Command::use, selected->id};
-    if (IsKeyPressed(KEY_SPACE)) return Action{Command::attack, selected->id};
-    if (IsKeyPressed(KEY_G)) return Action{Command::gather, selected->id};
+    if (pressed(run, "use")) {
+      if (selected->kind == "kitchen") return Action{Command::cook, selected->id, ingredients};
+      return Action{Command::use, selected->id};
+    }
+    if (pressed(run, "attack")) return Action{Command::attack, selected->id};
+    if (pressed(run, "gather")) return Action{Command::gather, selected->id};
   }
   return {};
 }
@@ -148,19 +184,15 @@ std::optional<Action> input(const Expedition& run, const Site* selected, std::st
 }  // namespace
 
 bool play_expedition(Expedition& run, const expedition::Icons& icons,
-                     const std::filesystem::path& save_file, bool smoke) {
+                     std::filesystem::path save_file, ExpeditionWindow window,
+                     ExpeditionSlots slots) {
   std::string status;
-  std::error_code error;
-  if (!save_file.empty() &&
-      ((std::filesystem::exists(save_file, error) && !expedition::restore(run, save_file)) ||
-       error))
-    return false;
-  if (smoke) {
-    if (run.apply({Command::east}) != "ok") return false;
-    SetConfigFlags(FLAG_WINDOW_HIDDEN);
-  }
+  const bool render_smoke = window == ExpeditionWindow::render_smoke;
+  if (render_smoke && run.apply({Command::east}) != "ok") return false;
+  if (window != ExpeditionWindow::interactive) SetConfigFlags(FLAG_WINDOW_HIDDEN);
   InitWindow(1050, 630, run.rules().voxel ? "Copper Relay" : "Drift Naturalists");
   if (!IsWindowReady()) return false;
+  SetExitKey(KEY_NULL);
   Textures textures;
   for (const auto& [id, icon] : icons) {
     const Image image{const_cast<unsigned char*>(icon.rgba.data()), icon.width, icon.height, 1,
@@ -172,36 +204,86 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
   SetTargetFPS(45);
   std::size_t selected = 0;
   std::size_t recipe_index = 0;
+  std::size_t ingredient_index = 0;
+  std::size_t supply_index = 0;
+  std::vector<std::string> ingredients;
+  bool show_slots = false;
+  std::string slot_error;
   do {
-    std::vector<const Site*> targets;
-    for (const auto& site : run.region().sites)
-      if (run.nearby(site.id)) targets.push_back(&site);
-    if (IsKeyPressed(KEY_TAB)) ++selected;
-    if (IsKeyPressed(KEY_Q)) ++recipe_index;
+    const bool escape = IsKeyPressed(KEY_ESCAPE);
+    if (escape && !show_slots) break;
+    const bool toggle = escape || (slots.select && IsKeyPressed(KEY_F1));
+    if (toggle) {
+      show_slots = !show_slots;
+      slot_error.clear();
+    }
+    const bool suspended = show_slots || toggle;
+    if (show_slots) {
+      const int slot = IsKeyPressed(KEY_ONE)     ? 1
+                       : IsKeyPressed(KEY_TWO)   ? 2
+                       : IsKeyPressed(KEY_THREE) ? 3
+                                                 : 0;
+      if (slot != 0) {
+        slot_error = slots.select(slot, run, save_file);
+        if (slot_error.empty()) {
+          slots.active = slot;
+          selected = recipe_index = ingredient_index = supply_index = 0;
+          ingredients.clear();
+          status = "Save slot " + std::to_string(slot);
+          show_slots = false;
+        }
+      }
+      BeginDrawing();
+      ClearBackground(background);
+      ui_text(32, 32, "Save slots", 32);
+      for (int row = 1; row <= 3; ++row) {
+        const bool active = slots.active == row;
+        auto label = "Press " + std::to_string(row) + " to open slot " + std::to_string(row);
+        if (active) label += " (active)";
+        ui_text(35, 92 + row * 35, label, 21, active ? accent : ink);
+      }
+      if (!slot_error.empty()) ui_text(35, 253, slot_error, 20, accent);
+      ui_text(35, 311, "F1 or Esc to return", 17, subdued);
+      EndDrawing();
+      continue;
+    }
+    const auto targets = run.nearby_sites();
+    if (!suspended && pressed(run, "select-site")) ++selected;
+    if (!suspended && pressed(run, "select-recipe")) ++recipe_index;
     const auto* site = targets.empty() ? nullptr : targets[selected % targets.size()];
+    const bool kitchen = site && site->kind == "kitchen";
+    const auto& bag = run.workshop().state().bag;
+    std::string ingredient;
+    if (kitchen && !bag.empty()) {
+      if (!suspended && pressed(run, "select-ingredient")) ++ingredient_index;
+      ingredient = bag[ingredient_index % bag.size()].id;
+      if (!suspended && pressed(run, "add-ingredient") && ingredients.size() < 8)
+        ingredients.push_back(ingredient);
+    }
+    if (!suspended && kitchen && pressed(run, "remove-ingredient") && !ingredients.empty())
+      ingredients.pop_back();
     const auto& recipes = run.workshop().catalog().recipes;
     const auto recipe =
         recipes.empty()
             ? std::string{}
             : std::next(recipes.begin(), static_cast<std::ptrdiff_t>(recipe_index % recipes.size()))
                   ->first;
-    if (auto action = input(run, site, recipe)) {
-      auto candidate = run;
-      status = candidate.apply(std::move(*action));
-      if (status == "ok") {
-        if (save_file.empty() || expedition::save(candidate, save_file)) {
-          run = std::move(candidate);
-          if (!run.state().receipts.empty()) status = run.state().receipts.back().cause;
-        } else {
-          status = "save_failed";
-        }
-      }
-      continue;
+    std::string supply;
+    const auto& catalog = run.workshop().catalog().items;
+    if (run.allows(Command::supply) && !catalog.empty()) {
+      if (!suspended && pressed(run, "select-supply")) ++supply_index;
+      supply =
+          std::next(catalog.begin(), static_cast<std::ptrdiff_t>(supply_index % catalog.size()))
+              ->first;
     }
+    auto action = suspended ? std::nullopt : input(run, site, recipe, ingredients, supply);
     BeginDrawing();
     ClearBackground(background);
     ui_text(30, 28, run.rules().voxel ? "COPPER RELAY" : "DRIFT NATURALISTS", 30);
-    ui_text(31, 67, run.region().id + "   /   " + run.state().chapter, 20, accent);
+    auto location = run.region().id + "   /   " + run.state().chapter;
+    if (run.rules().pack) location += "   /   " + std::string(play_mode_name(run.mode()));
+    if (run.rules().crew) location += "   /   " + run.state().active_character;
+    ui_text(31, 67, std::move(location), 20, accent);
     draw_map(run, site, textures);
     const auto& state = run.state();
     const auto line = [&](int y, const char* label, int amount) {
@@ -215,29 +297,96 @@ bool play_expedition(Expedition& run, const expedition::Icons& icons,
         735, 220,
         "Season " + std::to_string(run.season() + 1) + "   Tide " + std::to_string(run.tide() + 1),
         16, subdued);
-    ui_text(735, 245,
-            "Wetness " + std::to_string(state.wetness) + "   Heat " + std::to_string(state.heat),
-            16, subdued);
-    ui_text(735, 280, site ? site->id + " / " + site->kind : "No site in reach", 17, accent);
-    ui_text(735, 309, recipe.empty() ? "No recipe" : "Recipe: " + recipe, 17, accent);
+    std::string exposure =
+        "Wetness " + std::to_string(state.wetness) + "   Heat " + std::to_string(state.heat);
+    if (state.poison > 0) exposure += "   Poison " + std::to_string(state.poison);
+    ui_text(735, 245, exposure, 16, subdued);
+    std::string site_label = site ? site->id + " / " + site->kind : "No site in reach";
+    if (site && site->kind == "plot") {
+      const auto growth = state.crops.at(site->id);
+      site_label += growth == -1  ? " / empty"
+                    : growth == 0 ? " / ready"
+                                  : " / " + std::to_string(growth);
+    }
+    ui_text(735, 280, site_label, 17, accent);
+    ui_text(735, 309,
+            kitchen          ? "Selected: " + ingredient
+            : recipe.empty() ? "No recipe"
+                             : "Recipe: " + recipe,
+            17, accent);
     ui_text(735, 345, "Inventory", 17, subdued);
     int row = 369;
-    for (const auto& slot : run.workshop().state().bag) {
-      ui_text(735, row, slot.id + "  x" + std::to_string(slot.count), 15);
+    for (const auto& slot : bag) {
+      std::string stack = slot.id + "  x" + std::to_string(slot.count);
+      if (slot.uses_remaining) stack += "  (" + std::to_string(slot.uses_remaining) + " uses)";
+      ui_text(735, row, stack, 15);
       row += 18;
       if (row >= 535) break;
     }
+    const auto hint = [&](std::string_view control, std::string_view name) {
+      return key_hint(run, control, name) + "    ";
+    };
     if (state.dead)
-      ui_text(31, 534, "Expedition ended. R attempts recovery.", 19, accent);
+      ui_text(31, 534,
+              run.allows(Command::revive)
+                  ? "Expedition ended. " + key_hint(run, "revive", "attempts recovery.")
+                  : "Expedition ended.",
+              19, accent);
     else if (state.ending)
       ui_text(31, 534, "Expedition complete", 19, accent);
     else if (!status.empty())
       ui_text(31, 534, status, 19, accent);
-    ui_text(31, 570, "WASD move    Tab select site    F use    G gather    Space fight    . wait",
-            17, subdued);
-    ui_text(31, 597, "Q select recipe    C craft    E eat    R revive    Esc quit", 17, subdued);
+    if (kitchen && !ingredients.empty()) {
+      std::string selected_food = "Pot";
+      for (const auto& id : ingredients) selected_food += "  " + id;
+      ui_text(31, 511, selected_food, 15, subdued);
+    } else if (site && !site->inspection.empty()) {
+      ui_text(31, 511, site->inspection, 15, subdued);
+    }
+    const auto movement = run.rules().keys.empty()
+                              ? std::string("WASD move    ")
+                              : hint("north", "north") + hint("south", "south") +
+                                    hint("west", "west") + hint("east", "east");
+    if (run.mode() == expedition::PlayMode::survey) {
+      ui_text(31, 570, movement, 17, subdued);
+      ui_text(31, 597,
+              run.allows(Command::survey_region) ? hint("survey-region", "next region") + "Esc quit"
+                                                 : "Esc quit",
+              17, subdued);
+    } else {
+      if (!supply.empty())
+        ui_text(31, 553, hint("select-supply", "select supply") + hint("supply", "take") + supply,
+                15, accent);
+      ui_text(31, 570,
+              movement + hint("select-site", "select site") + hint("use", "use") +
+                  hint("gather", "gather") + hint("attack", "fight") + hint("wait", "wait"),
+              17, subdued);
+      auto secondary = kitchen ? hint("select-ingredient", "select food") +
+                                     hint("add-ingredient", "add") +
+                                     hint("remove-ingredient", "remove") + hint("use", "cook")
+                               : hint("select-recipe", "select recipe") + hint("craft", "craft") +
+                                     hint("eat", "eat");
+      if (!kitchen && run.allows(Command::revive)) secondary += hint("revive", "revive");
+      ui_text(31, 597, secondary + "Esc quit", 17, subdued);
+    }
+    if (slots.select)
+      ui_text(760, 597, "F1 saves   Slot " + std::to_string(slots.active), 17, subdued);
     EndDrawing();
-  } while (!smoke && !WindowShouldClose());
+    if (action) {
+      const bool cooked = action->command == Command::cook;
+      auto candidate = run;
+      status = candidate.apply(std::move(*action));
+      if (status == "ok") {
+        if (save_file.empty() || expedition::save(candidate, save_file)) {
+          run = std::move(candidate);
+          if (cooked) ingredients.clear();
+          if (!run.state().receipts.empty()) status = run.state().receipts.back().cause;
+        } else {
+          status = "save_failed";
+        }
+      }
+    }
+  } while (!render_smoke && !WindowShouldClose());
   for (const auto& [id, texture] : textures) {
     (void)id;
     UnloadTexture(texture);

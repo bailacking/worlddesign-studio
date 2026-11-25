@@ -5,13 +5,16 @@
 #include <cstdlib>
 #include <utility>
 
+#include "scene_play.hpp"
 #include "seeded_grid.hpp"
 
 namespace wds::expedition {
 namespace {
 
-constexpr std::array commands{"north",  "south",  "west",  "east", "wait",  "use",
-                              "attack", "gather", "craft", "eat",  "revive"};
+constexpr std::array commands{"north",  "south",  "west",   "east",   "wait",
+                              "use",    "attack", "gather", "craft",  "eat",
+                              "revive", "cook",   "treat",  "supply", "survey-region"};
+constexpr std::array modes{"journey", "build", "trial", "survey"};
 
 int distance(TilePoint a, TilePoint b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 
@@ -27,9 +30,74 @@ std::string_view command_name(Command value) {
   return commands.at(static_cast<std::size_t>(value));
 }
 
+std::optional<PlayMode> play_mode(std::string_view name) {
+  const auto found = std::ranges::find(modes, name);
+  if (found == modes.end()) return {};
+  return static_cast<PlayMode>(found - modes.begin());
+}
+
+std::string_view play_mode_name(PlayMode value) {
+  return modes.at(static_cast<std::size_t>(value));
+}
+
+const KeyBindings& default_key_bindings() {
+  static const KeyBindings defaults{
+      {"north", {"W", "Up"}},
+      {"south", {"S", "Down"}},
+      {"west", {"A", "Left"}},
+      {"east", {"D", "Right"}},
+      {"wait", {"Period"}},
+      {"revive", {"R"}},
+      {"craft", {"C"}},
+      {"eat", {"E"}},
+      {"use", {"F"}},
+      {"attack", {"Space"}},
+      {"gather", {"G"}},
+      {"select-site", {"Tab"}},
+      {"select-recipe", {"Q"}},
+      {"select-ingredient", {"Z"}},
+      {"add-ingredient", {"X"}},
+      {"remove-ingredient", {"Backspace"}},
+      {"select-supply", {"Y"}},
+      {"supply", {"I"}},
+      {"survey-region", {"N"}},
+  };
+  return defaults;
+}
+
+bool valid_input_key(std::string_view name) {
+  return platform::scene_key(name).has_value() || name == "Period" || name == "Space" ||
+         name == "Tab" || name == "Backspace";
+}
+
+const KeyBindings& Expedition::input_keys() const {
+  return rules_.keys.empty() ? default_key_bindings() : rules_.keys;
+}
+
+bool Expedition::allows(Command cmd) const {
+  if (rules_.pack && std::ranges::find(rules_.pack->denied, cmd) != rules_.pack->denied.end())
+    return false;
+  const auto profile = mode();
+  if (profile == PlayMode::survey) return cmd <= Command::east || cmd == Command::survey_region;
+  if (cmd == Command::survey_region) return false;
+  if (cmd == Command::supply) return profile == PlayMode::build;
+  return profile != PlayMode::trial || cmd != Command::revive;
+}
+
+std::vector<std::string_view> Expedition::permitted_commands() const {
+  std::vector<std::string_view> available;
+  for (std::size_t index = 0; index < commands.size(); ++index)
+    if (allows(static_cast<Command>(index))) available.push_back(commands[index]);
+  return available;
+}
+
 Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identity)
     : rules_(std::move(rules)), workshop_(std::move(workshop)), identity_(std::move(identity)) {
   state_.hunger = rules_.initial_hunger;
+  if (rules_.crew) {
+    state_.active_character = rules_.crew->initial;
+    state_.unlocked_characters.insert(state_.active_character);
+  }
   for (const auto& region : rules_.regions) {
     state_.positions.push_back(region.spawn);
     for (const auto& site : region.sites)
@@ -37,6 +105,11 @@ Expedition::Expedition(Rules rules, items::Workshop workshop, std::string identi
         state_.encounters.emplace(site.id, site.power);
     for (const auto& site : region.sites)
       if (site.kind == "enemy" || site.kind == "raid") state_.actors.emplace(site.id, site.point);
+    for (const auto& site : region.sites)
+      if (site.kind == "plot") state_.crops.emplace(site.id, -1);
+    for (const auto& site : region.sites)
+      if (!site.after_any.empty() || !site.unlock_character.empty())
+        state_.completed_chapters.insert("departure");
   }
 }
 
@@ -45,12 +118,61 @@ TilePoint Expedition::location(const Site& site) const {
   return current == state_.actors.end() ? site.point : current->second;
 }
 
+bool Expedition::uses_survival_rules() const {
+  return workshop_.uses_survival_rules() || !state_.crops.empty() ||
+         std::ranges::any_of(rules_.regions, [](const auto& area) {
+           return std::ranges::any_of(area.sites,
+                                      [](const auto& site) { return site.kind == "kitchen"; });
+         });
+}
+
+bool Expedition::uses_exposure_rules() const {
+  return std::ranges::any_of(rules_.regions, [](const auto& area) {
+    return area.climate ||
+           std::ranges::any_of(area.sites, [](const auto& site) { return site.venom > 0; });
+  });
+}
+
+bool Expedition::uses_interaction_rules() const {
+  return std::ranges::any_of(rules_.regions, [](const auto& area) {
+    return std::ranges::any_of(area.sites,
+                               [](const auto& site) { return site.interaction_priority > 0; });
+  });
+}
+
+bool Expedition::uses_character_rules() const {
+  return rules_.crew || std::ranges::any_of(rules_.regions, [](const auto& area) {
+           return std::ranges::any_of(area.sites,
+                                      [](const auto& site) { return !site.inspection.empty(); });
+         });
+}
+
+CharacterTraits Expedition::active_traits() const {
+  return rules_.crew ? rules_.crew->characters.at(state_.active_character) : CharacterTraits{};
+}
+
+std::vector<const Site*> Expedition::nearby_sites() const {
+  std::vector<const Site*> targets;
+  for (const auto& site : region().sites)
+    if (distance(location(site), position()) <= 1) targets.push_back(&site);
+  std::ranges::stable_sort(targets, std::ranges::greater{}, &Site::interaction_priority);
+  return targets;
+}
+
 const Site* Expedition::nearby(std::string_view target) const {
   if (target.empty()) {
-    const auto found = std::ranges::min_element(
-        region().sites, {}, [&](const auto& site) { return distance(location(site), position()); });
-    return found != region().sites.end() && distance(location(*found), position()) <= 1 ? &*found
-                                                                                        : nullptr;
+    const Site* best = nullptr;
+    int best_distance = 2;
+    for (const auto& site : region().sites) {
+      const auto range = distance(location(site), position());
+      if (range > 1) continue;
+      if (!best || site.interaction_priority > best->interaction_priority ||
+          (site.interaction_priority == best->interaction_priority && range < best_distance)) {
+        best = &site;
+        best_distance = range;
+      }
+    }
+    return best;
   }
   const auto found = std::ranges::find(region().sites, target, &Site::id);
   return found != region().sites.end() && distance(location(*found), position()) <= 1 ? &*found
@@ -71,6 +193,10 @@ int Expedition::terrain(TilePoint point) const {
 }
 
 void Expedition::change(std::string_view cause, int health, int hunger, int morale) {
+  if (mode() == PlayMode::build) {
+    health = std::max(0, health);
+    hunger = std::max(0, hunger);
+  }
   state_.health = std::clamp(state_.health + health, 0, 20);
   state_.hunger = std::clamp(state_.hunger + hunger, 0, 20);
   state_.morale = std::clamp(state_.morale + morale, 0, 20);
@@ -81,21 +207,14 @@ void Expedition::change(std::string_view cause, int health, int hunger, int mora
 
 void Expedition::advance() {
   ++state_.tick;
+  if (workshop_.advance(state_.tick) > 0) change("spoilage", 0);
   if (state_.tick % static_cast<unsigned>(rules_.hunger_interval) == 0) change("metabolism", 0, -1);
   if (state_.hunger == 0) change("starvation", -1);
   if (region().habitat == "cavern" && state_.tick % 2 == 0 && !workshop_.has_item("lantern"))
     change("darkness", -1, 0, -2);
   if (region().habitat == "ember" && state_.tick % 3 == 0) change("embers", -1);
-  if (!rules_.voxel) {
-    const auto phase = season();
-    state_.wetness =
-        std::clamp(state_.wetness + (phase == 1 || region().habitat == "ocean" ? 2 : -1), 0, 10);
-    state_.heat = std::clamp(state_.heat + (phase == 2 ? 2 : -1), 0, 10);
-    if (state_.wetness >= 8) change("drenched", 0, 0, -1);
-    if (state_.heat >= 8) change("overheat", -2);
-    if (phase == 3 && state_.wetness > 4) change("cold", -1);
-    if (state_.morale == 0) change("despair", -1);
-  }
+  advance_environment();
+  advance_crops();
   for (const auto& site : region().sites) {
     const auto actor = state_.actors.find(site.id);
     if (actor == state_.actors.end() || state_.encounters.at(site.id) == 0) continue;
@@ -111,6 +230,45 @@ void Expedition::advance() {
     }
     if (site.kind == "raid" && state_.tick % 6 == 0 && distance(point, position()) <= 2)
       change("raid", -2);
+  }
+}
+
+void Expedition::advance_environment() {
+  const auto phase = season();
+  const auto& climate = region().climate;
+  if (!rules_.voxel || climate) {
+    const int rain =
+        climate ? climate->wetness[phase] : (phase == 1 || region().habitat == "ocean" ? 2 : -1);
+    const int warmth = climate ? climate->heat[phase] : (phase == 2 ? 2 : -1);
+    state_.wetness = std::clamp(state_.wetness + rain, 0, 10);
+    state_.heat = std::clamp(state_.heat + warmth, 0, 10);
+    if (state_.wetness >= 8) change("drenched", 0, 0, -1);
+    if (state_.heat >= 8) change("overheat", -std::max(0, 2 - active_traits().heat_guard));
+    if (phase == 3 && state_.wetness > 4) change("cold", -1);
+    if (state_.morale == 0) change("despair", -1);
+  }
+  if (climate && climate->eruption && phase == climate->eruption->season) {
+    const auto& hazard = *climate->eruption;
+    const auto offset = (rules_.seed + static_cast<unsigned>(state_.region)) % hazard.interval;
+    const auto progress = (state_.tick + offset) % hazard.interval;
+    if (progress == hazard.interval - hazard.warning_ticks) change("eruption_warning", 0);
+    if (progress == 0) change("eruption", -hazard.damage);
+  }
+  if (state_.poison > 0) {
+    --state_.poison;
+    change("poison", -1);
+  }
+}
+
+void Expedition::advance_crops() {
+  if (state_.crops.empty() || season() == 3) return;
+  for (const auto& area : rules_.regions) {
+    if (season() == 2 && area.habitat != "shore") continue;
+    for (const auto& site : area.sites) {
+      if (site.kind != "plot") continue;
+      auto& remaining = state_.crops.at(site.id);
+      if (remaining > 0 && --remaining == 0) change("crop_ready", 0);
+    }
   }
 }
 
@@ -141,14 +299,17 @@ std::string_view Expedition::move(int x, int y) {
   auto point = position();
   point.x += x;
   point.y += y;
-  if (point.x < 0 || point.y < 0 || point.x >= region().width || point.y >= region().height ||
-      terrain(point) == 3)
+  if (point.x < 0 || point.y < 0 || point.x >= region().width || point.y >= region().height)
     return "blocked";
-  if (region().habitat == "ocean") {
-    if (!state_.boat) return "boat_required";
-    if (terrain(point) == 2 || tide() == 2) {
-      --state_.boat;
-      change("wave", -1);
+  if (mode() != PlayMode::survey) {
+    const auto tile = terrain(point);
+    if (tile == 3) return "blocked";
+    if (region().habitat == "ocean") {
+      if (!state_.boat) return "boat_required";
+      if (tile == 2 || tide() == 2) {
+        --state_.boat;
+        change("wave", -1);
+      }
     }
   }
   state_.positions[state_.region] = point;
@@ -159,7 +320,8 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   if (attack) {
     const auto found = state_.encounters.find(site.id);
     if (found == state_.encounters.end() || found->second == 0) return "no_target";
-    const int dealt = workshop_.has_item("spear") ? 3 : 1;
+    const auto tool = workshop_.combat_tool();
+    const int dealt = tool.force;
     if (dealt >= found->second) {
       if (!award(site.reward)) return "capacity";
       found->second = 0;
@@ -171,13 +333,34 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
           site.kind == "boss" && before > site.power / 2 && found->second <= site.power / 2;
       if (phase_change) change("boss_enraged", 0);
       const bool enraged = site.kind == "boss" && found->second <= site.power / 2;
-      change("retaliation", enraged ? -3 : -2, 0, -1);
+      const int retaliation = enraged ? 3 : 2;
+      change("retaliation", -std::max(0, retaliation - tool.guard), 0, -1);
+      const int venom = std::max(0, site.venom - active_traits().venom_guard);
+      if (!state_.dead && venom > state_.poison) {
+        state_.poison = venom;
+        change("poisoned", 0);
+      }
       if (region().habitat == "ocean") state_.boat = std::max(0, state_.boat - 1);
     }
+    if (!tool.id.empty() && workshop_.wear(tool.id)) change("tool_broken", 0);
     return "ok";
   }
   if (site.kind == "portal") return enter(site) ? "ok" : "route_locked";
   if (site.kind == "trade") return award(site.reward, site.item) ? "ok" : "trade_unavailable";
+  if (site.kind == "plot") {
+    auto& remaining = state_.crops.at(site.id);
+    if (remaining > 0) return "crop_growing";
+    if (remaining == 0) {
+      if (!award(site.reward)) return "capacity";
+      remaining = -1;
+      change("harvest", 0);
+    } else {
+      if (!workshop_.consume(site.item)) return "missing_item";
+      remaining = site.power;
+      change("plant", 0);
+    }
+    return "ok";
+  }
   if (site.kind == "anchor" && state_.anchor_site == site.id &&
       state_.anchor_charge >= site.anchor_capacity)
     return "anchor_full";
@@ -205,11 +388,20 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
   } else if (site.kind == "rest") {
     change("shelter", site.power, 0, site.power);
   } else if (site.kind == "chapter") {
+    if (state_.completed_chapters.contains(site.id)) return "chapter_complete";
     if (!site.target.empty() && site.target != state_.chapter) return "chapter_locked";
+    if (!site.after_any.empty() && std::ranges::none_of(site.after_any, [&](const auto& prior) {
+          return state_.completed_chapters.contains(prior);
+        }))
+      return "chapter_locked";
     if (!award(site.reward)) return "capacity";
     state_.chapter = site.id;
-    state_.ending = site.id == "return";
-    change(state_.ending ? "ending" : "chapter", 0, 0, 2);
+    const bool finished = site.id == "return";
+    state_.ending = finished || (uses_story_rules() && state_.ending);
+    if (uses_story_rules()) state_.completed_chapters.insert(site.id);
+    if (!site.unlock_character.empty()) state_.unlocked_characters.insert(site.unlock_character);
+    if (site.activate_character) state_.active_character = site.unlock_character;
+    change(finished ? "ending" : "chapter", 0, 0, 2);
   } else {
     return "no_action";
   }
@@ -219,10 +411,14 @@ std::string_view Expedition::interact(const Site& site, bool attack) {
 std::string_view Expedition::apply(Action action) {
   if (history_.size() == max_actions) return "action_limit";
   const auto cmd = action.command;
+  if (!allows(cmd)) return "command_forbidden";
   if (state_.dead && cmd != Command::revive) return "dead";
-  const bool needs_target = cmd == Command::gather || cmd == Command::craft || cmd == Command::eat;
+  const bool needs_target = cmd == Command::gather || cmd == Command::craft ||
+                            cmd == Command::eat || cmd == Command::cook || cmd == Command::treat ||
+                            cmd == Command::supply || cmd == Command::survey_region;
   const bool uses_target = needs_target || cmd == Command::use || cmd == Command::attack;
-  if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()))
+  if ((needs_target && action.target.empty()) || (!uses_target && !action.target.empty()) ||
+      (cmd == Command::cook) != !action.ingredients.empty())
     return "invalid_action";
   const auto execute = [&]() -> std::string_view {
     switch (cmd) {
@@ -252,6 +448,13 @@ std::string_view Expedition::apply(Action action) {
       }
       case Command::craft:
         return workshop_.apply({"recipe", action.target});
+      case Command::cook: {
+        const auto* site = nearby(action.target);
+        if (!site || site->kind != "kitchen") return "out_of_reach";
+        const auto result = workshop_.cook(action.ingredients);
+        if (result == "ok") change("cooked", 0);
+        return result;
+      }
       case Command::eat:
         if (const auto item = workshop_.catalog().items.find(action.target);
             item == workshop_.catalog().items.end() || !item->second.tags.contains("food") ||
@@ -259,17 +462,36 @@ std::string_view Expedition::apply(Action action) {
           return "missing_food";
         change("meal", 1, 6);
         return "ok";
+      case Command::treat:
+        if (state_.poison == 0) return "no_poison";
+        if (const auto item = workshop_.catalog().items.find(action.target);
+            item == workshop_.catalog().items.end() || !item->second.tags.contains("antidote") ||
+            !workshop_.consume(action.target))
+          return "missing_antidote";
+        state_.poison = 0;
+        change("treated", 0);
+        return "ok";
       case Command::revive:
         if (!state_.dead) return "still_alive";
         if (!state_.anchor_charge && rules_.permanent && !workshop_.consume("lifeline", 1))
           return "permanent_death";
         if (state_.anchor_charge) --state_.anchor_charge;
         state_.dead = false;
+        state_.poison = 0;
         state_.hunger = std::max(state_.hunger, 8);
         go_to(state_.anchor);
         state_.positions[state_.region] = region().spawn;
         change("revival", 12, 0, 6);
         return "ok";
+      case Command::supply:
+        if (!workshop_.catalog().items.contains(action.target)) return "unknown_item";
+        return award(action.target) ? "ok" : "capacity";
+      case Command::survey_region: {
+        const auto region = std::ranges::find(rules_.regions, action.target, &Region::id);
+        if (region == rules_.regions.end()) return "unknown_region";
+        go_to(static_cast<std::size_t>(region - rules_.regions.begin()));
+        return "ok";
+      }
     }
     return "invalid_action";
   };
@@ -280,7 +502,7 @@ std::string_view Expedition::apply(Action action) {
     state_.receipts = std::move(previous);
     return result;
   }
-  if (!state_.dead) advance();
+  if (!state_.dead && mode() != PlayMode::survey) advance();
   history_.push_back(std::move(action));
   return "ok";
 }

@@ -8,6 +8,7 @@
 #include "behavior_document.hpp"
 #include "expedition.hpp"
 #include "platform_project.hpp"
+#include "project_diff.hpp"
 #include "project_export.hpp"
 #include "project_io.hpp"
 #include "signal_circuit.hpp"
@@ -86,17 +87,182 @@ Json project_index(const fs::path& directory, std::optional<std::uint64_t> expec
   return result;
 }
 
+std::optional<int> actuator_tick(const Json& trace, std::string_view trigger, std::string_view gate,
+                                 bool powered, bool rising) {
+  auto event = trace.begin();
+  while (event != trace.end()) {
+    const auto tick = (*event)["tick"].get<int>();
+    bool triggered = false;
+    do {
+      const auto& phase = (*event)["phase"];
+      if (phase == "update" || phase == "input") {
+        const auto& id = (*event)["id"].get_ref<const std::string&>();
+        const bool high = (*event)["to"] != 0;
+        if (id == gate) powered = high;
+        if (id == trigger && high == rising && ((*event)["from"] == 0) == rising) triggered = true;
+      }
+      ++event;
+    } while (event != trace.end() && (*event)["tick"] == tick);
+    if (triggered && powered) return tick;
+  }
+  return {};
+}
+
+Json actuate(const fs::path& directory, std::uint64_t revision, bool apply, const Json& input) {
+  const auto trigger = text(input, "trigger");
+  const auto x = number<int>(input, "x"), y = number<int>(input, "y"), z = number<int>(input, "z");
+  const auto dx = number<int>(input, "dx"), dz = number<int>(input, "dz");
+  const auto capacity = input.contains("capacity") ? number<int>(input, "capacity") : 1;
+  if (capacity < 1 || capacity > voxel::World::push_capacity)
+    return fail("invalid_argument", "/input/capacity");
+  const auto motion = input.contains("motion") ? text(input, "motion") : "push";
+  if (motion != "push" && motion != "sticky-pull") return fail("invalid_argument", "/input/motion");
+  const bool pull = motion == "sticky-pull";
+  if (pull && capacity != 1) return fail("invalid_argument", "/input/capacity");
+  if (pull && !((dx == 0 && (dz == -1 || dz == 1)) || (dz == 0 && (dx == -1 || dx == 1))))
+    return fail("invalid_direction", "/input");
+  if (!input.contains("circuit")) return fail("invalid_argument", "/input/circuit");
+  const auto& circuit = input["circuit"];
+  const auto replay = voxel::replay_circuit(circuit);
+  if (replay["code"] != "ok")
+    return fail("invalid_circuit",
+                "/input/circuit" + replay["location"].get<std::string>().substr(6));
+  if (!replay["levels"].contains(trigger)) return fail("invalid_argument", "/input/trigger");
+  std::string gate;
+  bool powered = true;
+  if (input.contains("requires_high")) {
+    gate = text(input, "requires_high");
+    if (!replay["levels"].contains(gate)) return fail("invalid_argument", "/input/requires_high");
+    powered = circuit.contains("resume") && circuit["resume"]["nodes"][gate]["level"] != 0;
+  }
+  auto loaded = start_scene(directory, revision, true);
+  if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+  if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
+  const auto pulse = actuator_tick(replay["trace"], trigger, gate, powered, !pull);
+  if (!pulse) return {{"code", "ok"}, {"revision", revision}, {"changed", false}};
+  auto& scene = *loaded.voxel_scene;
+  const int move_x = pull ? -dx : dx, move_z = pull ? -dz : dz;
+  const auto result = scene.world.shift_blocks(x, y, z, move_x, move_z, capacity);
+  if (result.code != "ok") return fail(result.code, "/input");
+  auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
+  saved.scene_change.reset();
+  auto reply = Json::parse(field_result_json(saved));
+  if (saved.code == "ok") {
+    reply["tick"] = *pulse;
+    reply["moved"] = result.moved;
+    reply["from"] = {x, y, z};
+    reply["to"] = {x + move_x, y, z + move_z};
+  }
+  return reply;
+}
+
+Json workyard(const fs::path& directory, std::uint64_t revision, std::string_view id, bool apply,
+              const Json& input) {
+  auto loaded = start_scene(directory, revision, true);
+  if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+  if (!loaded.voxel_scene) return fail("unsupported_scene_kind", "/kind");
+  auto& scene = *loaded.voxel_scene;
+  const auto x = number<int>(input, "x"), z = number<int>(input, "z");
+  if (id == "scene.voxel.cart") {
+    const voxel::Cell start{x, number<int>(input, "y"), z};
+    voxel::CartRoute route;
+    const auto moves = input.find("directions");
+    if (moves != input.end()) {
+      if (input.contains("dx") || input.contains("dz") || input.contains("steps") ||
+          !moves->is_array() || moves->empty() || moves->size() > voxel::World::cart_max_steps)
+        return fail("invalid_argument", "/input/directions");
+      constexpr std::array<std::string_view, 4> names{"east", "west", "south", "north"};
+      constexpr std::array offsets{std::array{1, 0}, std::array{-1, 0}, std::array{0, 1},
+                                   std::array{0, -1}};
+      std::vector<std::array<int, 2>> directions;
+      for (const auto& move : *moves) {
+        if (!move.is_string()) return fail("invalid_argument", "/input/directions");
+        const auto found = std::ranges::find(names, move.get_ref<const std::string&>());
+        if (found == names.end()) return fail("invalid_argument", "/input/directions");
+        directions.push_back(offsets[static_cast<std::size_t>(found - names.begin())]);
+      }
+      route = scene.world.cart_route(start, directions);
+    } else {
+      route = scene.world.cart_route(start, number<int>(input, "dx"), number<int>(input, "dz"),
+                                     number<int>(input, "steps"));
+    }
+    if (route.code != "ok") return fail(route.code, "/input");
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"positions", route.positions},
+            {"blocked", route.blocked}};
+  }
+  std::optional<std::uint32_t> weather_tick;
+  if (input.contains("weather_tick")) weather_tick = number<std::uint32_t>(input, "weather_tick");
+  const auto change =
+      scene.world.step_dynamics(x, z, number<int>(input, "width"), number<int>(input, "depth"),
+                                number<int>(input, "steps"), weather_tick);
+  if (change.code != "ok") return fail(change.code, "/input");
+  auto saved = apply ? save_voxel_scene(directory, scene) : prepare_voxel_save(scene);
+  saved.scene_change.reset();
+  auto reply = Json::parse(field_result_json(saved));
+  if (saved.code == "ok") {
+    reply["water_updates"] = change.water_updates;
+    reply["ignited"] = change.ignited;
+    reply["extinguished"] = change.extinguished;
+    if (weather_tick) reply["weather_extinguished"] = change.weather_extinguished;
+    if (scene.world.terrain()->thermal_workyard()) {
+      reply["lava_updates"] = change.lava_updates;
+      reply["solidified"] = change.solidified;
+    }
+  }
+  return reply;
+}
+
 Json dispatch(const fs::path& directory, std::string_view id, std::string_view mode,
               std::optional<std::uint64_t> expected, const Json& input) {
   const auto revision = expected.value_or(0);
   const bool apply = mode == "apply";
   if (id == "project.index") return project_index(directory, expected);
-  if (id == "expedition.replay") {
+  if (id == "project.diff")
+    return compare_projects(directory, revision, path(input, "other_directory"),
+                            number<std::uint64_t>(input, "other_revision"));
+  if (id == "scene.merge")
+    return Json::parse(field_result_json(merge_project_scene(
+        {directory, revision},
+        {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
+        {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")}, apply)));
+  if (id == "project.merge") {
+    const auto resources = input.find("resources");
+    if (resources == input.end() || !resources->is_array() || resources->size() > 8 ||
+        !std::ranges::all_of(*resources, &Json::is_string))
+      return fail("invalid_argument", "/input/resources");
+    const auto resolutions = input.find("resolutions");
+    const auto token = input.contains("merge_token") ? text(input, "merge_token") : "";
+    return Json::parse(merge_project_resources(
+        {directory, revision},
+        {path(input, "base_directory"), number<std::uint64_t>(input, "base_revision")},
+        {path(input, "other_directory"), number<std::uint64_t>(input, "other_revision")},
+        resources->get<std::vector<std::string>>(), apply,
+        resolutions == input.end() ? "[]" : resolutions->dump(), token));
+  }
+  if (id == "project.restore") {
+    const auto change = input.find("change");
+    if (change == input.end() || !change->is_object())
+      return fail("invalid_argument", "/input/change");
+    return Json::parse(restore_project_resources({directory, revision}, change->dump(), apply));
+  }
+  if (id == "scene.voxel.actuate") return actuate(directory, revision, apply, input);
+  if (id == "scene.voxel.cart" || id == "scene.voxel.dynamics")
+    return workyard(directory, revision, id, apply, input);
+  if (id == "expedition.replay" || id == "expedition.recipes") {
     auto loaded = expedition::load(directory, revision);
     if (!loaded.expedition) return fail(loaded.code, loaded.location);
+    if (id == "expedition.recipes")
+      return Json::parse(expedition::recipe_graph(*loaded.expedition));
     const auto actions = input.find("actions");
     if (actions == input.end()) return fail("invalid_argument", "/input/actions");
-    return Json::parse(expedition::replay(std::move(*loaded.expedition), actions->dump()));
+    const auto resume = input.find("resume");
+    if (resume != input.end() && !resume->is_object())
+      return fail("invalid_checkpoint", "/input/resume");
+    return Json::parse(expedition::replay(std::move(*loaded.expedition), actions->dump(),
+                                          resume == input.end() ? std::string{} : resume->dump(),
+                                          flag(input, "checkpoint")));
   }
   if (id == "circuit.replay") return voxel::replay_circuit(input);
   if (id == "behavior.convert") {
@@ -159,6 +325,23 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
             {"landmark", terrain->landmark(x, z)},
             {"blocks", std::move(blocks)}};
   }
+  if (id == "scene.landscape.environment") {
+    const auto x = number<int>(input, "x"), y = number<int>(input, "y"),
+               z = number<int>(input, "z");
+    const auto tick = number<std::uint32_t>(input, "tick");
+    const auto loaded = start_scene(directory, revision, true);
+    if (!loaded.session && !loaded.voxel_scene) return Json::parse(scene_result_json(loaded));
+    if (!loaded.voxel_scene || !loaded.voxel_scene->world.terrain())
+      return fail("unsupported_scene_kind", "/terrain");
+    const auto sample = loaded.voxel_scene->world.environment(x, y, z, tick);
+    if (!sample) return fail("invalid_argument", "/input");
+    return {{"code", "ok"},
+            {"revision", revision},
+            {"weather", sample->weather},
+            {"open_sky", sample->open_sky},
+            {"vertical_light", sample->vertical_light},
+            {"light", sample->light}};
+  }
   if (id == "scene.character.set") {
     const auto optional = [&](const char* key) -> std::optional<int> {
       return input.contains(key) ? std::optional(number<int>(input, key)) : std::nullopt;
@@ -205,13 +388,17 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     return result;
   }
   if (id.starts_with("resource.field.")) {
-    const FieldEdit edit{text(input, "resource_id"), text(input, "field"), revision,
-                         number<std::int64_t>(input, "value")};
+    FieldEdit edit{text(input, "resource_id"), text(input, "field"), revision,
+                   number<std::int64_t>(input, "value")};
+    if (input.contains("expected_value"))
+      edit.expected_value = number<std::int64_t>(input, "expected_value");
     return Json::parse(field_result_json(edit_field(directory, edit, apply)));
   }
   if (id.starts_with("scene.field.")) {
-    const SceneEdit edit{text(input, "entity_id"), text(input, "field"), revision,
-                         number<std::int64_t>(input, "value")};
+    SceneEdit edit{text(input, "entity_id"), text(input, "field"), revision,
+                   number<std::int64_t>(input, "value")};
+    if (input.contains("expected_value"))
+      edit.expected_value = number<std::int64_t>(input, "expected_value");
     return Json::parse(
         field_result_json(edit_scene(directory, edit, apply, flag(input, "capture_change"))));
   }

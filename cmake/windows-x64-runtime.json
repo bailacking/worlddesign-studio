@@ -8,6 +8,18 @@
   "voxel_format": 1,
   "world_ecology_format": 1,
   "expedition_format": 1,
+  "survival_format": 1,
+  "exposure_format": 1,
+  "processing_format": 1,
+  "inscription_format": 1,
+  "expedition_rules_format": 1,
+  "expedition_input_format": 1,
+  "expedition_character_format": 1,
+  "story_format": 1,
+  "interaction_format": 1,
+  "voxel_dynamics_format": 1,
+  "voxel_thermal_format": 1,
+  "voxel_grade_format": 1,
   "minimum_environment": {
     "os": "Windows 10 x64",
     "graphics": "OpenGL 3.3"

@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -29,6 +30,7 @@ def attack(target, count=1):
 
 EAST = action("east")
 WEST = action("west")
+NORTH = action("north")
 SOUTH = action("south")
 WAIT = action("wait")
 
@@ -85,6 +87,63 @@ def carry(step, item):
     return any(row["item"] == item for row in step["workshop"]["bag"])
 
 
+def observed(authored, seen):
+    covered = authored & seen
+    return {
+        "total": len(authored), "covered": len(covered),
+        "missing": sorted(authored - covered),
+    }
+
+
+def new_coverage():
+    return {group: set() for group in ("regions", "sites", "recipes", "inventory_items")}
+
+
+def record_coverage(coverage, route, steps):
+    for command, state in zip(route, steps, strict=True):
+        if state["code"] != "ok":
+            continue
+        coverage["regions"].add(state["region"])
+        if command["command"] in ("use", "gather", "attack") and "target" in command:
+            coverage["sites"].add(command["target"])
+        if command["command"] == "craft":
+            coverage["recipes"].add(command["target"])
+        coverage["inventory_items"].update(
+            item["item"] for container in ("bag", "chest", "loot")
+            for item in state["workshop"][container]
+        )
+
+
+def summarize_coverage(project, coverage):
+    data = json.loads((project / "assets" / "expedition.json").read_text(encoding="utf-8"))
+    regions = {area["id"]: area for area in data["regions"]}
+    sites = {spot["id"]: spot for area in regions.values() for spot in area["sites"]}
+    visited = coverage["regions"] & regions.keys()
+    reached_sites = coverage["sites"] & sites.keys()
+    icons = set(data.get("icons", {}).values())
+    icons.update(spot["icon"] for spot in sites.values() if "icon" in spot)
+    return {
+        "regions": observed(regions.keys(), visited),
+        "habitats": observed({area["habitat"] for area in regions.values()},
+                             {regions[key]["habitat"] for key in visited}),
+        "sites": observed(sites.keys(), reached_sites),
+        "site_kinds": observed({spot["kind"] for spot in sites.values()},
+                               {sites[key]["kind"] for key in reached_sites}),
+        "recipes": observed(data["workshop"]["recipes"].keys(), coverage["recipes"]),
+        "inventory_items": observed(data["workshop"]["items"].keys(), coverage["inventory_items"]),
+        # A successful replay decodes the project's icon resource references at load.
+        "decoded_icons": observed(icons, icons),
+    }
+
+
+def failed_steps(route, steps):
+    return [
+        {"step": index, "action": command, "code": state["code"], "region": state["region"]}
+        for index, (command, state) in enumerate(zip(route, steps, strict=True), 1)
+        if state["code"] != "ok"
+    ]
+
+
 def supply_chain(cli, project, revision=0):
     craft = action("craft", "refined-1")
     trade, shelter = use("outpost-0-1"), use("shelter-0-1")
@@ -103,18 +162,105 @@ def supply_chain(cli, project, revision=0):
     return len(steps)
 
 
-def journey(cli, projects):
+def check_supply_route(cli, project, prefix, expected_steps):
+    steps = replay(cli, project, [*prefix, *(cmd for cmd, _ in expected_steps)])["steps"]
+    for index, (command, code) in enumerate(expected_steps, len(prefix)):
+        step = steps[index]
+        if step["code"] != code:
+            return steps, {
+                "step": index + 1, "action": command, "code": step["code"],
+                "expected": code, "boat": step["boat"], "tick": step["tick"],
+            }
+        if code != "ok":
+            assert step["tick"] == steps[index - 1]["tick"], (project.name, command, step)
+            assert step["workshop"] == steps[index - 1]["workshop"], (project.name, command)
+    return steps, None
+
+
+def supply_coverage(cli, project, main_route, main_report, coverage):
+    authored = json.loads((project / "assets" / "expedition.json").read_text(encoding="utf-8"))
+    expected = set()
+    completed = set()
+    failures = []
+    tide_delays = []
+    entries = {authored["regions"][0]["id"]: 0}
+    for index, step in enumerate(main_report["steps"], 1):
+        entries.setdefault(step["region"], index)
+
+    for area in authored["regions"]:
+        region = area["id"]
+        prefix = main_route[:entries[region]]
+        for site in area["sites"]:
+            deposit = site["id"]
+            if not deposit.startswith("deposit-"):
+                continue
+            key = deposit.removeprefix("deposit-")
+            expected.add(deposit)
+            sample = site["reward"]
+            slot = sample.removeprefix("sample-")
+            item, voucher = f"refined-{slot}", f"voucher-{slot}"
+            trade, shelter = use(f"outpost-{key}"), use(f"shelter-{key}")
+            recipe = authored["workshop"]["recipes"][item]
+            materials = sum(stack["count"] for stack in recipe["ingredients"])
+
+            # Enter on the main route and approach the lane from its west side.
+            x, y = site["at"]
+            route = [SOUTH] * (y - 1) + [EAST] * (x - 2)
+            checks = [
+                (action("craft", item), "missing_ingredients"),
+                *((cmd, "ok") for cmd in gather(deposit, materials)),
+                (EAST, "ok"), (trade, "trade_unavailable"),
+                (action("craft", item), "ok"), (trade, "ok"), (trade, "trade_unavailable"),
+                (EAST, "ok"), (shelter, "ok"),
+            ]
+            expected_steps = [*((command, "ok") for command in route), *checks]
+            steps, failure = check_supply_route(cli, project, prefix, expected_steps)
+            if area["habitat"] == "ocean" and failure and failure["code"] == "boat_required":
+                alternatives = [(waits, route, False) for waits in range(1, 16)]
+                # Check alternate lanes from the repair deck when the direct lane stays rough.
+                for lane in range(y, 1, -1):
+                    approach = [SOUTH, SOUTH, use("repair-deck")]
+                    approach += ([NORTH] if lane == 2 else [SOUTH] * (lane - 3))
+                    approach += [EAST] * (x - 2) + [SOUTH] * (y - lane)
+                    alternatives.extend((waits, approach, True) for waits in range(16))
+                for waits, approach, repaired in alternatives:
+                    delayed = [(WAIT, "ok")] * waits
+                    delayed += [(command, "ok") for command in approach] + checks
+                    retry, error = check_supply_route(cli, project, prefix, delayed)
+                    if not error:
+                        tide_delays.append({"deposit": deposit, "waits": waits, "repair": repaired,
+                                            "approach": approach, "initial": failure})
+                        expected_steps, steps, failure = delayed, retry, None
+                        break
+            if failure:
+                failures.append({"deposit": deposit, "region": region, **failure})
+                continue
+            assert carry(steps[-1], voucher) and "shelter" in causes(steps[-1:]), (project.name, deposit)
+            assert not carry(steps[-1], sample) and not carry(steps[-1], item), (project.name, deposit)
+            record_coverage(coverage, [*prefix, *(cmd for cmd, _ in expected_steps)], steps)
+            completed.add(deposit)
+    return {**observed(expected, completed), "failures": failures, "tide_delays": tide_delays}
+
+
+def journey(cli, projects, coverage, observed_content):
     copper = projects / "copper-relay"
     drift = projects / "drift-naturalists"
     reports = {}
+    failures = {}
     for name, project, path in (("copper", copper, COPPER), ("drift", drift, DRIFT)):
         result = replay(cli, project, path)
-        failures = [(index, path[index], step["code"], step["region"], step["positions"])
-                    for index, step in enumerate(result["steps"]) if step["code"] != "ok"]
-        assert not failures, failures
+        tally = observed_content[project.name]
+        record_coverage(tally, path, result["steps"])
+        counts = {**summarize_coverage(project, tally), "failed_steps": failed_steps(path, result["steps"])}
+        coverage[project.name] = counts
+        if counts["failed_steps"]:
+            failures[project.name] = counts["failed_steps"]
+        reports[name] = result
+    assert not failures, failures
+    for name, project, path in (("copper", copper, COPPER), ("drift", drift, DRIFT)):
+        result = reports[name]
         assert result["state"]["ending"], result["state"]
         assert replay(cli, project, path) == result
-        reports[name] = result
     a = reports["copper"]
     assert a["state"]["positions"] == {"cloud-ring": [1, 1], "meadow": [9, 1],
                                       "slag-field": [4, 1]}, a["state"]
@@ -169,6 +315,62 @@ def persistence(probe, project, save):
     for stage, expected in (("start", 0), ("interrupt", 73), ("verify", 0)):
         result = subprocess.run([probe, project, save, stage], check=False, timeout=30)
         assert result.returncode == expected, (stage, result.returncode)
+
+
+def exploration_branches(cli, copper, drift, coverage):
+    routes = [
+        (copper, [*COPPER[:COPPER.index(use("spire-found"))], EAST, *gather("city-cache")], "cloud-ring"),
+        (copper, [*COPPER_TO_SKY[:COPPER_TO_SKY.index(use("ember-market"))], use("meadow-gate")], "meadow"),
+        (copper, [*gather("copper-vein"), action("craft", "lantern")], "meadow"),
+        (drift, [EAST, use("camp")], "reed-bank"),
+        (drift, [*DRIFT_TO_SHORE, *([EAST] * 6), use("island-signal")], "heron-isle"),
+        (drift, [*DRIFT[:DRIFT.index(use("landfall")) + 1], use("shoal-return")], "open-current"),
+    ]
+    evidence = {project.name: [] for project in (copper, drift)}
+    for project, route, destination in routes:
+        result = replay(cli, project, route)
+        failures = failed_steps(route, result["steps"])
+        assert not failures, (project.name, route[-1], failures)
+        assert result["state"]["region"] == destination, (project.name, route[-1], result["state"]["region"])
+        record_coverage(coverage[project.name], route, result["steps"])
+        evidence[project.name].append({"action": route[-1], "steps": len(route), "destination": destination})
+    return evidence
+
+
+def checkpoint_handoff(cli, project, relocated, coverage):
+    route = [*DRIFT, WEST, WEST, *([use("spring-haven")] * 12), use("to-mainland")]
+    uninterrupted = replay(cli, project, route)
+    assert all(step["code"] == "ok" for step in uninterrupted["steps"])
+    assert uninterrupted["state"]["ending"] and uninterrupted["state"]["region"] == "reed-bank"
+    assert uninterrupted["state"]["season"] == 1 and carry(uninterrupted["state"], "naturalist")
+    record_coverage(coverage, route, uninterrupted["steps"])
+
+    copies = [index + 1 for index, command in enumerate(route)
+              if command in (use("cave-mouth"), use("to-vault"), use("repair-deck"), use("landfall"))]
+    shutil.copytree(project, relocated)
+    begin, checkpoint = 0, None
+    for end in [*copies, len(route)]:
+        options = {"actions": route[begin:end], "checkpoint": True}
+        if checkpoint:
+            options["resume"] = checkpoint
+        result = call(cli, relocated if checkpoint else project, "expedition.replay", options)
+        assert result["code"] == "ok", result
+        assert result["steps"] == uninterrupted["steps"][begin:end]
+        expected_state = uninterrupted["steps"][end - 1].copy()
+        expected_state.pop("code")
+        assert result["state"] == expected_state
+        checkpoint = result["checkpoint"]
+        assert checkpoint["actions"] == route[:end]
+        begin = end
+
+    for invalid in (
+        {**checkpoint, "version": 2},
+        {**checkpoint, "identity": "another-project:0:0000"},
+        {**checkpoint, "actions": [use("dock-outside-reach")]},
+    ):
+        result = call(cli, relocated, "expedition.replay", {"resume": invalid, "actions": []})
+        assert result["code"] == "invalid_checkpoint" and result["location"] == "/input/resume"
+    return len(copies)
 
 
 def reauthor(cli, project, route):
@@ -227,7 +429,7 @@ def reauthor(cli, project, route):
     return {"repair_ms": repair_ms, "edit_ms": edit_ms}
 
 
-def export(cli, source, destination, revision):
+def export(cli, source, destination, revision, *, graphics):
     start = time.perf_counter()
     result = subprocess.run([cli, "project", "export", source, str(revision), "windows-x64", destination],
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
@@ -239,7 +441,10 @@ def export(cli, source, destination, revision):
         assert (destination / "game" / "assets" / image.name).read_bytes() == image.read_bytes()
     env = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
     checks = {"pack_ms": (packed - start) * 1000}
-    for mode, metric in (("--check", "check_ms"), ("--expedition-smoke", "graphics_ms")):
+    modes = [("--check", "check_ms")]
+    if graphics:
+        modes.append(("--expedition-smoke", "graphics_ms"))
+    for mode, metric in modes:
         start = time.perf_counter()
         subprocess.run([destination / "Play.exe", mode], cwd=destination.parent,
                        env=env, timeout=20, check=True)
@@ -252,6 +457,8 @@ def main():
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--probe", type=Path, required=True)
     parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--no-graphics", action="store_true",
+                        help="verify standalone packages without opening a graphics window")
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--seed", type=int, default=73021)
@@ -265,39 +472,86 @@ def main():
         start = time.perf_counter()
         metrics = generate(root / "projects", seed=args.seed, scale=args.scale)
         generation = time.perf_counter()
-        reports = journey(args.cli.resolve(), root / "projects")
+        coverage = {}
+        chains = {}
+        verified_content = {}
+        branches = {}
+        supply_steps = []
         copper = root / "projects" / "copper-relay"
         drift = root / "projects" / "drift-naturalists"
-        supply_steps = []
-        if args.scale:
-            supply_steps.extend(supply_chain(args.cli.resolve(), p) for p in (copper, drift))
-        replayed = time.perf_counter()
-        persistence(args.probe.resolve(), drift, root / "save.json")
-        checkpoint = time.perf_counter()
+        cli = args.cli.resolve()
+        observations = {project.name: new_coverage() for project in (copper, drift)}
+        try:
+            reports = journey(cli, root / "projects", coverage, observations)
+            for name, project, route in (("copper", copper, COPPER), ("drift", drift, DRIFT)):
+                chains[project.name] = supply_coverage(cli, project, route, reports[name], observations[project.name])
+            supply_failures = [row for report in chains.values() for row in report["failures"]]
+            assert not supply_failures, supply_failures
+            branches = exploration_branches(cli, copper, drift, observations)
+            if args.scale:
+                supply_steps.extend(supply_chain(cli, p) for p in (copper, drift))
+            replayed = time.perf_counter()
+            persistence(args.probe.resolve(), drift, root / "save.json")
+            checkpoints = checkpoint_handoff(cli, drift, root / "relocated-drift", observations[drift.name])
+            checkpoint = time.perf_counter()
+            verified_content = {project.name: summarize_coverage(project, observations[project.name])
+                                for project in (copper, drift)}
+            missing = {name: {group: value["missing"] for group, value in counts.items() if value["missing"]}
+                       for name, counts in verified_content.items()}
+            assert not any(missing.values()), missing
+        except (AssertionError, subprocess.SubprocessError) as error:
+            if args.report:
+                write_json(args.report, {
+                    "seed": args.seed, "scale": args.scale, "route_validation": "failed",
+                    "detail": str(error), "candidate_coverage": coverage,
+                    "supply_coverage": chains, "verified_content_coverage": verified_content,
+                    "exploration_routes": branches,
+                })
+            raise
+        for counts in coverage.values():
+            assert not counts["failed_steps"] and not counts["regions"]["missing"], counts
+            assert counts["sites"]["covered"] and counts["decoded_icons"]["covered"], counts
         packages = {}
+        graphics = not args.no_graphics
         if args.runtime:
-            packages["copper-r0"] = export(args.runtime.resolve(), copper, root / "copper-original", 0)
-            packages["drift-r0"] = export(args.runtime.resolve(), drift, root / "drift-original", 0)
+            packages["copper-r0"] = export(args.runtime.resolve(), copper, root / "copper-original",
+                                            0, graphics=graphics)
+            packages["drift-r0"] = export(args.runtime.resolve(), drift, root / "drift-original",
+                                           0, graphics=graphics)
         first_packed = time.perf_counter()
-        changes = {"copper": reauthor(args.cli.resolve(), copper, COPPER),
-                   "drift": reauthor(args.cli.resolve(), drift, DRIFT)}
+        changes = {"copper": reauthor(cli, copper, COPPER), "drift": reauthor(cli, drift, DRIFT)}
         if args.scale:
-            supply_steps.extend(supply_chain(args.cli.resolve(), p, 2) for p in (copper, drift))
+            supply_steps.extend(supply_chain(cli, p, 2) for p in (copper, drift))
         before_pack = time.perf_counter()
         if args.runtime:
-            packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised", 2)
-            packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised", 2)
-        result = {**metrics, "seed": args.seed, "scale": args.scale,
+            packages["copper-r2"] = export(args.runtime.resolve(), copper, root / "copper-revised",
+                                            2, graphics=graphics)
+            packages["drift-r2"] = export(args.runtime.resolve(), drift, root / "drift-revised",
+                                           2, graphics=graphics)
+        result = {**metrics, "seed": args.seed, "scale": args.scale, "route_validation": "ok",
                   "total_generation_ms": (generation - start) * 1000,
                   "replay_and_coverage_ms": (replayed - generation) * 1000,
                   "checkpoint_ms": (checkpoint - replayed) * 1000,
+                  "checkpoint_handoffs": checkpoints,
                   "reauthor_ms": (before_pack - first_packed) * 1000,
                   "reauthor": changes, "packages": packages,
                   "route_steps": {key: len(value["steps"]) for key, value in reports.items()},
                   "supply_steps_checked": supply_steps,
+                  "supply_coverage": chains,
+                  "verified_content_coverage": verified_content,
+                  "exploration_routes": branches,
                   "independent_packages_checked": len(packages)}
         if args.report:
-            write_json(args.report, result)
+            write_json(args.report, {**result, "candidate_coverage": coverage})
+        for label, grouped in (("candidate_coverage", coverage), ("verified_content_coverage", verified_content)):
+            result[label] = {
+                name: {group: value if group == "failed_steps" else {
+                    "covered": value["covered"], "total": value["total"],
+                } for group, value in counts.items()} for name, counts in grouped.items()
+            }
+        result["supply_coverage"] = {
+            name: {key: value[key] for key in ("total", "covered")} for name, value in chains.items()
+        }
         print(json.dumps(result, indent=2))
 
 

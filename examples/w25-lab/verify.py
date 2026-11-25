@@ -1,0 +1,1026 @@
+"""Run the W25 circuit and garden through the normal project request entry point."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+SAMPLE = Path(__file__).resolve().parent
+
+
+def request(cli, project, operation, inputs, expected="ok", *, revision=0, mode="read"):
+    data = {
+        "version": 1, "mode": mode, "operation": operation,
+        "input": inputs,
+    }
+    if operation != "circuit.replay":
+        data["expected_revision"] = revision
+    access = ["--allow-project-write"] if mode == "apply" else []
+    result = subprocess.run([cli, "project", "request", project, *access],
+                            input=json.dumps(data), encoding="utf-8", capture_output=True,
+                            timeout=20, check=False)
+    assert result.returncode == (0 if expected == "ok" else 1), result
+    reply = json.loads(result.stdout)
+    assert reply["code"] == expected, reply
+    return reply
+
+
+def circuit(cli, project, checkpoint_path):
+    nodes = {
+        "rear": {"kind": "lever", "inputs": []},
+        "side": {"kind": "lever", "inputs": []},
+        "gate": {"kind": "comparator", "inputs": ["rear", "side"], "mode": "compare"},
+        "difference": {"kind": "comparator", "inputs": ["rear", "side"], "mode": "subtract"},
+        "delay": {"kind": "repeater", "inputs": ["difference"], "delay": 3},
+        "lamp": {"kind": "lamp", "inputs": ["delay"]},
+    }
+    events = [
+        {"tick": 0, "id": "rear", "level": 12},
+        {"tick": 0, "id": "side", "level": 7},
+        {"tick": 4, "id": "side", "level": 12},
+        {"tick": 6, "id": "side", "level": 15},
+    ]
+
+    def replay(ticks, changes, **extra):
+        return request(cli, project, "circuit.replay", {
+            "nodes": nodes, "ticks": ticks, "events": changes, **extra,
+        })
+
+    complete = replay(10, events)
+    first = replay(2, events[:2], checkpoint=True)
+    assert first["checkpoint"]["nodes"]["delay"]["pending"] == {"level": 15, "due": 4}
+    checkpoint_path.write_text(json.dumps(first["checkpoint"]), encoding="utf-8")
+    saved = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    rest = replay(8, [{**change, "tick": change["tick"] - 2} for change in events[2:]], resume=saved)
+    assert first["trace"] + rest["trace"] == complete["trace"]
+    assert rest["levels"] == complete["levels"]
+    assert [(row["tick"], row["to"]) for row in complete["trace"]
+            if row["phase"] == "update" and row["id"] == "lamp"] == [(5, 15), (9, 0)]
+    assert [(row["tick"], row["to"]) for row in complete["trace"]
+            if row["phase"] == "update" and row["id"] == "gate"] == [(0, 12), (6, 0)]
+    assert [(row["tick"], row["to"]) for row in complete["trace"]
+            if row["phase"] == "update" and row["id"] == "difference"] == [(0, 5), (4, 0)]
+    saved["nodes"]["delay"]["pending"]["due"] = 1
+    error = request(cli, project, "circuit.replay",
+                    {"nodes": nodes, "ticks": 1, "events": [], "resume": saved}, "invalid_circuit")
+    assert error["location"] == "/input/resume/nodes/delay/pending/due"
+    print("Analog threshold and subtraction, checkpoint replay, malformed pending rejection")
+
+
+def workyard(cli, project, destination):
+    shutil.copytree(project, destination)
+    source = destination / "assets" / "yard.json"
+    original = source.read_bytes()
+    rail = {"x": 13, "y": 2, "z": 17, "dx": 1, "dz": 0, "steps": 12}
+    route = request(cli, destination, "scene.voxel.cart", rail)
+    assert route["positions"] == [[x, 2, 17] for x in range(13, 19)] and route["blocked"]
+    reverse = request(cli, destination, "scene.voxel.cart", {**rail, "x": 18, "dx": -1, "steps": 3})
+    assert reverse["positions"] == [[x, 2, 17] for x in (18, 17, 16, 15)]
+    assert not reverse["blocked"]
+    junction = {"x": 15, "y": 2, "z": 17,
+                "directions": ["east", "east", "south", "south", "west", "west", "west", "west"]}
+    curved = request(cli, destination, "scene.voxel.cart", junction)
+    assert curved["positions"] == [
+        [15, 2, 17], [16, 2, 17], [17, 2, 17], [17, 2, 18], [17, 2, 19], [16, 2, 19],
+        [15, 3, 19], [14, 2, 19],
+    ] and curved["blocked"]
+    climb = {"x": 16, "y": 2, "z": 19, "directions": ["west"]}
+    descent = {"x": 15, "y": 3, "z": 19, "directions": ["east"]}
+    reverse_grade = request(cli, destination, "scene.voxel.cart", descent)
+    assert reverse_grade["positions"] == [[15, 3, 19], [16, 2, 19]] and not reverse_grade["blocked"]
+    assert source.read_bytes() == original
+    blocked = json.loads(original)
+    blocked["world"] += "16 4 19 3\n"
+    source.write_text(json.dumps(blocked), encoding="utf-8")
+    for entry in (climb, descent):
+        stopped = request(cli, destination, "scene.voxel.cart", entry)
+        assert stopped["blocked"] and stopped["positions"] == [[entry[axis] for axis in "xyz"]]
+    legacy = json.loads(original)
+    legacy["terrain"]["profile"] = "workyard-v2"
+    legacy["world"] = legacy["world"].replace("workyard-v3", "workyard-v2", 1)
+    source.write_text(json.dumps(legacy), encoding="utf-8")
+    flat_only = request(cli, destination, "scene.voxel.cart", climb)
+    assert flat_only["blocked"] and flat_only["positions"] == [[16, 2, 19]]
+    source.write_bytes(original)
+    request(cli, destination, "scene.voxel.cart", {**junction, "directions": ["northeast"]},
+            "invalid_argument")
+    request(cli, destination, "scene.voxel.cart", {**junction, "steps": 5}, "invalid_argument")
+    request(cli, destination, "scene.voxel.cart", {**rail, "x": 19}, "invalid_track")
+    request(cli, destination, "scene.voxel.cart", {**rail, "dz": 1}, "invalid_argument")
+
+    area = {"x": 13, "z": 12, "width": 6, "depth": 3, "steps": 1}
+
+    def dynamics(values, expected="ok", **options):
+        return request(cli, destination, "scene.voxel.dynamics", values, expected, **options)
+
+    def world():
+        return set(json.loads(source.read_text(encoding="utf-8"))["world"].splitlines()[1:])
+
+    preview = dynamics(area, mode="preview")
+    assert preview["changed"] and source.read_bytes() == original
+    applied = dynamics(area, mode="apply")
+    assert applied["revision"] == 1
+    for field, expected in {"water_updates": 3, "ignited": 1, "extinguished": 1}.items():
+        assert applied[field] == preview[field] == expected
+    cells = world()
+    assert {"15 4 13 11", "16 4 14 10", "17 4 12 12", "17 4 14 6"} <= cells
+    assert {"16 4 12 12", "14 4 13 10", "15 4 12 10", "18 4 12 12"}.isdisjoint(cells)
+    reopened = request(cli, destination, "scene.inspect", {}, revision=1)
+    assert reopened["terrain"]["profile"] == "workyard-v3"
+    second = dynamics(area, revision=1, mode="apply")
+    assert second["revision"] == 2 and second["ignited"] == 1
+    cells = world()
+    assert {"16 4 13 10", "18 4 12 12", "16 3 14 10", "17 4 14 6"} <= cells
+    assert "17 4 12 12" not in cells
+    saved = source.read_bytes()
+    dynamics(area, "revision_conflict", revision=1, mode="apply")
+    dynamics({**area, "x": 2147483647}, "invalid_argument", revision=2, mode="apply")
+    stationary = dynamics({**area, "z": 17, "depth": 1}, revision=2, mode="apply")
+    assert not stationary["changed"] and stationary["revision"] == 2
+    assert source.read_bytes() == saved
+
+    joint = destination.with_name("workyard-joint")
+    shutil.copytree(project, joint)
+    combined = request(cli, joint, "scene.voxel.dynamics", {**area, "steps": 2}, mode="apply")
+    assert combined["revision"] == 1
+    assert (joint / "assets" / "yard.json").read_bytes() == saved
+    request(cli, SAMPLE.parent / "seeded-voxel", "scene.voxel.dynamics", area,
+            "unsupported_terrain", mode="preview")
+
+    trench = {"x": 14, "z": 10, "width": 5, "depth": 1, "steps": 1}
+    sample = {"x": 16, "y": 6, "z": 10, "tick": 230}
+    glowing = request(cli, destination, "scene.landscape.environment", sample, revision=2)
+    assert glowing["vertical_light"] == 1 and glowing["light"] == 12
+    thermal = dynamics(trench, revision=2, mode="preview")
+    assert thermal["lava_updates"] == thermal["solidified"] == 1
+    assert thermal["water_updates"] == 1 and source.read_bytes() == saved
+    thermal = dynamics(trench, revision=2, mode="apply")
+    assert thermal["revision"] == 3 and thermal["solidified"] == 1
+    assert {"14 6 10 15", "15 6 10 13", "16 6 10 17", "17 6 10 8", "18 6 10 10"} <= world()
+    after = request(cli, destination, "scene.inspect", {}, revision=3)
+    assert after["terrain"]["profile"] == "workyard-v3"
+    quenched = request(cli, destination, "scene.landscape.environment", sample, revision=3)
+    assert quenched["light"] == 0 and not quenched["open_sky"]
+
+    stream = {"x": 15, "z": 9, "width": 1, "depth": 1, "steps": 1}
+    closed = dynamics(stream, revision=3, mode="preview")
+    assert closed["water_updates"] == 0 and "15 7 9 3" in world()
+    gate = {"x": 15, "y": 7, "z": 9, "dx": 1, "dz": 0, "trigger": "gate",
+            "circuit": {"ticks": 1, "nodes": {"gate": {"kind": "lever", "inputs": []}},
+                        "events": [{"tick": 0, "id": "gate", "level": 15}]}}
+    opened = request(cli, destination, "scene.voxel.actuate", gate, revision=3, mode="apply")
+    assert opened["revision"] == 4 and opened["to"] == [16, 7, 9]
+    water = dynamics(stream, revision=4, mode="apply")
+    assert water["revision"] == 5 and water["water_updates"] == 1
+    assert {"15 7 9 11", "16 7 9 3"} <= world()
+    print("Cart turns, climbs across a chunk boundary and brakes under a low roof; water and lava persist")
+
+
+def weather_shelter(cli, project, destination):
+    shutil.copytree(project, destination)
+    source = destination / "assets" / "yard.json"
+    document = json.loads(source.read_text(encoding="utf-8"))
+    document["world"] += "15 8 8 12\n16 8 8 6\n17 8 8 12\n18 8 8 6\n17 9 8 3\n18 9 8 3\n"
+    source.write_text(json.dumps(document), encoding="utf-8")
+    initial = source.read_bytes()
+    region = {"x": 15, "z": 8, "width": 4, "depth": 1, "steps": 1}
+
+    def dynamics(tick, **options):
+        return request(cli, destination, "scene.voxel.dynamics", {**region, "weather_tick": tick},
+                       **options)
+
+    def environment(x, tick, revision=0):
+        return request(cli, destination, "scene.landscape.environment",
+                       {"x": x, "y": 8, "z": 8, "tick": tick}, revision=revision)
+
+    for tick, weather in ((90, "clear"), (330, "rain"), (450, "storm")):
+        assert environment(15, tick)["weather"] == weather
+        assert environment(15, tick)["open_sky"] and not environment(17, tick)["open_sky"]
+        preview = dynamics(tick, mode="preview")
+        exposed = int(weather != "clear")
+        assert preview["ignited"] == 2 - exposed and preview["weather_extinguished"] == exposed
+        assert preview["extinguished"] == exposed and source.read_bytes() == initial
+    invalid = request(cli, destination, "scene.voxel.dynamics", {**region, "weather_tick": -1},
+                      "invalid_argument", mode="apply")
+    assert invalid["location"] == "/input/weather_tick" and source.read_bytes() == initial
+
+    rain = dynamics(330, mode="apply")
+    assert rain["revision"] == 1 and rain["ignited"] == rain["weather_extinguished"] == 1
+    saved_cells = set(json.loads(source.read_text(encoding="utf-8"))["world"].splitlines())
+    assert {"16 8 8 6", "18 8 8 12"} <= saved_cells
+    assert {"15 8 8 12", "16 8 8 12", "17 8 8 12"}.isdisjoint(saved_cells)
+    roof = {"x": 18, "y": 9, "z": 8, "dx": 1, "dz": 0, "trigger": "roof",
+            "circuit": {"ticks": 1, "nodes": {"roof": {"kind": "lever", "inputs": []}},
+                        "events": [{"tick": 0, "id": "roof", "level": 15}]}}
+    moved = request(cli, destination, "scene.voxel.actuate", roof, revision=1, mode="apply")
+    assert moved["revision"] == 2 and moved["to"] == [19, 9, 8]
+    assert environment(18, 330, 2)["open_sky"]
+    quenched = dynamics(330, revision=2, mode="apply")
+    assert quenched["revision"] == 3 and quenched["weather_extinguished"] == 1
+    assert "18 8 8 12" not in json.loads(source.read_text(encoding="utf-8"))["world"].splitlines()
+    print("Clear, rain and storm split fire spread across a chunk boundary; opening a roof quenches fire")
+
+
+def action(command, target=None, ingredients=None):
+    data = {"command": command}
+    if target:
+        data["target"] = target
+    if ingredients:
+        data["ingredients"] = ingredients
+    return data
+
+
+def actuate(cli, project):
+    assets = project / "assets"
+    assets.mkdir(parents=True)
+    manifest = {
+        "format_version": 1, "project_id": "actuator-bench", "revision": 0,
+        "entry_scene": "test", "resources": [
+            {"id": "test", "kind": "scene", "path": "assets/test.json", "refs": ["materials"]},
+            {"id": "materials", "kind": "text", "path": "assets/materials.txt", "refs": []},
+        ],
+    }
+    source = assets / "test.json"
+    document = {
+        "format_version": 1, "kind": "voxel", "materials": "materials",
+        "terrain": {"seed": 53207},
+        "world": "wds-voxel-seeded-v1\n15 11 1 3\n",
+    }
+    (project / "wds.project.json").write_text(json.dumps(manifest), encoding="utf-8")
+    shutil.copy2(SAMPLE.parent / "seeded-voxel" / "assets" / "slope-colors.txt",
+                 assets / "materials.txt")
+    source.write_text(json.dumps(document), encoding="utf-8")
+    original = source.read_bytes()
+    values = {
+        "x": 15, "y": 11, "z": 1, "dx": 1, "dz": 0, "trigger": "relay",
+        "circuit": {"ticks": 4, "nodes": {
+            "switch": {"kind": "lever", "inputs": []},
+            "relay": {"kind": "repeater", "inputs": ["switch"], "delay": 2},
+        }, "events": []},
+    }
+
+    def operation(expected="ok", **options):
+        return request(cli, project, "scene.voxel.actuate", values, expected, **options)
+
+    def sky(x, tick, revision):
+        return request(cli, project, "scene.landscape.environment",
+                       {"x": x, "y": 10, "z": 1, "tick": tick}, revision=revision)
+
+    left, right = sky(15, 90, 0), sky(16, 90, 0)
+    assert left["weather"] == right["weather"]
+    assert not left["open_sky"] and left["vertical_light"] == 0
+    assert right["open_sky"] and right["vertical_light"] > 1
+    assert left["light"] == right["vertical_light"] - 1
+    assert sky(16, 230, 0)["vertical_light"] == 1
+    assert sky(15, 230, 0)["light"] == 0
+    assert not operation(mode="preview")["changed"]
+    values["circuit"]["events"].append({"tick": 0, "id": "switch", "level": 15})
+    preview = operation(mode="preview")
+    assert preview["tick"] == 2 and preview["to"] == [16, 11, 1] and preview["changed"]
+    assert source.read_bytes() == original
+
+    blocked = {**document, "world": document["world"] + "16 11 1 3\n"}
+    source.write_text(json.dumps(blocked), encoding="utf-8")
+    blocked_bytes = source.read_bytes()
+    operation("target_occupied", mode="apply")
+    assert source.read_bytes() == blocked_bytes
+
+    source.write_bytes(original)
+    moved = operation(mode="apply")
+    assert moved["tick"] == preview["tick"] and moved["revision"] == 1
+    assert json.loads(source.read_text(encoding="utf-8"))["world"] == (
+        "wds-voxel-seeded-v1\n16 11 1 3\n"
+    )
+    left_next, right_next = sky(15, 90, 1), sky(16, 90, 1)
+    assert left_next["weather"] == right_next["weather"] == right["weather"]
+    assert left_next["open_sky"] and left_next["vertical_light"] == right["vertical_light"]
+    assert not right_next["open_sky"] and right_next["vertical_light"] == 0
+    assert right_next["light"] == left_next["vertical_light"] - 1
+    operation("revision_conflict", mode="apply")
+    operation("immovable", mode="apply", revision=1)
+    checked = request(cli, project, "scene.inspect", {}, revision=1)
+    assert checked["revision"] == 1 and checked["kind"] == "voxel"
+
+    sticky = {**values, "x": 16, "motion": "sticky-pull",
+              "circuit": {**values["circuit"], "ticks": 8}}
+
+    def retract(values, expected="ok", mode="preview"):
+        return request(cli, project, "scene.voxel.actuate", values, expected,
+                       revision=1, mode=mode)
+
+    pushed_bytes = source.read_bytes()
+    assert not retract(sticky)["changed"]
+    sticky["circuit"]["events"] = [
+        *values["circuit"]["events"], {"tick": 3, "id": "switch", "level": 0},
+    ]
+    planned = retract(sticky)
+    assert planned["tick"] == 5 and planned["from"] == [16, 11, 1]
+    assert planned["to"] == [15, 11, 1] and source.read_bytes() == pushed_bytes
+    assert not retract({**sticky, "requires_high": "switch"})["changed"]
+    retract({**sticky, "capacity": 2}, "invalid_argument", "apply")
+    obstructed = json.loads(pushed_bytes)
+    obstructed["world"] += "15 11 1 1\n"
+    source.write_text(json.dumps(obstructed), encoding="utf-8")
+    obstructed_bytes = source.read_bytes()
+    retract(sticky, "target_occupied", "apply")
+    assert source.read_bytes() == obstructed_bytes
+    source.write_bytes(pushed_bytes)
+    restored = retract(sticky, mode="apply")
+    assert restored["revision"] == 2
+    assert json.loads(source.read_text(encoding="utf-8"))["world"] == document["world"]
+
+    # Place a three-block chain across the chunk seam in a separate circuit bench.
+    chain = project.with_name("chain-bench")
+    shutil.copytree(project, chain)
+    (chain / "wds.project.json").write_text(json.dumps(manifest), encoding="utf-8")
+    chain_source = chain / "assets" / "test.json"
+    chain_source.write_text(json.dumps({
+        **document, "world": document["world"] + "16 11 1 1\n17 11 1 2\n",
+    }), encoding="utf-8")
+    before = chain_source.read_bytes()
+    nodes = {name: {"kind": "lever", "inputs": []} for name in ("clock", "enable")}
+    events = [
+        {"tick": 0, "id": "clock", "level": 15},
+        {"tick": 1, "id": "clock", "level": 0},
+        {"tick": 1, "id": "enable", "level": 15},
+        {"tick": 2, "id": "clock", "level": 15},
+        {"tick": 2, "id": "enable", "level": 0},
+        {"tick": 3, "id": "clock", "level": 0},
+        {"tick": 4, "id": "clock", "level": 15},
+        {"tick": 4, "id": "enable", "level": 15},
+    ]
+    chain_input = {
+        **values, "capacity": 3, "trigger": "clock", "requires_high": "enable",
+        "circuit": {"ticks": 5, "nodes": nodes, "events": events},
+    }
+
+    def push(**options):
+        return request(cli, chain, "scene.voxel.actuate", options.pop("inputs", chain_input),
+                       **options)
+
+    dry = push(mode="preview")
+    assert dry["tick"] == 4 and dry["moved"] == 3 and dry["changed"]
+    push(inputs={**chain_input, "capacity": 2}, expected="push_limit", mode="apply")
+    assert chain_source.read_bytes() == before
+    checkpoint = request(cli, chain, "circuit.replay", {
+        "ticks": 1, "nodes": nodes, "events": [{"tick": 0, "id": "enable", "level": 15}],
+        "checkpoint": True,
+    })["checkpoint"]
+    resumed = {**chain_input, "circuit": {
+        "ticks": 1, "nodes": nodes, "events": [events[0]], "resume": checkpoint,
+    }}
+    assert push(inputs=resumed, mode="preview")["tick"] == 1
+    result = push(mode="apply")
+    assert result["tick"] == dry["tick"] and result["moved"] == 3 and result["revision"] == 1
+    assert json.loads(chain_source.read_text(encoding="utf-8"))["world"] == (
+        "wds-voxel-seeded-v1\n16 11 1 3\n17 11 1 1\n18 11 1 2\n"
+    )
+    print("Gated piston pushes a contiguous chain across chunks and rejects over-capacity moves")
+
+
+def garden(cli, project, probe, save):
+    def replay(actions):
+        return request(cli, project, "expedition.replay", {"actions": actions})["steps"]
+
+    setup = [
+        action("gather", "seed-mat"), action("gather", "herbs"), action("gather", "bark-store"),
+        action("craft", "build-stove"), action("east"), action("use", "plot"),
+    ]
+    steps = replay([
+        *setup, action("use", "plot"), action("use", "trail"), action("wait"), action("wait"),
+        action("use", "return-path"), action("use", "plot"),
+        action("cook", "kitchen", ["root", "herb"]), action("east"),
+        action("cook", "kitchen", ["root", "herb", "bark"]),
+        action("cook", "kitchen", ["herb"]),
+        action("cook", "kitchen", ["herb", "root"]),
+    ])
+    failures = {6: "crop_growing", 12: "out_of_reach",
+                14: "missing_ingredients", 15: "no_matching_recipe"}
+    for index, step in enumerate(steps):
+        assert step["code"] == failures.get(index, "ok"), step
+        if index in failures:
+            assert {key: value for key, value in step.items() if key != "code"} == {
+                key: value for key, value in steps[index - 1].items() if key != "code"
+            }
+    assert steps[7]["region"] == "tide-terrace" and steps[7]["crops"] == {"plot": 2}
+    assert steps[9]["crops"] == {"plot": 0}
+    assert steps[-1]["crops"] == {"plot": -1}
+    assert {slot["item"] for slot in steps[-1]["workshop"]["bag"]} == {"stove", "stew"}
+    assert any(receipt["cause"] == "cooked" for receipt in steps[-1]["receipts"])
+
+    warm = replay([*([action("wait")] * 16), *setup, action("wait"), action("wait")])
+    assert warm[-1]["season"] == 3 and warm[-1]["crops"] == {"plot": 4}, warm[-1]
+    assert warm[-1]["heat"] > 0
+
+    aged = replay([
+        action("gather", "herbs"), action("wait"), action("gather", "herbs"),
+        *([action("wait")] * 13),
+    ])
+    assert aged[2]["workshop"]["bag"] == [
+        {"item": "herb", "count": 1, "best_before": 16},
+        {"item": "herb", "count": 1, "best_before": 18},
+    ]
+    assert aged[-1]["workshop"]["bag"] == [
+        {"item": "mulch", "count": 1},
+        {"item": "herb", "count": 1, "best_before": 18},
+    ]
+    assert aged[-1]["receipts"][0]["cause"] == "spoilage"
+    for stage in ("farm-start", "farm-cook", "farm-verify"):
+        subprocess.run([probe, project, save, stage], timeout=20, check=True)
+    print("Plant, traverse regions, resume, harvest, prioritize cooking, save and reopen")
+
+
+def conditions(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    area, coast = document["regions"]
+    area["sites"].append({"id": "remedy-supply", "kind": "source",
+                          "at": [0, 1], "reward": "tonic"})
+    coast["sites"].append({"id": "stinger", "kind": "enemy",
+                           "at": [2, 1], "power": 3, "venom": 4})
+    coast["climate"] = {
+        "wetness": [1, 3, 2, -2], "heat": [1, -1, 3, -2],
+        "eruption": {"interval": 6, "warning_ticks": 2, "season": 0, "damage": 3},
+    }
+    document["workshop"]["items"]["tonic"] = {"limit": 8, "tags": ["antidote"]}
+    document["workshop"]["sources"]["remedy-supply"] = {
+        "yield": {"item": "tonic", "count": 1}, "uses": 1,
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    actions = [
+        action("gather", "remedy-supply"), action("east"), action("use", "trail"),
+        action("attack", "stinger"), action("treat", "herb"), action("treat", "tonic"),
+        action("attack", "stinger"), action("use", "return-path"), action("wait"),
+    ]
+    request_data = {"actions": actions}
+    steps = request(cli, destination, "expedition.replay", request_data)["steps"]
+    assert steps == request(cli, destination, "expedition.replay", request_data)["steps"]
+
+    def causes(row):
+        return [event["cause"] for event in row["receipts"]]
+
+    assert all(row["code"] == "ok" for index, row in enumerate(steps) if index != 4)
+    assert steps[3]["poison"] == 3 and steps[3]["health"] == 17
+    assert causes(steps[3]) == ["retaliation", "poisoned", "eruption_warning", "poison"]
+    assert steps[4]["code"] == "missing_antidote" and steps[4]["tick"] == 4
+    assert steps[4]["workshop"] == steps[3]["workshop"] and steps[4]["poison"] == 3
+    assert causes(steps[5]) == ["treated"] and "poison" not in steps[5]
+    assert not steps[5]["workshop"]["bag"]
+    assert causes(steps[6]) == ["retaliation", "poisoned", "eruption", "poison"]
+    assert steps[6]["health"] == 11 and steps[6]["heat"] == steps[6]["wetness"] == 4
+    assert causes(steps[7]) == ["arrival", "poison"] and steps[7]["region"] == "wind-garden"
+    assert steps[7]["poison"] == 2 and steps[7]["wetness"] == 3
+
+    original = path.read_bytes()
+    coast["climate"]["heat"][2] = 90
+    path.write_text(json.dumps(document), encoding="utf-8")
+    error = request(cli, destination, "expedition.replay", request_data, "invalid_expedition")
+    assert error["location"].endswith("/regions/1/climate/heat/2")
+    path.write_bytes(original)
+    print("Seeded eruption warning and damage, regional climate, poison across travel and treatment")
+
+
+def processing(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    coast = document["regions"][1]
+    coast["sites"].append({"id": "sentinel", "kind": "enemy",
+                           "at": [2, 1], "power": 7, "reward": "bark"})
+    inventory = document["workshop"]
+    inventory["items"]["vial"] = {"limit": 8, "tags": []}
+    inventory["items"]["spear"] = {"limit": 1, "tags": [], "durability": 2}
+    inventory["recipes"]["distil-gel"] = {
+        "method": "brew", "station": "hearth", "unlocks": "refine",
+        "output": {"item": "vial", "count": 1},
+        "ingredients": [{"item": "herb", "count": 1}],
+    }
+    inventory["recipes"]["hone-staff"] = {
+        "method": "upgrade", "station": "refine",
+        "output": {"item": "spear", "count": 1},
+        "ingredients": [{"item": "vial", "count": 1}],
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    actions = [
+        action("craft", "hone-staff"), action("gather", "bark-store"), action("gather", "herbs"),
+        action("craft", "build-stove"), action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("attack", "sentinel"), action("east"), action("use", "trail"),
+        *([action("attack", "sentinel")] * 4),
+    ]
+    steps = request(cli, destination, "expedition.replay", {"actions": actions})["steps"]
+    failures = {0: "station_locked", 6: "out_of_reach", 12: "no_target"}
+    for index, row in enumerate(steps):
+        assert row["code"] == failures.get(index, "ok"), (index, row)
+    assert steps[0]["tick"] == 0 and not steps[0]["workshop"]["bag"]
+    assert steps[4]["workshop"]["unlocked"] == ["hearth", "refine"]
+    for index, uses in ((5, 2), (6, 2), (8, 2), (9, 1)):
+        spear = next(slot for slot in steps[index]["workshop"]["bag"] if slot["item"] == "spear")
+        assert spear["uses_remaining"] == uses, steps[index]
+    assert not any(slot["item"] == "spear" for slot in steps[10]["workshop"]["bag"])
+    assert steps[10]["receipts"][-1]["cause"] == "tool_broken"
+    assert steps[10]["encounters"]["sentinel"] == 1 and steps[11]["encounters"]["sentinel"] == 0
+    assert steps[12]["tick"] == steps[11]["tick"] == 10
+
+    original = path.read_bytes()
+    extra = {"method": "craft", "output": {"item": "vial", "count": 1},
+             "ingredients": [{"item": "herb", "count": 1}]}
+    inventory["recipes"].update({
+        "a-press": {**extra, "station": "refine", "unlocks": "press"},
+        "cross-left": {**extra, "station": "right", "unlocks": "left"},
+        "cross-right": {**extra, "station": "left", "unlocks": "right"},
+    })
+
+    def progression():
+        path.write_text(json.dumps(document), encoding="utf-8")
+        return request(cli, destination, "expedition.recipes", {})
+
+    graph = progression()
+    assert graph["reachable_stations"] == ["hearth", "press", "refine"]
+    assert graph["unlocked_stations"] == [] and graph["station_unlocks"]["left"] == ["cross-left"]
+    inventory["recipes"]["unlock-left"] = {**extra, "unlocks": "left"}
+    assert progression()["reachable_stations"] == ["hearth", "left", "press", "refine", "right"]
+    path.write_bytes(original)
+    print("Two processing stages and unlocks, durability across travel, breakage and fallback")
+
+
+def inscriptions(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    sentinel = next(site for site in document["regions"][1]["sites"] if site["id"] == "sentinel")
+    sentinel["power"] = 9
+    workshop = document["workshop"]
+    workshop["items"]["reef-lance"] = {
+        "limit": 1, "tags": [], "durability": 2,
+        "inscription": {"force_bonus": 1, "guard_bonus": 1},
+    }
+    workshop["recipes"]["inscribe-lance"] = {
+        "method": "inscribe", "station": "refine",
+        "ingredients": [{"item": "spear", "count": 1}],
+        "output": {"item": "reef-lance", "count": 1},
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    commands = [
+        action("craft", "inscribe-lance"), action("gather", "bark-store"),
+        action("gather", "herbs"), action("craft", "build-stove"),
+        action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("craft", "inscribe-lance"), action("east"), action("use", "trail"),
+        *([action("attack", "sentinel")] * 3),
+    ]
+    steps = request(cli, destination, "expedition.replay", {"actions": commands})["steps"]
+    assert steps[0]["code"] == "station_locked" and all(s["code"] == "ok" for s in steps[1:])
+    held = steps[8]["workshop"]["bag"]
+    assert any(slot["item"] == "reef-lance" and slot["uses_remaining"] == 2 for slot in held)
+    assert not any(slot["item"] == "spear" for slot in held)
+    strength = [step["encounters"]["sentinel"] for step in steps[8:]]
+    assert strength == [9, 5, 1, 0], strength
+    retaliation = next(row for row in steps[9]["receipts"] if row["cause"] == "retaliation")
+    assert retaliation["health"] == steps[8]["health"] - 1
+    assert any(row["cause"] == "tool_broken" for row in steps[10]["receipts"])
+    assert not any(slot["item"] == "reef-lance" for slot in steps[10]["workshop"]["bag"])
+    print("Inscribed tool adds force and guard, keeps durability across travel, and breaks")
+
+
+def story(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    area, coast = document["regions"]
+    ending = {"id": "return", "kind": "chapter", "at": [3, 0],
+              "after_any": ["cartographer", "shorewatch"]}
+    area["sites"].extend([
+        {"id": "briefing", "kind": "chapter", "at": [0, 1], "target": "departure"},
+        {"id": "cartographer", "kind": "chapter", "at": [2, 2], "target": "briefing",
+         "reward": "bark", "unlock_character": "wayfinder"},
+        ending,
+    ])
+    coast["sites"].append({
+        "id": "shorewatch", "kind": "chapter", "at": [2, 1], "target": "briefing",
+        "unlock_character": "shorekeeper",
+    })
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    def route(actions):
+        return request(cli, destination, "expedition.replay", {"actions": actions})["steps"]
+
+    denied = route([action("east"), action("north"), action("use", "return")])
+    assert denied[-1]["code"] == "chapter_locked" and denied[-1]["tick"] == 2
+    start = [action("use", "briefing"), action("east")]
+    finish = [action("north"), action("use", "return")]
+    left = route([*start, action("use", "cartographer"), action("use", "cartographer"), *finish])
+    assert left[3]["code"] == "chapter_complete" and left[3]["tick"] == left[2]["tick"]
+    assert left[3]["workshop"]["bag"] == left[2]["workshop"]["bag"] == [{"item": "bark", "count": 1}]
+    assert left[-1]["ending"] and left[-1]["unlocked_characters"] == ["wayfinder"]
+    right = route([*start, action("use", "trail"), action("use", "shorewatch"),
+                   action("use", "return-path"), *finish])
+    assert all(row["code"] == "ok" for row in right)
+    assert right[-1]["ending"] and right[-1]["unlocked_characters"] == ["shorekeeper"]
+    assert right[-1]["completed_chapters"] == ["briefing", "departure", "return", "shorewatch"]
+    original = path.read_bytes()
+    ending["after_any"] = ["briefing"]
+    area["sites"][-3]["target"] = "return"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    invalid = request(cli, destination, "expedition.replay", {"actions": []}, "invalid_expedition")
+    assert invalid["location"].endswith("/chapters/briefing"), invalid
+    path.write_bytes(original)
+    print("Alternative chapters, one-time rewards, character unlocks and circular route rejection")
+
+
+def combined(cli, project, variants, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for variant in variants:
+        changed = json.loads((variant / "assets" / "expedition.json").read_text(encoding="utf-8"))
+        for base, extra in zip(document["regions"], changed["regions"], strict=True):
+            known = {site["id"] for site in base["sites"]}
+            base["sites"].extend(site for site in extra["sites"] if site["id"] not in known)
+        for group in ("items", "recipes", "sources"):
+            document["workshop"][group].update(changed["workshop"][group])
+    garden, island = document["regions"]
+    for spot in garden["sites"]:
+        if spot["id"] == "briefing":
+            spot["at"] = [2, 2]
+        if spot["id"] == "cartographer":
+            spot["at"] = [3, 2]
+    island["sites"] = [site for site in island["sites"] if site["id"] != "stinger"]
+    for spot in island["sites"]:
+        if spot["id"] == "sentinel":
+            spot["venom"] = 4
+        if spot["id"] == "shorewatch":
+            spot["at"] = [2, 2]
+    island["climate"] = {
+        "wetness": [-1, 1, -1, -1], "heat": [0, 0, 0, 0],
+        "eruption": {"interval": 4, "warning_ticks": 1, "season": 1, "damage": 2},
+    }
+    actions = [
+        action("gather", "seed-mat"), action("gather", "herbs"), action("gather", "herbs"),
+        action("gather", "bark-store"), action("gather", "remedy-supply"),
+        action("craft", "build-stove"), action("craft", "distil-gel"), action("craft", "hone-staff"),
+        action("east"), action("use", "briefing"), action("use", "plot"),
+        action("use", "trail"), action("attack", "sentinel"), action("treat", "tonic"),
+        action("attack", "sentinel"), action("attack", "sentinel"), action("east"),
+        action("use", "shorewatch"), action("north"), action("use", "return-path"),
+        action("gather", "herbs"), action("use", "plot"), action("east"),
+        action("cook", "kitchen", ["root", "herb"]), action("north"), action("use", "return"),
+    ]
+    inputs = {"actions": actions}
+    eruption_ticks = []
+    for seed in (53207, 53208):
+        document["seed"] = seed
+        path.write_text(json.dumps(document), encoding="utf-8")
+        result = request(cli, destination, "expedition.replay", inputs)
+        assert all(row["code"] == "ok" for row in result["steps"]), [
+            (index, row["code"]) for index, row in enumerate(result["steps"]) if row["code"] != "ok"
+        ]
+        assert len(result["steps"]) == 26
+        assert result["state"]["ending"] and result["state"]["unlocked_characters"] == ["shorekeeper"]
+        assert any(slot["item"] == "stew" for slot in result["state"]["workshop"]["bag"])
+        causes = {row["cause"] for step in result["steps"] for row in step["receipts"]}
+        assert {"plant", "eruption", "poison", "treated", "tool_broken", "spoilage", "harvest",
+                "cooked", "ending"} <= causes
+        eruption_ticks.append([step["tick"] for step in result["steps"]
+                               if any(row["cause"] == "eruption" for row in step["receipts"])])
+    assert eruption_ticks == [[12], [15]]
+    print("Integrated 26-action route on two seeds, with different eruption times")
+
+
+def controls(cli, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    first = {"id": "high", "kind": "chapter", "at": [0, 1], "interaction_priority": 10}
+    document["regions"][0]["sites"].extend([
+        first, {"id": "near", "kind": "chapter", "at": [1, 1]},
+    ])
+
+    def replay():
+        path.write_text(json.dumps(document), encoding="utf-8")
+        actions = {"actions": [action("use"), action("use", "near")]}
+        return request(cli, destination, "expedition.replay", actions)["steps"]
+
+    steps = replay()
+    assert [step["chapter"] for step in steps] == ["high", "near"]
+    first["interaction_priority"] = 0
+    assert replay()[0]["chapter"] == "near"
+    first["interaction_priority"] = 10
+    assert replay()[0]["chapter"] == "high"
+    print("Interaction priority overrides proximity until a specific target is selected")
+
+
+def play_modes(cli, probe, project, root):
+    project = Path(project)
+    modes = ("journey", "build", "trial", "survey")
+    for mode in modes:
+        destination = root / mode
+        shutil.copytree(project, destination)
+        assets = destination / "assets"
+        pack_file = assets / "play-rules.json"
+        manifest_file = destination / "wds.project.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        expedition = next(item for item in manifest["resources"] if item["id"] == "expedition")
+        expedition["refs"].append("play-rules")
+        manifest["resources"].append({
+            "id": "play-rules", "kind": "data", "path": "assets/play-rules.json", "refs": [],
+        })
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        path = assets / "expedition.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document.update(view="voxel", rule_pack="play-rules")
+        if mode == "survey":
+            document["regions"][1]["habitat"] = "ocean"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        pack = {"version": 1, "mode": mode, "hunger_interval": 1}
+        if mode == "journey":
+            pack["deny"] = ["craft"]
+        pack_file.write_text(json.dumps(pack), encoding="utf-8")
+
+        def replay(actions, expected="ok"):
+            return request(cli, destination, "expedition.replay", {"actions": actions}, expected)
+
+        supply = action("supply", "herb")
+        visit = action("survey-region", "tide-terrace")
+        cases = {
+            "journey": ([supply, visit, action("craft", "build-stove"), action("wait")],
+                        ["command_forbidden"] * 3 + ["ok"]),
+            "build": ([action("supply", "missing"), visit, supply, action("wait")],
+                      ["unknown_item", "command_forbidden", "ok", "ok"]),
+            "trial": ([action("revive"), supply, action("wait")],
+                      ["command_forbidden", "command_forbidden", "ok"]),
+            "survey": ([action("survey-region", "missing"), visit, action("east"),
+                        action("wait"), supply, action("use", "return-path")],
+                       ["unknown_region", "ok", "ok", "command_forbidden",
+                        "command_forbidden", "command_forbidden"]),
+        }
+        actions, codes = cases[mode]
+        result = replay(actions)
+        assert [step["code"] for step in result["steps"]] == codes, result
+        state = result["state"]
+        assert state["play_rules"]["mode"] == mode and state["play_rules"]["hunger_interval"] == 1
+        assert ("supply" in state["play_rules"]["commands"]) == (mode == "build")
+        assert ("survey-region" in state["play_rules"]["commands"]) == (mode == "survey")
+        assert ("revive" in state["play_rules"]["commands"]) == (mode in ("journey", "build"))
+        recipes = request(cli, destination, "expedition.recipes", {})
+        assert recipes["mode"] == mode
+        assert recipes["recipes"]["build-stove"]["command_allowed"] == (mode in ("build", "trial"))
+        stew = recipes["recipes"]["garden-stew"]
+        assert stew["command_allowed"] == (mode != "survey")
+        assert stew["station"] == "hearth" and stew["output"] == {"id": "stew", "count": 1}
+        assert stew["ingredients"] == [
+            {"selector": "root", "count": 1}, {"selector": "#aromatic", "count": 1},
+        ]
+        assert recipes["station_unlocks"]["hearth"] == ["build-stove"]
+        assert recipes["reachable_stations"] == (["hearth"] if mode in ("build", "trial") else [])
+        assert recipes["items"]["stew"]["recipes"] == ["garden-stew"]
+        assert "aromatic" in recipes["items"]["herb"]["tags"]
+        assert recipes["items"]["root"]["sources"] == [
+            {"id": "plot", "region": "wind-garden", "kind": "plot", "requires_item": "seed"},
+        ]
+        assert state["tick"] == (0 if mode == "survey" else 2 if mode == "build" else 1)
+        assert state["hunger"] == (20 if mode in ("build", "survey") else 19)
+        if mode == "survey":
+            assert state["region"] == "tide-terrace" and state["boat"] == 0
+            assert not state["workshop"]["bag"]
+            assert state["positions"]["tide-terrace"] != document["regions"][1]["spawn"]
+        if mode == "build":
+            save = destination / "mode.save.json"
+            subprocess.run([probe, destination, save, "rules-save"], check=True, timeout=20)
+            subprocess.run([probe, destination, save, "rules-open"], check=True, timeout=20)
+            saved = save.read_bytes()
+            pack_file.write_text(json.dumps({**pack, "season_ticks": 12}), encoding="utf-8")
+            changed = subprocess.run([probe, destination, save, "rules-open"], timeout=20)
+            assert changed.returncode == 21 and save.read_bytes() == saved
+            pack_file.write_text(json.dumps(pack), encoding="utf-8")
+        if mode == "journey":
+            assert "craft" not in state["play_rules"]["commands"]
+            expedition["refs"].remove("play-rules")
+            manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+            assert replay([], "invalid_expedition")["location"].endswith("/rule_pack")
+            expedition["refs"].append("play-rules")
+            manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+            pack_file.write_text(json.dumps({**pack, "deny": ["craft", "craft"]}), encoding="utf-8")
+            assert replay([], "invalid_expedition")["location"].endswith("/rule_pack/deny")
+            pack_file.write_text(json.dumps(pack), encoding="utf-8")
+    print("Four rule packs enforce commands, movement and metabolism, with save identity checks")
+
+
+def character_rules(cli, probe, project, destination):
+    shutil.copytree(project, destination)
+    path = destination / "assets" / "expedition.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["crew"] = {
+        "version": 1, "initial": "gardener",
+        "characters": {"gardener": {}, "coast-guide": {"heat_guard": 2, "venom_guard": 3}},
+    }
+    garden, shore = document["regions"]
+    garden["climate"] = {"wetness": [0, 0, 0, 0], "heat": [3, 3, 3, 3]}
+    briefing = {
+        "id": "briefing", "kind": "chapter", "at": [0, 1],
+        "unlock_character": "coast-guide", "activate_character": True,
+        "inspect": "The coast guide knows the heat and the marsh.",
+    }
+    garden["sites"].append(briefing)
+    shore["sites"].append({"id": "stinger", "kind": "enemy", "at": [2, 1],
+                            "power": 6, "venom": 3, "inspect": "Keep clear of the tail."})
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    def replay(actions, expected="ok"):
+        return request(cli, destination, "expedition.replay", {"actions": actions}, expected)
+
+    initial = replay([])["state"]
+    assert initial["active_character"] == "gardener" and initial["unlocked_characters"] == ["gardener"]
+    assert initial["nearby_inspections"] == {"briefing": briefing["inspect"]} and initial["tick"] == 0
+    await_heat = [action("wait")] * 2
+    plain = replay([action("wait"), *await_heat])["state"]
+    guided = replay([action("use", "briefing"), *await_heat])["state"]
+    assert plain["heat"] == guided["heat"] == 9 and plain["health"] == 18 and guided["health"] == 20
+    assert guided["active_character"] == "coast-guide"
+    assert guided["unlocked_characters"] == ["coast-guide", "gardener"]
+    assert guided["character_traits"] == {"heat_guard": 2, "venom_guard": 3}
+
+    visit = [action("east"), action("use", "trail"), action("attack", "stinger")]
+    guided_attack = replay([action("use", "briefing"), *visit])["state"]
+    plain_attack = replay(visit)["state"]
+    assert plain_attack["poison"] == 2 and guided_attack.get("poison", 0) == 0
+    assert guided_attack["active_character"] == "coast-guide"
+    assert guided_attack["nearby_inspections"] == {"stinger": "Keep clear of the tail."}
+    save = destination / "crew.save.json"
+    subprocess.run([probe, destination, save, "crew-save"], check=True, timeout=20)
+    subprocess.run([probe, destination, save, "crew-open"], check=True, timeout=20)
+    briefing["unlock_character"] = "missing"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert replay([], "invalid_expedition")["location"].endswith("/unlock_character")
+    briefing["unlock_character"] = "coast-guide"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    print("Chapter unlock activates a character, traits change hazard effects, inspections stay local")
+
+
+def input_remapping(cli, probe, project, destination):
+    shutil.copytree(project, destination)
+    original_save = destination / "before-remapping.save.json"
+    subprocess.run([probe, project, original_save, "farm-start"], check=True, timeout=20)
+    manifest_path = destination / "wds.project.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expedition = next(item for item in manifest["resources"] if item["id"] == "expedition")
+    expedition["refs"].append("expedition-controls")
+    manifest["resources"].append({
+        "id": "expedition-controls", "kind": "data", "path": "assets/controls.json", "refs": [],
+    })
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    controls = destination / "assets" / "controls.json"
+    bindings = {"north": ["K", "Up"], "south": ["J"], "west": ["H"], "east": ["L"],
+                "gather": ["M"], "use": ["U"]}
+
+    def replay(keys, expected="ok"):
+        controls.write_text(json.dumps({"version": 1, "bindings": keys}), encoding="utf-8")
+        return request(cli, destination, "expedition.replay", {"actions": []}, expected)
+
+    effective = replay(bindings)["state"]["input_bindings"]
+    assert all(effective[name] == keys for name, keys in bindings.items())
+    assert effective["attack"] == ["Space"] and effective["select-site"] == ["Tab"]
+    conflict = replay({**bindings, "gather": ["K"]}, "invalid_expedition")
+    assert "/input_bindings/bindings/" in conflict["location"]
+    reserved = replay({**bindings, "use": ["Escape"]}, "invalid_expedition")
+    assert reserved["location"].endswith("/input_bindings/bindings/use")
+    replay(bindings)
+    subprocess.run([probe, destination, original_save, "farm-cook"], check=True, timeout=20)
+    subprocess.run([probe, destination, original_save, "farm-verify"], check=True, timeout=20)
+    print("Expedition binding overrides, reserved keys and collisions, old save resumes")
+
+
+def runtime_environment():
+    return {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
+
+
+def package(cli, project, root, capability, probe=None, *, graphics=True):
+    root.mkdir()
+    destination = root / "release"
+    export = [cli, "project", "export", project, "0", "windows-x64", destination]
+    subprocess.run(export, timeout=30, check=True, capture_output=True)
+    runtime = runtime_environment()
+    modes = ("--check", "--expedition-smoke") if graphics else ("--check",)
+    for mode in modes:
+        subprocess.run([destination / "Play.exe", mode], cwd=root, env=runtime,
+                       timeout=20, check=True)
+    if probe:
+        save_slot = destination / "expedition.slot-2.json"
+        subprocess.run([probe, project, save_slot, "farm-start"], timeout=20, check=True)
+        preserved = save_slot.read_bytes()
+        result = subprocess.run([destination / "Play.exe", "--check-save=2"], env=runtime, timeout=20)
+        assert result.returncode == 0 and save_slot.read_bytes() == preserved
+        switch = [destination / "Play.exe", "--check-slot-switch"]
+        result = subprocess.run(switch, env=runtime, timeout=20)
+        assert (result.returncode == 0 and save_slot.read_bytes() == preserved
+                and not (destination / "expedition.save.json").exists()
+                and not (destination / "expedition.slot-3.json").exists())
+        for invalid in ("--check-save=1", "--check-save=4"):
+            result = subprocess.run([destination / "Play.exe", invalid], env=runtime, timeout=20)
+            assert result.returncode == 2 and save_slot.read_bytes() == preserved
+        damaged = destination / "expedition.slot-3.json"
+        damaged.write_bytes(b"{broken")
+        result = subprocess.run([destination / "Play.exe", "--check-save=3"], env=runtime, timeout=20)
+        assert result.returncode == 1 and damaged.read_bytes() == b"{broken"
+        result = subprocess.run(switch, env=runtime, timeout=20)
+        assert (result.returncode == 1 and damaged.read_bytes() == b"{broken"
+                and save_slot.read_bytes() == preserved)
+
+    prior = root / "without-living-format"
+    prior.mkdir()
+    old_cli = prior / cli.name
+    shutil.copy2(cli, old_cli)
+    kit = prior / "wds-runtime" / "windows-x64"
+    shutil.copytree(cli.parent / "wds-runtime" / "windows-x64", kit)
+    manifest = kit / "wds.runtime.json"
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
+    assert metadata.pop(capability) == 1
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+    rejected = root / "rejected"
+    failure = subprocess.run([old_cli, *export[1:-1], rejected], capture_output=True,
+                             timeout=30, check=False)
+    result = json.loads(failure.stdout)
+    assert failure.returncode and result["code"] == "invalid_runtime_dependency", result
+    assert result["location"].endswith("/" + capability) and not rejected.exists()
+    label = "with graphics smoke" if graphics else "headless"
+    print(f"Standalone Windows validation {label}, older runtime rejection")
+    return destination
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cli", required=True, type=Path)
+    parser.add_argument("--probe", required=True, type=Path)
+    parser.add_argument("--work", required=True, type=Path)
+    parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--no-graphics", action="store_true",
+                        help="skip the graphics smoke for each exported package")
+    parser.add_argument("--window-input", action="store_true",
+                        help="send keys to the remapped Windows game's hidden window")
+    args = parser.parse_args()
+    if args.window_input and (os.name != "nt" or not args.runtime):
+        parser.error("--window-input requires Windows and --runtime")
+    args.work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="w25-", dir=args.work) as folder:
+        root = Path(folder)
+        project = root / "weather-garden"
+        shutil.copytree(SAMPLE / "assets", project / "assets")
+        shutil.copy2(SAMPLE / "wds.project.json", project)
+        circuit(args.cli.resolve(), project, root / "circuit.json")
+        actuate(args.cli.resolve(), root / "actuator-bench")
+        yard = SAMPLE.parent / "voxel-workyard"
+        workyard(args.cli.resolve(), yard, root / "workyard")
+        weather_shelter(args.cli.resolve(), yard, root / "workyard-roof")
+        garden(args.cli.resolve(), project, args.probe.resolve(), root / "adventure.json")
+        coast = root / "coast"
+        conditions(args.cli.resolve(), project, coast)
+        kiln = root / "kiln"
+        processing(args.cli.resolve(), project, kiln)
+        engraved = root / "engraved"
+        inscriptions(args.cli.resolve(), kiln, engraved)
+        chronicle = root / "chronicle"
+        story(args.cli.resolve(), project, chronicle)
+        crew = root / "crew"
+        character_rules(args.cli.resolve(), args.probe.resolve(), project, crew)
+        combined(args.cli.resolve(), project, (coast, kiln, chronicle), root / "combined")
+        control = root / "controls"
+        controls(args.cli.resolve(), project, control)
+        modes = root / "modes"
+        play_modes(args.cli.resolve(), args.probe.resolve(), project, modes)
+        remapped = root / "remapped"
+        input_remapping(args.cli.resolve(), args.probe.resolve(), project, remapped)
+        if args.runtime:
+            runtime = args.runtime.resolve()
+            graphics = not args.no_graphics
+            package(runtime, project, root / "garden-package", "survival_format",
+                    args.probe.resolve(), graphics=graphics)
+            package(runtime, coast, root / "coast-package", "exposure_format", graphics=graphics)
+            package(runtime, kiln, root / "kiln-package", "processing_format", graphics=graphics)
+            package(runtime, engraved, root / "engraved-package", "inscription_format",
+                    graphics=graphics)
+            package(runtime, chronicle, root / "story-package", "story_format", graphics=graphics)
+            package(runtime, crew, root / "crew-package", "expedition_character_format",
+                    graphics=graphics)
+            package(runtime, control, root / "actions-package", "interaction_format",
+                    graphics=graphics)
+            package(runtime, yard, root / "workyard-package", "voxel_dynamics_format",
+                    graphics=False)
+            package(runtime, yard, root / "thermal-workyard-package", "voxel_thermal_format",
+                    graphics=False)
+            package(runtime, yard, root / "graded-workyard-package", "voxel_grade_format",
+                    graphics=False)
+            package(runtime, modes / "build", root / "rules-package", "expedition_rules_format",
+                    graphics=graphics)
+            release = package(runtime, remapped, root / "input-package", "expedition_input_format",
+                              graphics=graphics)
+            if args.window_input:
+                from window_input import verify_window_input
+
+                verify_window_input(release, remapped, args.probe.resolve(), runtime_environment())
+
+
+if __name__ == "__main__":
+    main()

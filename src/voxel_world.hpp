@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <iosfwd>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include "voxel_terrain.hpp"
 
@@ -28,27 +30,98 @@ struct Camera {
   [[nodiscard]] Vec3 ray(double horizontal, double vertical) const;
 };
 
+struct EnvironmentSample {
+  std::string_view weather;
+  bool open_sky;
+  int vertical_light;
+  int light;
+};
+
+struct SkyPreview {
+  static constexpr std::uint32_t day_ticks = 240;
+  std::uint32_t day = 0;
+  bool night = false;
+
+  [[nodiscard]] std::uint32_t tick() const { return day * day_ticks + (night ? 230U : 90U); }
+};
+
+using Cell = std::array<int, 3>;
+
+class LightField {
+ public:
+  [[nodiscard]] bool covers(Vec3 center) const;
+  [[nodiscard]] int at(Cell cell) const;
+  [[nodiscard]] std::string_view weather() const { return weather_; }
+
+ private:
+  friend class World;
+  static constexpr int span = (SeededTerrain::radius * 2 + 1) * SeededTerrain::chunk_size;
+  static std::size_t index(int x, int y, int z);
+  int left_ = 0;
+  int front_ = 0;
+  int daylight_ = 0;
+  std::string_view weather_;
+  std::vector<std::uint8_t> cells_;
+};
+
+struct BlockShift {
+  std::string_view code;
+  int moved = 0;
+};
+
+struct CartRoute {
+  std::string_view code;
+  std::vector<Cell> positions;
+  bool blocked = false;
+};
+
+struct DynamicsStep {
+  std::string_view code;
+  int water_updates = 0;
+  int ignited = 0;
+  int extinguished = 0;
+  bool changed = false;
+  int lava_updates = 0;
+  int solidified = 0;
+  int weather_extinguished = 0;
+};
+
 class World {
  public:
   static constexpr int width = 24;
   static constexpr int height = 12;
   static constexpr int depth = 24;
+  static constexpr int push_capacity = 8;
+  static constexpr int cart_max_steps = 64;
   explicit World(Content content = {});
 
   [[nodiscard]] Block block(int x, int y, int z) const;
   [[nodiscard]] bool collides(Vec3 feet) const;
   [[nodiscard]] Hit cast(Vec3 origin, Vec3 direction, double limit) const;
   bool edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place);
+  [[nodiscard]] BlockShift shift_blocks(int x, int y, int z, int dx, int dz, int capacity);
+  [[nodiscard]] bool cart_track(Cell position) const;
+  [[nodiscard]] CartRoute cart_route(Cell start, int dx, int dz, int steps) const;
+  [[nodiscard]] CartRoute cart_route(Cell start, std::span<const std::array<int, 2>> steps) const;
+  [[nodiscard]] DynamicsStep step_dynamics(int x, int z, int columns, int rows, int steps,
+                                           std::optional<std::uint32_t> weather_tick = {});
+  [[nodiscard]] std::optional<EnvironmentSample> environment(int x, int y, int z,
+                                                             std::uint32_t tick) const;
+  [[nodiscard]] LightField light_field(Vec3 center, std::uint32_t tick) const;
   bool read(std::istream& input);
   void write(std::ostream& output) const;
   [[nodiscard]] const Content& content() const { return content_; }
   void set_content(Content content) { content_ = content; }
   void set_placement(Block block);
   void use_seed(std::uint32_t seed, bool frontier = false);
+  void use_seed(std::uint32_t seed, TerrainProfile profile);
   void stream(Vec3 center) const;
   [[nodiscard]] const std::optional<SeededTerrain>& terrain() const { return terrain_; }
 
  private:
+  friend struct Player;
+  [[nodiscard]] std::optional<Cell> adjacent_track(Cell start, int dx, int dz) const;
+  [[nodiscard]] bool precipitating(std::uint32_t tick) const;
   std::array<Block, width * height * depth> blocks_{};
   Content content_;
   std::optional<SeededTerrain> terrain_;
@@ -60,14 +133,19 @@ struct Player {
   double pitch = 0;
   double fall_speed = 0;
   bool grounded = false;
+  std::optional<Cell> cart;
 
   void step(const World& world, double forward, double strafe, bool jump, double seconds,
             int jump_speed = 6);
+  bool toggle_cart(const World& world);
+  bool move_cart(const World& world, int dx, int dz);
+  [[nodiscard]] DynamicsStep advance_workyard(World& world, std::uint32_t tick) const;
   [[nodiscard]] Vec3 eye() const;
   [[nodiscard]] Vec3 view() const;
   [[nodiscard]] Camera camera() const;
 };
 
-[[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction);
+[[nodiscard]] std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction,
+                                  const LightField* light = nullptr);
 
 }  // namespace wds::voxel

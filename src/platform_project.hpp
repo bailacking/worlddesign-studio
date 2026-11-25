@@ -39,6 +39,7 @@ struct FieldEdit {
   std::string field;
   std::uint64_t revision;
   std::int64_t value;
+  std::optional<std::int64_t> expected_value = std::nullopt;
   bool operator==(const FieldEdit&) const = default;
 };
 
@@ -58,7 +59,23 @@ struct FieldResult {
   std::optional<std::int64_t> new_value{};
   bool changed = false;
   std::optional<SceneChange> scene_change{};
+  std::vector<std::string> conflicts{};
 };
+
+struct SceneVersion {
+  std::filesystem::path directory;
+  std::uint64_t revision;
+};
+
+FieldResult merge_project_scene(const SceneVersion& current, const SceneVersion& base,
+                                const SceneVersion& incoming, bool apply);
+std::string merge_project_resources(const SceneVersion& current, const SceneVersion& base,
+                                    const SceneVersion& incoming,
+                                    const std::vector<std::string>& resources, bool apply,
+                                    std::string_view resolutions = "[]",
+                                    std::string_view token = "");
+std::string restore_project_resources(const SceneVersion& current, std::string_view change,
+                                      bool apply);
 
 struct SceneField {
   std::string_view name;
@@ -74,6 +91,7 @@ struct SceneEdit {
   std::string field;
   std::uint64_t revision;
   std::int64_t value;
+  std::optional<std::int64_t> expected_value = std::nullopt;
 };
 
 struct EntityEdit {
@@ -106,6 +124,7 @@ struct VoxelScene {
   std::uint64_t revision;
   std::optional<items::Workshop> workshop{};
   std::string palette = "daylight";
+  std::string title{};
 
   bool edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place);
 };

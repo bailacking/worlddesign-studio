@@ -6,7 +6,12 @@ on:
     paths:
       - 'src/**'
       - 'examples/w24-expeditions/**'
+      - 'examples/w25-lab/**'
+      - 'examples/voxel-workyard/**'
+      - 'examples/web-garden/**'
+      - 'examples/plugin-sdk/**'
       - 'tests/expedition_save.cpp'
+      - 'tests/project_collaboration.py'
       - 'CMakeLists.txt'
       - '.github/workflows/expedition.yml'
   workflow_dispatch:
@@ -15,11 +20,52 @@ permissions:
   contents: read
 
 jobs:
+  browser:
+    name: Standalone WebAssembly garden
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - name: Build the static browser runtime
+        run: |
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          cd "$RUNNER_TEMP/emsdk"
+          test "$(git rev-parse HEAD)" = c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+          ./emsdk install 4.0.23
+          ./emsdk activate 4.0.23
+          source ./emsdk_env.sh
+          cd "$GITHUB_WORKSPACE"
+          emcmake cmake -S . -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm --target wds_web_garden --parallel 2
+      - name: Play the garden in Chrome with only static hosting
+        run: |
+          npm install --prefix build/web-test --no-save --ignore-scripts playwright@1.56.1
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory build/wasm > build/wasm/http.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          curl --fail --silent --show-error --retry 4 --retry-connrefused http://127.0.0.1:8765/web-garden/ > /dev/null
+          node examples/web-garden/verify-browser.mjs http://127.0.0.1:8765/web-garden/ build/web-test
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wds-web-garden
+          path: build/wasm/web-garden/
+          if-no-files-found: error
+          retention-days: 14
+
   replay:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        include:
+          - os: ubuntu-24.04
+            seed: 16431
+          - os: macos-15
+            seed: 4294967295
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -31,4 +77,69 @@ jobs:
           python-version: '3.12'
       - run: cmake --preset dev
       - run: cmake --build --preset dev --target wds_cli wds_expedition_save --parallel 2
-      - run: ctest --preset dev -R '^expedition_replay$' --verbose --no-tests=error
+      - run: ctest --preset dev -R '^(expedition_replay|living_systems|project_collaboration)$' --verbose --no-tests=error
+      - run: cmake --install build/dev --component Tools --prefix build/installed
+      - run: build/installed/bin/wds_cli --project-operations
+      - name: Replay the representative projects with installed tools
+        run: >
+          python examples/w25-lab/verify.py --cli build/installed/bin/wds_cli
+          --probe build/dev/wds_expedition_save --work build/installed-replay
+      - name: Verify both expedition content catalogs with installed tools
+        run: >
+          python examples/w24-expeditions/verify.py --cli build/installed/bin/wds_cli
+          --probe build/dev/wds_expedition_save --work build/candidate-verify
+          --seed ${{ matrix.seed }} --report build/candidate-verify/coverage.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wds-candidate-coverage-${{ matrix.os }}
+          path: build/candidate-verify/coverage.json
+          if-no-files-found: error
+      - run: cmake --install build/dev --component PluginSDK --prefix build/installed
+      - run: cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo
+      - run: cmake --build build/sdk-demo --parallel 2
+      - run: ctest --test-dir build/sdk-demo --output-on-failure --no-tests=error
+
+  windows-package:
+    name: Windows install and package
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Build, install and verify independent game packages
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw "MSVC x64 tools not found." }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          cmake --preset dev -B build/package -DCMAKE_BUILD_TYPE=Release -DWDS_BUILD_WINDOWS_PLAYER=ON
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/package --target wds_player wds_cli wds_expedition_save --parallel 3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/package --component Tools --prefix build/installed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/package --component WindowsRuntime --prefix build/installed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python examples/w25-lab/verify.py --cli build/installed/bin/wds_cli.exe --probe build/package/wds_expedition_save.exe --runtime build/installed/bin/wds_cli.exe --work build/package-verify --no-graphics
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python examples/w24-expeditions/verify.py --cli build/installed/bin/wds_cli.exe --probe build/package/wds_expedition_save.exe --runtime build/installed/bin/wds_cli.exe --work build/candidate-verify --report build/candidate-verify/coverage.json --no-graphics
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/package --component PluginSDK --prefix build/installed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake -S build/installed/share/wds/plugin-sdk -B build/sdk-demo -G Ninja -DCMAKE_BUILD_TYPE=Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/sdk-demo --parallel 2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --test-dir build/sdk-demo --output-on-failure --no-tests=error
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wds-candidate-coverage
+          path: build/candidate-verify/coverage.json
+          if-no-files-found: error
+          retention-days: 14

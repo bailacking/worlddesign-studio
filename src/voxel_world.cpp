@@ -8,12 +8,17 @@
 #include <ostream>
 #include <string>
 
+#include "seeded_grid.hpp"
+
 namespace wds::voxel {
 namespace {
 
 constexpr double radius = 0.27;
 constexpr double body_height = 1.75;
 constexpr double epsilon = 1e-7;
+constexpr std::array adjacent{Cell{1, 0, 0},  Cell{-1, 0, 0}, Cell{0, 1, 0},
+                              Cell{0, -1, 0}, Cell{0, 0, 1},  Cell{0, 0, -1}};
+constexpr int max_light = 15;
 
 int cell(double value) { return static_cast<int>(std::floor(value)); }
 
@@ -37,6 +42,108 @@ Block legacy_block(int x, int y, int z) {
   return Block::air;
 }
 
+double rendered_height(Block block) {
+  switch (block) {
+    case Block::rail:
+      return 0.11;
+    case Block::water_low:
+    case Block::lava_low:
+      return 0.25;
+    case Block::water_mid:
+    case Block::lava_mid:
+      return 0.5;
+    case Block::water_high:
+    case Block::lava_high:
+      return 0.75;
+    default:
+      return 1;
+  }
+}
+
+bool exposed_to_sky(const World& world, int x, int y, int z) {
+  for (; y < World::height; ++y)
+    if (solid(world.block(x, y, z))) return false;
+  return true;
+}
+
+int emitted_light(Block block) {
+  switch (block) {
+    case Block::vent:
+      return 13;
+    case Block::lava_high:
+      return 12;
+    case Block::flame:
+    case Block::lava_mid:
+      return 11;
+    case Block::lava_low:
+      return 9;
+    default:
+      return 0;
+  }
+}
+
+struct SkyLight {
+  std::string_view weather;
+  int level;
+};
+
+SkyLight sky_light(std::uint32_t seed, std::uint32_t tick) {
+  constexpr std::array weather_names{"clear", "rain", "storm"};
+  constexpr std::array attenuation{0, 2, 4};
+  const auto roll = coordinate_hash(seed, static_cast<int>(tick / 120), 0) % 10U;
+  const std::size_t weather = roll < 6U ? 0 : roll < 9U ? 1 : 2;
+  const int time = static_cast<int>(tick % SkyPreview::day_ticks);
+  const int daytime = std::clamp(std::min(time, 180 - time) / 4, 0, max_light - 1) + 1;
+  return {weather_names[weather], std::max(1, daytime - attenuation[weather])};
+}
+
+int chunk_coordinate(double coordinate) {
+  constexpr double edge = SeededTerrain::limit;
+  return floor_div(cell(std::clamp(coordinate, -edge, edge - 1)), SeededTerrain::chunk_size);
+}
+
+int propagated_light(const World& world, Cell origin, int daylight, bool open_sky) {
+  const auto [x, y, z] = origin;
+  if (solid(world.block(x, y, z))) return 0;
+  constexpr int range = max_light - 1;
+  constexpr int width = range * 2 + 1;
+  const auto index = [](int column_offset, int row, int depth_offset) {
+    return static_cast<std::size_t>((row * width + depth_offset + range) * width + column_offset +
+                                    range);
+  };
+  struct Probe {
+    Cell cell;
+    int distance;
+  };
+  std::array<bool, width * width * World::height> visited{};
+  visited[index(0, y, 0)] = true;
+  std::vector<Probe> pending{{origin, 0}};
+  int light = open_sky ? daylight : 0;
+  const int brightest = std::max(daylight, emitted_light(Block::vent));
+  // Follow open cells outward from the sample. Each face crossed costs one level.
+  for (std::size_t next = 0; next < pending.size(); ++next) {
+    const auto [position, distance] = pending[next];
+    if (brightest - distance <= light) break;
+    const auto [u, v, w] = position;
+    light = std::max(light, emitted_light(world.block(u, v, w)) - distance);
+    if (daylight - distance > light && exposed_to_sky(world, u, v, w)) light = daylight - distance;
+    if (brightest - distance - 1 <= light) continue;
+    for (const auto& [du, dv, dw] : adjacent) {
+      const int column = u + du, row = v + dv, depth = w + dw;
+      if (column < -SeededTerrain::limit || column >= SeededTerrain::limit ||
+          depth < -SeededTerrain::limit || depth >= SeededTerrain::limit || row < 0 ||
+          row >= World::height)
+        continue;
+      auto& seen = visited[index(column - x, row, depth - z)];
+      if (seen) continue;
+      seen = true;
+      if (!solid(world.block(column, row, depth)))
+        pending.push_back({{column, row, depth}, distance + 1});
+    }
+  }
+  return light;
+}
+
 }  // namespace
 
 World::World(Content content) : content_(content) {
@@ -53,7 +160,11 @@ Block World::block(int x, int y, int z) const {
 }
 
 void World::use_seed(std::uint32_t seed, bool frontier) {
-  terrain_.emplace(seed, frontier);
+  use_seed(seed, frontier ? TerrainProfile::frontier : TerrainProfile::seeded);
+}
+
+void World::use_seed(std::uint32_t seed, TerrainProfile profile) {
+  terrain_.emplace(seed, profile);
   stream(Player{}.feet);
 }
 
@@ -83,7 +194,7 @@ bool World::collides(Vec3 feet) const {
   for (int x = cell(feet.x - radius); x <= cell(feet.x + radius - epsilon); ++x) {
     for (int y = cell(feet.y); y <= cell(feet.y + body_height - epsilon); ++y) {
       for (int z = cell(feet.z - radius); z <= cell(feet.z + radius - epsilon); ++z) {
-        if ((terrain_ && !terrain_->resident(x, z)) || block(x, y, z) != Block::air) return true;
+        if ((terrain_ && !terrain_->resident(x, z)) || solid(block(x, y, z))) return true;
       }
     }
   }
@@ -123,7 +234,17 @@ Hit World::cast(Vec3 origin, Vec3 direction, double limit) const {
   int normal = 0;
   while (distance <= limit) {
     const auto hit = block(grid[0], grid[1], grid[2]);
-    if (hit != Block::air) return {hit, distance, side, grid[0], grid[1], grid[2], normal};
+    if (hit != Block::air) {
+      const auto surface = rendered_height(hit);
+      const auto top = grid[1] + surface;
+      if (surface == 1 || pos[1] + ray[1] * distance <= top)
+        return {hit, distance, side, grid[0], grid[1], grid[2], normal};
+      if (ray[1] < 0) {
+        const auto crossing = (top - pos[1]) / ray[1];
+        if (crossing <= limit && crossing < std::min({next[0], next[1], next[2]}))
+          return {hit, crossing, 1, grid[0], grid[1], grid[2], 1};
+      }
+    }
     side = static_cast<int>(std::min_element(next.begin(), next.end()) - next.begin());
     distance = next[side];
     if (!std::isfinite(distance) || distance > limit) break;
@@ -170,6 +291,135 @@ bool World::edit(Vec3 feet, Vec3 eye, Vec3 direction, bool place) {
   return true;
 }
 
+BlockShift World::shift_blocks(int x, int y, int z, int dx, int dz, int capacity) {
+  if (!((dx == 0 && (dz == -1 || dz == 1)) || (dz == 0 && (dx == -1 || dx == 1))))
+    return {"invalid_direction"};
+  if (capacity < 1 || capacity > push_capacity) return {"invalid_argument"};
+  const auto valid = [&](int column, int row) {
+    if (y <= 0 || y >= height) return false;
+    if (!terrain_) return inside(column, y, row);
+    return column >= -SeededTerrain::limit && column < SeededTerrain::limit &&
+           row >= -SeededTerrain::limit && row < SeededTerrain::limit;
+  };
+  if (!valid(x, z) || !valid(x + dx, z + dz)) return {"outside_world"};
+  auto candidate = *this;
+  candidate.stream({static_cast<double>(x), 0, static_cast<double>(z)});
+  const auto source = candidate.block(x, y, z);
+  if (source == Block::air || !content_.style(source).breakable) return {"immovable"};
+  std::array<Block, push_capacity + 1> replacement{};
+  replacement[1] = source;
+  int moved = 1;
+  for (; moved <= capacity; ++moved) {
+    const int at_x = x + dx * moved, at_z = z + dz * moved;
+    if (!valid(at_x, at_z)) return {"outside_world"};
+    const auto next = candidate.block(at_x, y, at_z);
+    if (next == Block::air) break;
+    if (moved == capacity) return {capacity == 1 ? "target_occupied" : "push_limit"};
+    if (!content_.style(next).breakable) return {"immovable"};
+    replacement[static_cast<std::size_t>(moved + 1)] = next;
+  }
+  if (candidate.terrain_) {
+    // Make room for new edits by clearing overrides that return to their generated state.
+    for (const bool resets : {true, false}) {
+      for (int offset = 0; offset <= moved; ++offset) {
+        const int at_x = x + dx * offset, at_z = z + dz * offset;
+        const auto next = replacement[static_cast<std::size_t>(offset)];
+        if (resets == candidate.terrain_->matches_generated(at_x, y, at_z, next) &&
+            !candidate.terrain_->set(at_x, y, at_z, next))
+          return {"edit_limit"};
+      }
+    }
+  } else {
+    for (int offset = 0; offset <= moved; ++offset)
+      candidate.blocks_[index(x + dx * offset, y, z + dz * offset)] =
+          replacement[static_cast<std::size_t>(offset)];
+  }
+  const auto spawn = Player{}.feet;
+  const bool spawn_loaded =
+      !candidate.terrain_ || candidate.terrain_->resident(cell(spawn.x), cell(spawn.z));
+  if (spawn_loaded && candidate.collides(spawn)) return {"spawn_blocked"};
+  *this = std::move(candidate);
+  return {"ok", moved};
+}
+
+bool World::precipitating(std::uint32_t tick) const {
+  return terrain_ && sky_light(terrain_->seed(), tick).weather != "clear";
+}
+
+std::optional<EnvironmentSample> World::environment(int x, int y, int z, std::uint32_t tick) const {
+  if (!terrain_ || x < -SeededTerrain::limit || x >= SeededTerrain::limit ||
+      z < -SeededTerrain::limit || z >= SeededTerrain::limit || y < 0 || y >= height)
+    return {};
+  stream({static_cast<double>(x), 0, static_cast<double>(z)});
+  const bool open_sky = exposed_to_sky(*this, x, y, z);
+  const auto sky = sky_light(terrain_->seed(), tick);
+  return EnvironmentSample{sky.weather, open_sky, open_sky ? sky.level : 0,
+                           propagated_light(*this, {x, y, z}, sky.level, open_sky)};
+}
+
+std::size_t LightField::index(int x, int y, int z) {
+  return static_cast<std::size_t>((y * span + z) * span + x);
+}
+
+bool LightField::covers(Vec3 center) const {
+  return !cells_.empty() && std::isfinite(center.x) && std::isfinite(center.z) &&
+         left_ ==
+             (chunk_coordinate(center.x) - SeededTerrain::radius) * SeededTerrain::chunk_size &&
+         front_ == (chunk_coordinate(center.z) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+}
+
+int LightField::at(Cell cell) const {
+  const auto [x, y, z] = cell;
+  if (y >= World::height) return daylight_;
+  if (cells_.empty() || x < left_ || x >= left_ + span || z < front_ || z >= front_ + span || y < 0)
+    return 0;
+  return std::max(0, static_cast<int>(cells_[index(x - left_, y, z - front_)]) - 1);
+}
+
+LightField World::light_field(Vec3 center, std::uint32_t tick) const {
+  LightField field;
+  if (!terrain_ || !std::isfinite(center.x) || !std::isfinite(center.z)) return field;
+  stream(center);
+  constexpr int span = LightField::span;
+  field.left_ = (chunk_coordinate(center.x) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+  field.front_ = (chunk_coordinate(center.z) - SeededTerrain::radius) * SeededTerrain::chunk_size;
+  const auto sky = sky_light(terrain_->seed(), tick);
+  field.daylight_ = sky.level;
+  field.weather_ = sky.weather;
+  field.cells_.resize(span * span * height);
+  std::array<std::vector<Cell>, max_light + 1> frontiers;
+  for (int z = 0; z < span; ++z)
+    for (int x = 0; x < span; ++x) {
+      const int column = field.left_ + x, row = field.front_ + z;
+      if (!terrain_->resident(column, row)) continue;
+      bool open_sky = true;
+      for (int y = height - 1; y >= 0; --y) {
+        const auto material = block(column, y, row);
+        if (solid(material)) {
+          open_sky = false;
+          continue;
+        }
+        // Zero marks a blocked cell. A passable cell stores its light level plus one.
+        const int level = std::max(open_sky ? field.daylight_ : 0, emitted_light(material));
+        field.cells_[LightField::index(x, y, z)] = static_cast<std::uint8_t>(level + 1);
+        if (level > 1) frontiers[level].push_back({x, y, z});
+      }
+    }
+  for (int level = max_light; level > 1; --level)
+    for (const auto& [x, y, z] : frontiers[level]) {
+      if (field.cells_[LightField::index(x, y, z)] != level + 1) continue;
+      for (const auto& [dx, dy, dz] : adjacent) {
+        const int u = x + dx, v = y + dy, w = z + dz;
+        if (u < 0 || u >= span || v < 0 || v >= height || w < 0 || w >= span) continue;
+        auto& neighbor = field.cells_[LightField::index(u, v, w)];
+        if (neighbor == 0 || neighbor >= level) continue;
+        neighbor = static_cast<std::uint8_t>(level);
+        if (level > 2) frontiers[level - 1].push_back({u, v, w});
+      }
+    }
+  return field;
+}
+
 bool World::read(std::istream& input) {
   if (terrain_) {
     auto candidate = *this;
@@ -212,6 +462,8 @@ void World::write(std::ostream& output) const {
 
 void Player::step(const World& world, double forward, double strafe, bool jump, double seconds,
                   int jump_speed) {
+  if (cart && world.cart_track(*cart)) return;
+  cart.reset();
   if (!(seconds > 0) || !std::isfinite(seconds) || !std::isfinite(forward) ||
       !std::isfinite(strafe)) {
     return;
@@ -271,14 +523,18 @@ Vec3 Camera::ray(double horizontal, double vertical) const {
           forward.z + horizontal * right.z + vertical * up.z};
 }
 
-std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction) {
+std::uint32_t pixel(const World& world, Vec3 origin, Vec3 direction, const LightField* light) {
   const auto hit = world.cast(origin, direction, 36);
-  if (hit.block == Block::air) return world.content().sky;
-  const auto color = world.content().style(hit.block).color;
-  const double shade = (hit.side == 1   ? 1.0
-                        : hit.side == 0 ? 0.76
-                                        : 0.86) *
-                       std::max(0.45, 1 - hit.distance * 0.014);
+  const bool sky = hit.block == Block::air;
+  const auto color = sky ? world.content().sky : world.content().style(hit.block).color;
+  const double side = hit.side == 1 ? 1.0 : hit.side == 0 ? 0.76 : 0.86;
+  double shade = sky ? 1.0 : side * std::max(0.45, 1 - hit.distance * 0.014);
+  if (light) {
+    Cell sample{hit.x, sky ? World::height : hit.y, hit.z};
+    if (solid(hit.block) && hit.normal) sample[hit.side] += hit.normal;
+    const int level = std::max(light->at(sample), emitted_light(hit.block));
+    shade *= 0.22 + 0.78 * level / max_light;
+  }
   const auto scale = [shade](std::uint32_t value) {
     return static_cast<std::uint32_t>((value & 255U) * shade);
   };

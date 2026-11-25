@@ -22,6 +22,10 @@ $cli = '.\build\runtime\wds_cli.exe'
 
 ## 从项目复跑
 
+可为铜脊接力生成四种模式的独立工程。每次指定一个新的生成目录。例如 `python examples/w24-expeditions/generate.py build/copper-survey --mode survey`，生成的铜脊接力工程位于 `build/copper-survey/copper-relay`。构建模式用 **Y** 选补给、**I** 领取。勘察模式用 **N** 访问下一地区。 [模式和规则包](../../docs/project/w25-w32-systems.md#w28-分支章节)
+
+生成命令加 `--crew` 可在芦风博物队启用角色队伍。选中近处站点可看到检视台词，完成 `rising` 章节后会启用岸线向导及其耐热和抗毒特性。
+
 ```powershell
 $cli = '.\build\native\wds_cli.exe'
 '{"version":1,"operation":"expedition.replay","mode":"read","expected_revision":0,"input":{"actions":[{"command":"gather","target":"copper-vein"},{"command":"craft","target":"spear"}]}}' |
@@ -38,11 +42,17 @@ python examples/w24-expeditions/verify.py --cli build/native/wds_cli.exe --probe
 
 Linux 与 macOS 从原生 CMake 构建运行 `ctest --preset dev -R '^expedition_replay$' --verbose`。 [验收文档](../../docs/project/w18-w24-expeditions.md)
 
+Windows CI 使用 `--no-graphics` 检查独立发行包、图标字节一致性和分阶段耗时。完整报告随 `wds-candidate-coverage` 附在运行记录中。 [远征验收工作流](https://github.com/bailacking/worlddesign-studio/actions/workflows/expedition.yml)
+
 ## W24 分段计时与 Java 参考数据复核
 
 给验证命令追加 `--seed` 和 `--scale` 可指定试演组合。四轮使用 `73021/0`、`73021/4`、`16431/4`、`4294967295/4`。每轮重新生成工程，用共享项目操作修改两个源工程的饥饿间隔和远征地形种子，并从修订 2 完整重放。Windows 记录单包的打包、完整性检查和图形冒烟时间。Linux 与 macOS 复跑生成、回放和存档，不生成 Windows 运行包。
 
 规模设为 4 时，每个区域额外生成 16 条补给链。先用 G 采集，再用 Q 选配方、C 合成，最后用 F 在交易站兑换营地凭券。采集点的专属 PNG 和类型默认图标一起打包，验证入口检查每份成品中的图标是否与源项目逐字节相同。
+
+`verify.py --report` 的 `supply_coverage` 记录每个项目逐条通过的补给链、未覆盖的采集点和首个失败步骤。外海遇到船只耐久耗尽时，会测试潮汐等待和经修船甲板的替代路线。报告保留首次失败及成功路线的等待回合与绕行动作。
+
+`candidate_coverage` 是主线回放的覆盖范围。`verified_content_coverage` 汇总主线、补给链、支路与迁移续跑，逐项报告成功交互过的站点、进过的地区、成功制作的配方、实际出现的库存物品及运行时解码的图标。`exploration_routes` 记录支路的末步动作、步数和到达地区。
 
 W2 原版文件保留在仓库外。用已取得的参考目录运行以下命令，输出只有版本指纹、注册与文件计数和抽查结果。
 

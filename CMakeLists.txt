@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WDS_BUILD_MODERN_STUDIO "Build the Qt desktop workbench" OFF)
-option(WDS_BUILD_W15_LAB "Build the W15 loopback server and layer preview" OFF)
+option(WDS_BUILD_W15_LAB "Build the W15 TCP/TLS server and layer preview" OFF)
 option(WDS_BUILD_RAYLIB_PREVIEW "Build the experimental raylib scene player" OFF)
 option(WDS_BUILD_WINDOWS_PLAYER "Build the statically linked Windows x64 export runtime" OFF)
 if(MSVC AND NOT WDS_BUILD_MODERN_STUDIO AND NOT WDS_BUILD_W15_LAB)
@@ -33,6 +33,9 @@ else()
     wds_compile_options
     INTERFACE -Wall -Wextra -Wpedantic -Werror
   )
+endif()
+if(EMSCRIPTEN)
+  target_compile_options(wds_compile_options INTERFACE -fexceptions)
 endif()
 
 # 构建骨架的冒烟程序：只验证编译、链接、C++ 标准模式与 CTest 链路。
@@ -59,7 +62,7 @@ target_compile_definitions(wds_png PUBLIC
 
 add_library(wds_project STATIC
   src/platform_project.cpp src/project_io.cpp src/project_export.cpp src/project_operations.cpp
-  src/asset_import.cpp
+  src/asset_import.cpp src/project_diff.cpp
   src/behavior.cpp src/signal_circuit.cpp src/tile_world.cpp src/voxel_palette.cpp
   src/workshop.cpp src/workshop_document.cpp
   src/scene_play.cpp src/expedition.cpp src/expedition_document.cpp)
@@ -68,6 +71,48 @@ target_include_directories(wds_project SYSTEM PRIVATE third_party/nlohmann)
 target_link_libraries(wds_project PRIVATE wds_compile_options wds_png wds_m0)
 target_link_libraries(wds_cli PRIVATE wds_project)
 target_include_directories(wds_cli SYSTEM PRIVATE third_party/nlohmann)
+
+if(EMSCRIPTEN)
+  set(web_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/web-garden")
+  set(garden_source "${CMAKE_CURRENT_SOURCE_DIR}/examples/w25-lab")
+  set(web_output "${CMAKE_CURRENT_BINARY_DIR}/web-garden")
+  add_executable(wds_web_runtime "${web_source}/wasm.cpp")
+  target_link_libraries(wds_web_runtime PRIVATE wds_project wds_compile_options)
+  target_include_directories(wds_web_runtime SYSTEM PRIVATE third_party/nlohmann)
+  set_target_properties(wds_web_runtime PROPERTIES
+    OUTPUT_NAME garden-engine SUFFIX ".mjs" RUNTIME_OUTPUT_DIRECTORY "${web_output}")
+  target_link_options(wds_web_runtime PRIVATE
+    -fexceptions --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1
+    -sEXPORTED_RUNTIME_METHODS=ccall
+    "SHELL:--embed-file \"${garden_source}/assets@/garden/assets\""
+    "SHELL:--embed-file \"${garden_source}/wds.project.json@/garden/wds.project.json\"")
+  set_property(TARGET wds_web_runtime APPEND PROPERTY LINK_DEPENDS
+    "${garden_source}/assets/entry.json" "${garden_source}/assets/expedition.json"
+    "${garden_source}/wds.project.json")
+  add_custom_target(wds_web_garden
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${web_source}/index.html" "${web_source}/garden.css" "${web_source}/garden.js"
+      "${web_output}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${web_source}/wasm-runtime.mjs" "${web_output}/garden-runtime.mjs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${web_output}/WDS-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann/LICENSE.MIT" "${web_output}/JSON-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/LICENSE" "${web_output}/PNG-LICENSE.txt"
+    DEPENDS wds_web_runtime
+    VERBATIM)
+endif()
+
+install(TARGETS wds_cli RUNTIME DESTINATION bin COMPONENT Tools)
+install(FILES src/plugin_host.hpp src/plugin_host.cpp
+  DESTINATION share/wds/plugin-sdk/src COMPONENT PluginSDK)
+install(FILES examples/plugin-sdk/CMakeLists.txt examples/plugin-sdk/demo.cpp
+  examples/plugin-sdk/palette_abi.h examples/plugin-sdk/native_palette.cpp
+  examples/plugin-sdk/native_demo.cpp examples/plugin-sdk/verify_store.cmake
+  examples/plugin-sdk/README.md LICENSE DESTINATION share/wds/plugin-sdk COMPONENT PluginSDK)
+
 if(WIN32)
   set(kit_spec "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-x64-runtime.json")
   file(READ "${kit_spec}" WDS_WINDOWS_RUNTIME_SPEC)
@@ -107,6 +152,7 @@ if(WDS_BUILD_WINDOWS_PLAYER)
   target_link_libraries(wds_player PRIVATE raylib wds_project wds_compile_options user32)
   set(kit_script "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows-player-kit.cmake")
   set(runtime_kit "$<TARGET_FILE_DIR:wds_player>/wds-runtime/windows-x64")
+  install(DIRECTORY "${runtime_kit}" DESTINATION bin/wds-runtime COMPONENT WindowsRuntime)
   set_property(TARGET wds_player APPEND PROPERTY LINK_DEPENDS
     "${kit_script}" "${kit_spec}" "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/lodepng/LICENSE"
@@ -124,12 +170,14 @@ endif()
 
 if(WDS_BUILD_MODERN_STUDIO)
   find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets LinguistTools)
-  qt_add_executable(wds_studio_modern WIN32
+  include(GNUInstallDirs)
+  qt_add_executable(wds_studio_modern WIN32 MACOSX_BUNDLE
     src/studio/main.cpp
     src/studio/asset_preview.cpp
     src/studio/bridge.cpp
     src/studio/i18n/language.cpp
     src/studio/output_panel.cpp
+    src/studio/palette_dialog.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
     src/studio/theme/theme.cpp
@@ -139,25 +187,88 @@ if(WDS_BUILD_MODERN_STUDIO)
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
   target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
-  add_dependencies(wds_studio_modern wds_cli)
+  add_executable(wds_palette_tool examples/plugin-sdk/native_demo.cpp)
+  target_link_libraries(wds_palette_tool PRIVATE wds_m0 ${CMAKE_DL_LIBS})
+  target_compile_definitions(wds_palette_tool PRIVATE
+    WDS_PALETTE_MODULE_SUFFIX="${CMAKE_SHARED_MODULE_SUFFIX}")
+  if(MINGW)
+    target_link_options(wds_palette_tool PRIVATE -municode)
+  endif()
+  foreach(palette IN ITEMS daylight overcast obsolete)
+    add_library(wds_test_palette_${palette} MODULE examples/plugin-sdk/native_palette.cpp)
+    target_compile_definitions(wds_test_palette_${palette} PRIVATE WDS_BUILD_PALETTE)
+  endforeach()
+  target_compile_definitions(wds_test_palette_daylight PRIVATE WDS_SAMPLE_ABI=1 WDS_SAMPLE_BLUE=0xc0)
+  target_compile_definitions(wds_test_palette_overcast PRIVATE WDS_SAMPLE_ABI=1 WDS_SAMPLE_BLUE=0x60)
+  target_compile_definitions(wds_test_palette_obsolete PRIVATE WDS_SAMPLE_ABI=0 WDS_SAMPLE_BLUE=0xff)
+  add_dependencies(wds_studio_modern wds_cli wds_palette_tool
+    wds_test_palette_daylight wds_test_palette_overcast wds_test_palette_obsolete)
   qt_add_resources(wds_studio_modern studio_theme PREFIX "/studio" BASE "src/studio"
     FILES src/studio/theme/workbench.qss)
   qt_add_translations(wds_studio_modern
     SOURCE_TARGETS wds_studio_modern
     TS_FILES src/studio/i18n/workbench_zh_CN.ts
     RESOURCE_PREFIX "/studio/i18n")
+  set(studio_deploy_options)
+  if(WIN32)
+    list(APPEND studio_deploy_options DEPLOY_TOOL_OPTIONS --include-plugins qoffscreen)
+  elseif(APPLE)
+    # The bundle uses the same sibling CLI lookup as the other standalone builds.
+    set_property(TARGET wds_studio_modern APPEND PROPERTY LINK_DEPENDS
+      "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE:wds_palette_tool>")
+    add_custom_command(TARGET wds_studio_modern POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE_DIR:wds_studio_modern>"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:wds_palette_tool>" "$<TARGET_FILE_DIR:wds_studio_modern>"
+      VERBATIM)
+  else()
+    set_target_properties(wds_studio_modern PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+  endif()
+  install(CODE [[
+    if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_PREFIX}")
+      get_filename_component(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}" ABSOLUTE)
+    endif()
+  ]] COMPONENT Workbench)
+  install(TARGETS wds_studio_modern
+    BUNDLE DESTINATION . COMPONENT Workbench
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+  if(APPLE)
+    install(PROGRAMS "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE:wds_palette_tool>"
+      DESTINATION "wds_studio_modern.app/Contents/MacOS" COMPONENT Workbench)
+    install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+      DESTINATION "wds_studio_modern.app/Contents/PlugIns/platforms" COMPONENT Workbench)
+  else()
+    install(TARGETS wds_cli wds_palette_tool
+      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+    if(UNIX)
+      install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+        DESTINATION "plugins/platforms" COMPONENT Workbench)
+    endif()
+  endif()
+  install(FILES LICENSE DESTINATION . COMPONENT Workbench)
+  install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION licenses
+    RENAME nlohmann-json.txt COMPONENT Workbench)
+  install(FILES third_party/lodepng/LICENSE DESTINATION licenses
+    RENAME lodepng.txt COMPONENT Workbench)
+  install(DIRECTORY examples/scene-editing examples/voxel-workyard examples/w25-lab
+    DESTINATION examples COMPONENT Workbench
+    FILES_MATCHING PATTERN "*.json" PATTERN "*.txt" PATTERN "__pycache__" EXCLUDE)
+  qt_generate_deploy_app_script(TARGET wds_studio_modern OUTPUT_SCRIPT studio_deploy
+    NO_UNSUPPORTED_PLATFORM_ERROR ${studio_deploy_options})
+  install(SCRIPT "${studio_deploy}" COMPONENT Workbench)
   add_test(NAME workbench_behavior_smoke COMMAND wds_studio_modern --smoke
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/shared-behavior"
     "${CMAKE_CURRENT_BINARY_DIR}/w11-workbench.png")
-  set_tests_properties(workbench_behavior_smoke PROPERTIES TIMEOUT 25)
-  if(WIN32)
-    add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
-      "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
-    add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
-      "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
-    set_tests_properties(workbench_smoke workbench_voxel_smoke PROPERTIES
-      ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
-  endif()
+  add_test(NAME workbench_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/reef-delivery")
+  add_test(NAME workbench_voxel_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workshop")
+  add_test(NAME workbench_workyard_smoke COMMAND wds_studio_modern --smoke
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/voxel-workyard")
+  set_tests_properties(workbench_behavior_smoke workbench_smoke workbench_voxel_smoke
+    workbench_workyard_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
 endif()
 
 if(WDS_BUILD_W15_LAB)
@@ -174,10 +285,14 @@ if(WDS_BUILD_W15_LAB)
       --cli $<TARGET_FILE:wds_cli> --server $<TARGET_FILE:wds_w15_server>
       --layers $<TARGET_FILE:wds_w15_layers> --output "${CMAKE_CURRENT_BINARY_DIR}/w15-evidence")
     set_tests_properties(w15_runtime_lab PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+    add_test(NAME w15_tls_lab COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/w15-lab/tls_probe.py"
+      --server $<TARGET_FILE:wds_w15_server> --work "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(w15_tls_lab PROPERTIES TIMEOUT 90)
   endif()
 endif()
 
-add_library(wds_voxel STATIC src/voxel_world.cpp src/voxel_terrain.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
+add_library(wds_voxel STATIC src/voxel_world.cpp src/voxel_terrain.cpp src/voxel_dynamics.cpp src/sandbox_rules.cpp src/voxel_content.cpp)
 target_include_directories(wds_voxel PUBLIC src)
 target_link_libraries(wds_voxel PRIVATE wds_compile_options)
 target_link_libraries(wds_project PRIVATE wds_voxel)
@@ -242,10 +357,29 @@ add_executable(wds_expedition_save tests/expedition_save.cpp)
 target_link_libraries(wds_expedition_save PRIVATE wds_project wds_compile_options)
 find_package(Python3 3.10 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+  if(WDS_BUILD_MODERN_STUDIO)
+    add_test(NAME workbench_install COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/workbench_install.py"
+      --cmake "${CMAKE_COMMAND}" --build "${CMAKE_CURRENT_BINARY_DIR}"
+      --qt-config "${Qt6_DIR}" --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>"
+      --palettes "$<TARGET_FILE:wds_test_palette_daylight>"
+      "$<TARGET_FILE:wds_test_palette_overcast>" "$<TARGET_FILE:wds_test_palette_obsolete>")
+    set_tests_properties(workbench_install PROPERTIES TIMEOUT 170)
+  endif()
   add_test(NAME expedition_replay COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/w24-expeditions/verify.py"
     --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>
     --work "${CMAKE_CURRENT_BINARY_DIR}/expedition-tests")
+  add_test(NAME living_systems COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples/w25-lab/verify.py"
+    --cli $<TARGET_FILE:wds_cli> --probe $<TARGET_FILE:wds_expedition_save>
+    --work "${CMAKE_CURRENT_BINARY_DIR}/living-system-tests")
+  find_package(Git QUIET)
+  if(Git_FOUND)
+    add_test(NAME project_collaboration COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/project_collaboration.py"
+      "$<TARGET_FILE:wds_cli>" "${GIT_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/collaboration-tests")
+  endif()
 endif()
 
 add_executable(wds_w12_probe EXCLUDE_FROM_ALL examples/w12-lab/probe.cpp)

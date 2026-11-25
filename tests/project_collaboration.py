@@ -1,0 +1,358 @@
+"""Merge two local worktrees while preserving distinct WDS resource identities."""
+
+import json
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
+SCENE = Path("assets/field.json")
+ART = Path("assets/art.png")
+MANIFEST = "wds.project.json"
+JOURNAL = ".wds-field-edit.json"
+
+
+def read(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def put(path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def test(cli, git_binary, root):
+    left = root / "left"
+    right = root / "right"
+    baseline = root / "baseline"
+    hooks = root / "empty-hooks"
+    hooks.mkdir()
+    shutil.copytree(EXAMPLES / "scene-editing", left)
+    png = EXAMPLES / "reef-delivery" / "assets"
+    shutil.copyfile(png / "courier.png", left / ART)
+    manifest = read(left / MANIFEST)
+    manifest["resources"][0]["refs"].append("art")
+    manifest["resources"].append({
+        "id": "art", "kind": "image", "path": ART.as_posix(), "refs": [],
+    })
+    put(left / MANIFEST, manifest)
+    shutil.copytree(left, baseline)
+
+    def git(repo, *args, expected=0):
+        result = subprocess.run([
+            git_binary, "-c", "user.name=WDS Fixture", "-c", "user.email=fixture@example.invalid",
+            "-c", f"core.hooksPath={hooks}", "-c", "commit.gpgsign=false",
+            "-C", repo, *args,
+        ], capture_output=True, timeout=20, check=False)
+        assert result.returncode == expected, result
+        return result.stdout
+
+    def request(operation, values, revision, mode="read", expected="ok", *, project=baseline):
+        request_data = {"version": 1, "operation": operation, "input": values,
+                        "mode": mode}
+        if revision is not None:
+            request_data["expected_revision"] = revision
+        access = ["--allow-project-write"] if mode == "apply" else []
+        result = subprocess.run([cli, "project", "request", project, *access],
+                                input=json.dumps(request_data), encoding="utf-8",
+                                capture_output=True, timeout=20, check=False)
+        reply = json.loads(result.stdout)
+        codes = (expected,) if isinstance(expected, str) else expected
+        assert reply["code"] in codes and result.returncode == (reply["code"] != "ok"), reply
+        return reply
+
+    git(left, "init", "-q")
+    git(left, "add", ".")
+    git(left, "commit", "-qm", "Shared scene, rules and binary asset")
+    git(left, "worktree", "add", "-qb", "collaborator", right)
+
+    edited_scene = read(left / SCENE)
+    edited_scene["entities"][1]["vx"] = 11
+    put(left / SCENE, edited_scene)
+    shutil.copyfile(png / "hazard.png", left / ART)
+    git(left, "add", ".")
+    git(left, "commit", "-qm", "Change scene speed and image")
+
+    manifest["revision"] = 1
+    new_rules = "assets/rules.json"
+    manifest["resources"][1]["path"] = new_rules
+    git(right, "mv", "assets/tuning.json", new_rules)
+    rules = read(right / new_rules)
+    rules["steps_to_converge"] = 24
+    put(right / new_rules, rules)
+    put(right / MANIFEST, manifest)
+    shutil.copyfile(png / "landing.png", right / ART)
+    git(right, "add", ".")
+    git(right, "commit", "-qm", "Move and edit rules and change image")
+
+    git(left, "merge", "collaborator", "--no-edit", expected=1)
+    assert git(left, "diff", "--name-only", "--diff-filter=U").decode().strip() == ART.as_posix()
+    ours = git(left, "show", f":2:{ART.as_posix()}")
+    theirs = git(left, "show", f":3:{ART.as_posix()}")
+    assert ours != theirs
+    other_art = "assets/collaborator-art.png"
+    (left / ART).write_bytes(ours)
+    (left / other_art).write_bytes(theirs)
+    merged = read(left / MANIFEST)
+    merged["revision"] = 2
+    merged["resources"][0]["refs"].append("collaborator-art")
+    merged["resources"].append({
+        "id": "collaborator-art", "kind": "image", "path": other_art, "refs": [],
+    })
+    put(left / MANIFEST, merged)
+    git(left, "add", ".")
+    git(left, "commit", "-qm", "Preserve both image versions and validate merged project")
+    assert not git(left, "status", "--porcelain")
+    inspected = subprocess.run([cli, "project", "open", left], capture_output=True,
+                               check=True, timeout=20)
+    assert json.loads(inspected.stdout)["project_id"] == "scene-editing"
+    assert (left / ART).read_bytes() == ours and (left / other_art).read_bytes() == theirs
+
+    comparison = {"other_directory": str(left), "other_revision": 2}
+    changes = request("project.diff", comparison, 0)
+    by_id = {row["id"]: row for row in changes["resources"]}
+    assert by_id["field"]["fields"] == [{"path": "/entities/drifter/vx", "kind": "changed"}]
+    assert by_id["tuning"]["fields"] == [{"path": "/steps_to_converge", "kind": "changed"}]
+    assert by_id["tuning"]["path"] == {"before": "assets/tuning.json", "after": new_rules}
+    assert by_id["art"]["content"] == "bytes" and by_id["collaborator-art"]["kind"] == "added"
+    request("project.diff", {**comparison, "other_revision": 1}, 0, expected="revision_conflict")
+    assert not git(left, "status", "--porcelain")
+
+    relocated = root / "relocated"
+    git(left, "worktree", "move", right, relocated)
+    moved = request("project.diff", {"other_directory": str(relocated), "other_revision": 1}, 0)
+    moved_rules = next(row for row in moved["resources"] if row["id"] == "tuning")
+    assert moved_rules["path"]["after"] == new_rules and (relocated / new_rules).exists()
+
+    old_scene = (left / SCENE).read_bytes()
+    unintentionally_changed = request(
+        "scene.field.set", {"entity_id": "drifter", "field": "vx",
+                            "value": 17, "capture_change": True},
+        2, "apply", project=left,
+    )
+    assert unintentionally_changed["revision"] == 3
+    undo = unintentionally_changed["scene_change"]
+    undo["before"], undo["after"] = undo["after"], undo["before"]
+    restored = request("scene.restore", {"change": undo}, 3, "apply", project=left)
+    assert restored["revision"] == 4 and (left / SCENE).read_bytes() == old_scene
+    assert (left / ART).read_bytes() == ours and (left / other_art).read_bytes() == theirs
+    print("Two Git worktrees, semantic merge, both binary versions, relocation and scene recovery")
+
+    external = root / "external-edit"
+    shutil.copytree(baseline, external)
+    draft = {"entity_id": "drifter", "field": "vx", "value": 31, "expected_value": 8}
+    request("scene.field.set", draft, 0, "preview", project=external)
+    scene = read(external / SCENE)
+    drifter = next(row for row in scene["entities"] if row["id"] == "drifter")
+    drifter.update(vx=17, y=63)
+    put(external / SCENE, scene)
+    external_bytes = (external / SCENE).read_bytes()
+    manifest_bytes = (external / MANIFEST).read_bytes()
+    for mode in ("preview", "apply"):
+        rejected = request("scene.field.set", draft, 0, mode, "scene_content_conflict",
+                           project=external)
+        assert rejected["location"].endswith("/vx")
+    assert (external / SCENE).read_bytes() == external_bytes
+    assert (external / MANIFEST).read_bytes() == manifest_bytes
+    request("scene.field.set", {**draft, "expected_value": "17"}, 0, "preview",
+            "invalid_argument", project=external)
+    saved = request("scene.field.set", {**draft, "expected_value": 17}, 0, "apply",
+                    project=external)
+    assert saved["old_value"] == 17 and saved["revision"] == 1
+    drifter = next(row for row in read(external / SCENE)["entities"] if row["id"] == "drifter")
+    assert drifter["vx"] == 31 and drifter["y"] == 63
+
+    data_path = external / "assets/tuning.json"
+    data_draft = {"resource_id": "tuning", "field": "steps_to_converge", "value": 40}
+    preview = request("resource.field.set", data_draft, 1, "preview", project=external)
+    assert preview["old_value"] == 30
+    changed = read(data_path)
+    changed.update(steps_to_converge=35, title="External edit")
+    put(data_path, changed)
+    guarded = {**data_draft, "expected_value": preview["old_value"]}
+    external_data, external_manifest = data_path.read_bytes(), (external / MANIFEST).read_bytes()
+    for mode in ("preview", "apply"):
+        result = request("resource.field.set", guarded, 1, mode, "project_content_conflict",
+                         project=external)
+        assert result["location"] == "assets/tuning.json/steps_to_converge"
+    assert data_path.read_bytes() == external_data
+    assert (external / MANIFEST).read_bytes() == external_manifest
+    saved = request("resource.field.set", {**guarded, "expected_value": 35}, 1, "apply",
+                    project=external)
+    assert saved["revision"] == 2
+    assert read(data_path) == {**changed, "steps_to_converge": 40}
+
+    local = root / "semantic-local"
+    remote = root / "semantic-incoming"
+    shutil.copytree(baseline, local)
+    shutil.copytree(baseline, remote)
+    request("scene.field.set", {"entity_id": "drifter", "field": "vx", "value": 12}, 0,
+            "apply", project=local)
+    renamed = remote / "assets" / "field-relocated.json"
+    (remote / SCENE).rename(renamed)
+    remote_scene = read(renamed)
+    remote_scene["entities"][1]["y"] = 63
+    remote_scene["entities"].reverse()
+    put(renamed, remote_scene)
+    remote_manifest = read(remote / MANIFEST)
+    remote_manifest["revision"] = 1
+    remote_manifest["resources"][0]["path"] = renamed.relative_to(remote).as_posix()
+    put(remote / MANIFEST, remote_manifest)
+    inputs = {
+        "base_directory": str(baseline), "base_revision": 0,
+        "other_directory": str(remote), "other_revision": 1,
+    }
+    original = (local / SCENE).read_bytes()
+    incoming = renamed.read_bytes()
+    assert request("scene.merge", inputs, 1, "preview", project=local)["changed"]
+    assert (local / SCENE).read_bytes() == original and renamed.read_bytes() == incoming
+    merged = request("scene.merge", inputs, 1, "apply", project=local)
+    assert merged["revision"] == 2 and merged["changed"]
+    current = read(local / SCENE)["entities"]
+    assert [row["id"] for row in current] == [row["id"] for row in remote_scene["entities"]]
+    drifter = next(row for row in current if row["id"] == "drifter")
+    assert drifter["vx"] == 12 and drifter["y"] == 63
+    assert not request("scene.merge", inputs, 2, "apply", project=local)["changed"]
+    request("scene.merge", {**inputs, "other_revision": 0}, 2, "apply", "revision_conflict",
+            project=local)
+    change = merged["scene_change"]
+    change["before"], change["after"] = change["after"], change["before"]
+    request("scene.restore", {"change": change}, 2, "apply", project=local)
+    assert (local / SCENE).read_bytes() == original
+    next(row for row in remote_scene["entities"] if row["id"] == "drifter")["vx"] = 15
+    put(renamed, remote_scene)
+    conflict = request("scene.merge", inputs, 3, "apply", "merge_conflict", project=local)
+    assert conflict["conflicts"] == ["/entities/drifter/vx"]
+    assert (local / SCENE).read_bytes() == original
+    print("Three-way scene merge preserves stable IDs and reports conflicts without writing")
+
+    ancestor = next(row for row in read(baseline / SCENE)["entities"] if row["id"] == "drifter")
+    next(row for row in remote_scene["entities"] if row["id"] == "drifter")["vx"] = ancestor["vx"]
+    put(renamed, remote_scene)
+    rules_path = Path("assets/tuning.json")
+    rules = read(remote / rules_path)
+    rules["steps_to_converge"] = 24
+    put(remote / rules_path, rules)
+    shutil.copyfile(png / "landing.png", remote / ART)
+    paths = {"field": SCENE, "tuning": rules_path, "art": ART}
+    batch = {**inputs, "resources": list(paths)}
+
+    def state(project):
+        return {path.relative_to(project): path.read_bytes()
+                for path in project.rglob("*") if path.is_file()}
+
+    before = state(local)
+    sources = (state(baseline), state(remote))
+    preview = request("project.merge", batch, 3, "preview", project=local)
+    assert preview["changed"] and preview["revision"] == 3
+    assert preview["resources"] == list(paths) and "change" not in preview
+    request("project.merge", {**batch, "resources": ["art", "art"]}, 3, "preview",
+            "invalid_argument", project=local)
+    assert state(local) == before
+    merged = request("project.merge", batch, 3, "apply", project=local)
+    assert merged["revision"] == 4 and merged["resources"] == list(paths)
+    after = state(local)
+    assert set(before) == set(after)
+    assert before[Path(MANIFEST)] != after[Path(MANIFEST)]
+    assert all(before[path] != after[path] for path in paths.values())
+    drifter = next(row for row in read(local / SCENE)["entities"] if row["id"] == "drifter")
+    assert drifter["vx"] == 12 and drifter["y"] == 63
+    assert read(local / rules_path)["steps_to_converge"] == 24
+    assert (local / ART).read_bytes() == (remote / ART).read_bytes()
+    assert not request("project.merge", batch, 4, "apply", project=local)["changed"]
+    request("project.merge", batch, 3, "apply", "revision_conflict", project=local)
+    undo = {"project_id": merged["change"]["project_id"], "resources": [
+        {"id": row["id"], "before": row["after"], "after": row["before"]}
+        for row in merged["change"]["resources"]
+    ]}
+    assert request("project.restore", {"change": undo}, 4, "preview", project=local)["changed"]
+    assert state(local) == after
+    assert request("project.restore", {"change": undo}, 4, "apply", project=local)["revision"] == 5
+    assert all((local / path).read_bytes() == before[path] for path in paths.values())
+    request("project.restore", {"change": undo}, 5, "apply", "project_content_conflict", project=local)
+    assert sources == (state(baseline), state(remote))
+
+    # Both interruption states are constructed from the real transaction receipt.
+    journal = {
+        "version": 7,
+        "before_manifest": before[Path(MANIFEST)].decode(),
+        "after_manifest": after[Path(MANIFEST)].decode(),
+        "change": merged["change"],
+    }
+    (local / MANIFEST).write_bytes(before[Path(MANIFEST)])
+    put(local / JOURNAL, journal)
+    (local / SCENE).write_bytes(after[SCENE])
+    (local / ART).write_bytes(b"external edit during recovery")
+    interrupted = state(local)
+    request("project.open", {}, None, expected="recovery_required", project=local)
+    request("project.recover", {}, None, "apply", "recovery_required", project=local)
+    assert state(local) == interrupted
+    (local / ART).write_bytes(before[ART])
+    request("project.recover", {}, None, "apply", project=local)
+    assert state(local) == before
+    for file in [*paths.values(), Path(MANIFEST)]:
+        (local / file).write_bytes(after[file])
+    put(local / JOURNAL, journal)
+    request("project.recover", {}, None, "apply", project=local)
+    assert state(local) == after
+
+    with ThreadPoolExecutor(max_workers=2) as writers:
+        attempts = [writers.submit(
+            request, "project.restore", {"change": undo}, 4, "apply",
+            ("ok", "revision_conflict", "project_busy", "recovery_required",
+             "project_content_conflict"), project=local,
+        ) for _ in range(2)]
+    assert sum(attempt.result()["code"] == "ok" for attempt in attempts) == 1
+    assert read(local / MANIFEST)["revision"] == 5
+    assert not (local / JOURNAL).exists()
+    assert all((local / path).read_bytes() == before[path] for path in paths.values())
+
+    next(row for row in remote_scene["entities"] if row["id"] == "drifter")["vx"] = 15
+    put(renamed, remote_scene)
+    local_scene = read(local / SCENE)
+    next(row for row in local_scene["entities"] if row["id"] == "drifter")["y"] = 55
+    put(local / SCENE, local_scene)
+    shutil.copyfile(png / "hazard.png", local / ART)
+    conflicted = state(local)
+    reply = request("project.merge", batch, 5, "apply", "merge_conflict", project=local)
+    assert reply["conflicts"] == [
+        {"resource": "field", "path": "/entities/drifter/vx"},
+        {"resource": "field", "path": "/entities/drifter/y"},
+        {"resource": "art", "path": "/"},
+    ]
+    assert {k: reply["versions"][0][k] for k in ("current", "incoming")} == {
+        "current": "12", "incoming": "15",
+    }
+    assert state(local) == conflicted
+    resolutions = [
+        {**conflict, "side": "incoming" if index == 0 else "current"}
+        for index, conflict in enumerate(reply["conflicts"])
+    ]
+    planned = {**batch, "resolutions": resolutions, "merge_token": reply["merge_token"]}
+    preview = request("project.merge", planned, 5, "preview", project=local)
+    assert preview["resources"] == ["field", "tuning"] and state(local) == conflicted
+    rules_bytes = (remote / rules_path).read_bytes()
+    put(remote / rules_path, {**read(remote / rules_path), "steps_to_converge": 27})
+    request("project.merge", planned, 5, "apply", "merge_input_changed", project=local)
+    assert state(local) == conflicted
+    (remote / rules_path).write_bytes(rules_bytes)
+    wrong_path = {"resource": "field", "path": "/entities/removed", "side": "current"}
+    request("project.merge", {**planned, "resolutions": [wrong_path]}, 5, "apply",
+            "invalid_resolution", project=local)
+    assert state(local) == conflicted
+    resolved = request("project.merge", planned, 5, "apply", project=local)
+    assert resolved["revision"] == 6
+    drifter = next(row for row in read(local / SCENE)["entities"] if row["id"] == "drifter")
+    assert drifter["vx"] == 15 and drifter["y"] == 55
+    assert (local / ART).read_bytes() == conflicted[ART]
+    assert read(local / rules_path)["steps_to_converge"] == 24
+    print("Atomic batch recovery, parallel writers and snapshot-bound field resolutions")
+
+
+if __name__ == "__main__":
+    cli_path, git_path, work_path = map(Path, sys.argv[1:])
+    work_path.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="w31-", dir=work_path) as folder:
+        test(cli_path.resolve(), git_path.resolve(), Path(folder))

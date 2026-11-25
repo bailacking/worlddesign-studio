@@ -99,6 +99,14 @@
             <translation>操作参数无效</translation>
         </message>
         <message>
+            <source>invalid_resolution</source>
+            <translation>选取的字段不再是有效冲突</translation>
+        </message>
+        <message>
+            <source>merge_input_changed</source>
+            <translation>预览后工程内容已变更，请重新预览合并</translation>
+        </message>
+        <message>
             <source>invalid_entity</source>
             <translation>找不到指定实体</translation>
         </message>
@@ -193,6 +201,10 @@
         <message>
             <source>scene_content_conflict</source>
             <translation>场景内容已变更，请重新打开项目</translation>
+        </message>
+        <message>
+            <source>project_content_conflict</source>
+            <translation>文件内容已变更，请重新预览后再提交</translation>
         </message>
         <message>
             <source>import_too_large</source>
@@ -411,6 +423,10 @@
             <translation>方块配色…</translation>
         </message>
         <message>
+            <source>Crafting Dependencies…</source>
+            <translation>制作依赖…</translation>
+        </message>
+        <message>
             <source>Voxel Palette</source>
             <translation>方块配色</translation>
         </message>
@@ -511,8 +527,16 @@
             <translation>界面语言…</translation>
         </message>
         <message>
+            <source>Palette Plugins…</source>
+            <translation>配色插件…</translation>
+        </message>
+        <message>
             <source>&amp;Open Project…</source>
             <translation>打开项目(&amp;O)…</translation>
+        </message>
+        <message>
+            <source>Reload Project</source>
+            <translation>重新载入项目</translation>
         </message>
         <message>
             <source>&amp;New Project…</source>
@@ -735,24 +759,114 @@
             <translation>编辑(&amp;E)</translation>
         </message>
         <message>
-            <source>&amp;Undo Scene Change</source>
-            <translation>撤销场景改动(&amp;U)</translation>
+            <source>&amp;Undo Change</source>
+            <translation>撤销改动(&amp;U)</translation>
         </message>
         <message>
-            <source>&amp;Redo Scene Change</source>
-            <translation>重做场景改动(&amp;R)</translation>
+            <source>&amp;Redo Change</source>
+            <translation>重做改动(&amp;R)</translation>
         </message>
         <message>
-            <source>Scene change redone.</source>
-            <translation>已重做场景改动。</translation>
+            <source>Change redone.</source>
+            <translation>已重做改动。</translation>
         </message>
         <message>
-            <source>Scene change undone.</source>
-            <translation>已撤销场景改动。</translation>
+            <source>Change undone.</source>
+            <translation>已撤销改动。</translation>
         </message>
         <message>
             <source>Import Resource…</source>
             <translation>导入资源…</translation>
+        </message>
+        <message>
+            <source>Merge Resources…</source>
+            <translation>合并资源…</translation>
+        </message>
+        <message>
+            <source>Choose Common Ancestor</source>
+            <translation>选择共同基线工程</translation>
+        </message>
+        <message>
+            <source>Choose Incoming Project</source>
+            <translation>选择来件工程</translation>
+        </message>
+        <message>
+            <source>Merge Resources</source>
+            <translation>合并资源</translation>
+        </message>
+        <message>
+            <source>Select up to eight resources to compare.</source>
+            <translation>最多选择八项资源。</translation>
+        </message>
+        <message>
+            <source>Preview Merge</source>
+            <translation>预览合并</translation>
+        </message>
+        <message>
+            <source>Choose a checkout of the current project.</source>
+            <translation>请选择与当前工程 ID 相同的副本。</translation>
+        </message>
+        <message>
+            <source>The selected resources already agree.</source>
+            <translation>所选资源无需改动。</translation>
+        </message>
+        <message>
+            <source>Commit changes to these resources?
+%1</source>
+            <translation>提交以下资源的改动？
+%1</translation>
+        </message>
+        <message>
+            <source>Resource merge committed.</source>
+            <translation>已提交资源合并。</translation>
+        </message>
+        <message>
+            <source>Resource Conflicts</source>
+            <translation>资源冲突</translation>
+        </message>
+        <message>
+            <source>The listed resources contain changes on both sides.</source>
+            <translation>详情中列出的资源在双方工程中都有冲突改动。</translation>
+        </message>
+        <message>
+            <source>Keep Conflicting Resources and Continue</source>
+            <translation>保留本地冲突资源并继续</translation>
+        </message>
+        <message>
+            <source>Choose Conflict Versions</source>
+            <translation>选择冲突版本</translation>
+        </message>
+        <message>
+            <source>Choose a version for each conflict.</source>
+            <translation>请为每处冲突选择要保留的版本。</translation>
+        </message>
+        <message>
+            <source>Resource</source>
+            <translation>资源</translation>
+        </message>
+        <message>
+            <source>Field</source>
+            <translation>字段</translation>
+        </message>
+        <message>
+            <source>Current Version</source>
+            <translation>本地版本</translation>
+        </message>
+        <message>
+            <source>Incoming Version</source>
+            <translation>来件版本</translation>
+        </message>
+        <message>
+            <source>Choice</source>
+            <translation>保留版本</translation>
+        </message>
+        <message>
+            <source>Select version</source>
+            <translation>请选择</translation>
+        </message>
+        <message>
+            <source>Deleted</source>
+            <translation>已删除</translation>
         </message>
         <message>
             <source>Export for Windows x64…</source>
@@ -908,6 +1022,22 @@
     <context>
         <name>VoxelViewport</name>
         <message>
+            <source>%1 · L daylight · P next day</source>
+            <translation>%1 · L 切换昼夜 · P 预览下一天</translation>
+        </message>
+        <message>
+            <source>Clear</source>
+            <translation>晴天</translation>
+        </message>
+        <message>
+            <source>Rain</source>
+            <translation>雨天</translation>
+        </message>
+        <message>
+            <source>Storm</source>
+            <translation>暴雨</translation>
+        </message>
+        <message>
             <source>3D voxel viewport</source>
             <translation>三维方块视口</translation>
         </message>
@@ -922,6 +1052,97 @@
         <message>
             <source>WASD move · Arrows look · Space jump · Left break · Right place</source>
             <translation>WASD 移动 · 方向键转头 · 空格跳跃 · 左键破坏 · 右键放置</translation>
+        </message>
+        <message>
+            <source>Cart mounted · A west · D east · W north · S south · E exit</source>
+            <translation>已登车 · A 向西 · D 向东 · W 向北 · S 向南 · E 下车</translation>
+        </message>
+        <message>
+            <source>E board cart near rail · F advance water and fire</source>
+            <translation>靠近轨道按 E 登车 · 按 F 推进一轮水火</translation>
+        </message>
+    </context>
+    <context>
+        <name>PaletteManager</name>
+        <message><source>Palette Plugins</source><translation>配色插件</translation></message>
+        <message><source>Choose a trusted native palette module.</source><translation>请选择你信任的原生配色模块。</translation></message>
+        <message><source>Module file</source><translation>模块文件</translation></message>
+        <message><source>Browse…</source><translation>浏览…</translation></message>
+        <message><source>Remove</source><translation>卸载</translation></message>
+        <message><source>Close</source><translation>关闭</translation></message>
+        <message><source>Install</source><translation>安装</translation></message>
+        <message><source>Replace</source><translation>替换</translation></message>
+        <message><source>Built-in palette</source><translation>内置配色</translation></message>
+        <message><source>Native module installed</source><translation>已安装原生模块</translation></message>
+        <message><source>Select Palette Module</source><translation>选择配色模块</translation></message>
+        <message><source>Modules (*.dll *.so *.dylib)</source><translation>模块 (*.dll *.so *.dylib)</translation></message>
+        <message><source>The plugin tool could not start.</source><translation>插件工具无法启动。</translation></message>
+        <message><source>Incompatible plugin version.</source><translation>插件版本不兼容。</translation></message>
+        <message><source>Plugin operation failed.</source><translation>插件操作失败。</translation></message>
+        <message><source>Invalid plugin status.</source><translation>插件状态无效。</translation></message>
+        <message><source>The plugin folder is unavailable.</source><translation>插件目录不可用。</translation></message>
+    </context>
+    <context>
+        <name>RecipeGraph</name>
+        <message>
+            <source>Crafting Dependencies</source>
+            <translation>制作依赖</translation>
+        </message>
+        <message>
+            <source>Recipe</source>
+            <translation>配方</translation>
+        </message>
+        <message>
+            <source>Recipe %1</source>
+            <translation>配方 %1</translation>
+        </message>
+        <message>
+            <source>No recipes in this project.</source>
+            <translation>此项目没有配方。</translation>
+        </message>
+        <message>
+            <source>%1 · %2 permitted</source>
+            <translation>%1 · 允许 %2 命令</translation>
+        </message>
+        <message>
+            <source>%1 · %2 disabled</source>
+            <translation>%1 · 禁用 %2 命令</translation>
+        </message>
+        <message>
+            <source>Produces %1 × %2</source>
+            <translation>产出 %1 × %2</translation>
+        </message>
+        <message>
+            <source>Station %1 · Available</source>
+            <translation>工位 %1 · 已解锁</translation>
+        </message>
+        <message>
+            <source>Station %1 · Locked</source>
+            <translation>工位 %1 · 未解锁</translation>
+        </message>
+        <message>
+            <source>Station %1 · No unlock path</source>
+            <translation>工位 %1 · 当前模式无解锁路径</translation>
+        </message>
+        <message>
+            <source>Unlocks %1</source>
+            <translation>解锁 %1</translation>
+        </message>
+        <message>
+            <source>Pattern slots</source>
+            <translation>配方格位</translation>
+        </message>
+        <message>
+            <source>Ingredients</source>
+            <translation>原料</translation>
+        </message>
+        <message>
+            <source>Empty slot</source>
+            <translation>空格</translation>
+        </message>
+        <message>
+            <source> · Requires %1</source>
+            <translation> · 需要 %1</translation>
         </message>
     </context>
     <context>

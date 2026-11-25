@@ -24,19 +24,24 @@ void remove(Container& container, std::string_view id, int amount) {
   std::erase_if(container, [](const Stack& slot) { return slot.count == 0; });
 }
 
-int room(const Container& container, int slots, int limit, std::string_view id) {
+bool same_lot(const Stack& left, const Stack& right) {
+  return left.id == right.id && left.best_before == right.best_before &&
+         left.uses_remaining == right.uses_remaining;
+}
+
+int room(const Container& container, int slots, int limit, const Stack& stack) {
   int available = (slots - static_cast<int>(container.size())) * limit;
   for (const auto& slot : container)
-    if (slot.id == id) available += limit - slot.count;
+    if (same_lot(slot, stack)) available += limit - slot.count;
   return available;
 }
 
 bool add(Container& container, int slots, int limit, const Stack& stack) {
-  if (room(container, slots, limit, stack.id) < stack.count) return false;
+  if (room(container, slots, limit, stack) < stack.count) return false;
 
   int amount = stack.count;
   for (auto& slot : container) {
-    if (slot.id == stack.id) {
+    if (same_lot(slot, stack)) {
       const auto placed = std::min(amount, limit - slot.count);
       amount -= placed;
       slot.count += placed;
@@ -44,17 +49,32 @@ bool add(Container& container, int slots, int limit, const Stack& stack) {
   }
   while (amount) {
     const auto placed = std::min(amount, limit);
-    container.push_back({stack.id, placed});
+    container.push_back({stack.id, placed, stack.best_before, stack.uses_remaining});
     amount -= placed;
   }
   return true;
 }
 
 std::string_view transfer(Container& source, Container& destination, int slots, int limit,
-                          const Stack& stack) {
-  if (count(source, stack.id) < stack.count) return "missing_item";
-  if (!add(destination, slots, limit, stack)) return "container_full";
-  remove(source, stack.id, stack.count);
+                          std::string_view id, int amount, bool partial = false) {
+  if (count(source, id) < amount) return "missing_item";
+  auto taken = source;
+  auto placed = destination;
+  int remaining = amount;
+  for (auto& slot : taken) {
+    if (slot.id != id) continue;
+    const auto available = room(placed, slots, limit, slot);
+    const auto used = std::min({remaining, slot.count, available});
+    if (used == 0) continue;
+    add(placed, slots, limit, {slot.id, used, slot.best_before, slot.uses_remaining});
+    slot.count -= used;
+    remaining -= used;
+    if (remaining == 0) break;
+  }
+  if (remaining == amount || (!partial && remaining > 0)) return "container_full";
+  std::erase_if(taken, [](const Stack& slot) { return slot.count == 0; });
+  source = std::move(taken);
+  destination = std::move(placed);
   return "ok";
 }
 
@@ -62,6 +82,76 @@ std::string_view transfer(Container& source, Container& destination, int slots, 
 
 Workshop::Workshop(Catalog catalog, State initial)
     : catalog_(std::move(catalog)), initial_(std::move(initial)), state_(initial_) {}
+
+void Workshop::reset() {
+  state_ = initial_;
+  tick_ = 0;
+}
+
+Stack Workshop::fresh(Stack stack) const {
+  const auto& item = catalog_.items.at(stack.id);
+  if (item.spoilage) stack.best_before = tick_ + item.spoilage->ticks;
+  stack.uses_remaining = item.durability;
+  return stack;
+}
+
+int Workshop::advance(unsigned tick) {
+  tick_ = tick;
+  int spoiled = 0;
+  for (auto* container : {&state_.bag, &state_.chest, &state_.loot}) {
+    for (auto& slot : *container) {
+      if (slot.best_before == 0 || slot.best_before > tick) continue;
+      slot.id = catalog_.items.at(slot.id).spoilage->result;
+      slot.best_before = 0;
+      spoiled += slot.count;
+    }
+  }
+  return spoiled;
+}
+
+bool Workshop::uses_survival_rules() const {
+  return std::ranges::any_of(catalog_.items,
+                             [](const auto& entry) { return entry.second.spoilage.has_value(); }) ||
+         std::ranges::any_of(catalog_.recipes,
+                             [](const auto& entry) { return entry.second.priority.has_value(); });
+}
+
+bool Workshop::uses_processing_rules() const {
+  return std::ranges::any_of(catalog_.items,
+                             [](const auto& entry) { return entry.second.durability != 0; }) ||
+         std::ranges::any_of(catalog_.recipes, [](const auto& entry) {
+           return entry.second.method == "brew" || entry.second.method == "upgrade";
+         });
+}
+
+bool Workshop::uses_inscriptions() const {
+  return std::ranges::any_of(
+      catalog_.items, [](const auto& entry) { return entry.second.inscription.has_value(); });
+}
+
+CombatTool Workshop::combat_tool() const {
+  CombatTool best;
+  if (has_item("spear")) best = {"spear", 3, 0};
+  for (const auto& slot : state_.bag) {
+    const auto& inscription = catalog_.items.at(slot.id).inscription;
+    if (!inscription || slot.uses_remaining == 0) continue;
+    const CombatTool candidate{slot.id, 3 + inscription->force_bonus, inscription->guard_bonus};
+    if (candidate.force > best.force ||
+        (candidate.force == best.force &&
+         (candidate.guard > best.guard ||
+          (candidate.guard == best.guard && candidate.id < best.id))))
+      best = candidate;
+  }
+  return best;
+}
+
+bool Workshop::wear(std::string_view id) {
+  const auto slot = std::ranges::find(state_.bag, id, &Stack::id);
+  if (slot == state_.bag.end() || slot->uses_remaining == 0 || --slot->uses_remaining != 0)
+    return false;
+  state_.bag.erase(slot);
+  return true;
+}
 
 bool Workshop::matches(const Ingredient& ingredient, std::string_view item) const {
   if (!ingredient.selector.starts_with('#')) return ingredient.selector == item;
@@ -71,7 +161,8 @@ bool Workshop::matches(const Ingredient& ingredient, std::string_view item) cons
 }
 
 std::optional<Container> Workshop::materials(const Recipe& recipe,
-                                             const std::vector<std::string>& grid) const {
+                                             const std::vector<std::string>& grid,
+                                             const Container& available) const {
   std::map<std::string, int, std::less<>> needed;
   if (!grid.empty()) {
     for (std::size_t i = 0; i < grid.size(); ++i)
@@ -86,7 +177,7 @@ std::optional<Container> Workshop::materials(const Recipe& recipe,
       if (part) append(*part);
 
     std::vector<const std::string*> supply;
-    for (const auto& slot : state_.bag) {
+    for (const auto& slot : available) {
       if (std::ranges::none_of(demand,
                                [&](const Ingredient* part) { return matches(*part, slot.id); }))
         continue;
@@ -115,7 +206,7 @@ std::optional<Container> Workshop::materials(const Recipe& recipe,
   }
   Container result;
   for (const auto& [item, amount] : needed) {
-    if (count(state_.bag, item) < amount) return {};
+    if (count(available, item) < amount) return {};
     result.push_back({item, amount});
   }
   return result;
@@ -134,16 +225,54 @@ std::string_view Workshop::craft(std::string_view id, const std::vector<std::str
       if (slot ? !matches(*slot, grid[i]) : !grid[i].empty()) return "invalid_pattern";
     }
   }
-  const auto used = materials(recipe, grid);
+  const auto used = materials(recipe, grid, state_.bag);
   if (!used) return "missing_ingredients";
+  return complete(recipe, *used);
+}
 
+std::string_view Workshop::complete(const Recipe& recipe, const Container& used) {
   auto bag = state_.bag;
-  for (const auto& slot : *used) remove(bag, slot.id, slot.count);
-  if (!add(bag, catalog_.bag_slots, catalog_.items.at(recipe.output.id).limit, recipe.output))
+  for (const auto& slot : used) remove(bag, slot.id, slot.count);
+  if (!add(bag, catalog_.bag_slots, catalog_.items.at(recipe.output.id).limit,
+           fresh(recipe.output)))
     return "container_full";
   state_.bag = std::move(bag);
   if (!recipe.unlocks.empty()) state_.unlocked.insert(recipe.unlocks);
   return "ok";
+}
+
+std::string_view Workshop::cook(const std::vector<std::string>& supplied) {
+  if (supplied.empty() || supplied.size() > 8) return "invalid_ingredients";
+  Container batch;
+  for (const auto& id : supplied) {
+    const auto item = catalog_.items.find(id);
+    if (item == catalog_.items.end()) return "unknown_item";
+    if (!add(batch, 8, item->second.limit, {id, 1})) return "invalid_ingredients";
+  }
+  for (const auto& slot : batch)
+    if (count(batch, slot.id) > count(state_.bag, slot.id)) return "missing_ingredients";
+
+  const Recipe* choice = nullptr;
+  Container used;
+  bool station_locked = false;
+  for (const auto& [id, recipe] : catalog_.recipes) {
+    if (recipe.method != "cook" || !recipe.priority ||
+        (choice && *choice->priority >= *recipe.priority))
+      continue;
+    const auto matched = materials(recipe, {}, batch);
+    if (!matched) continue;
+    int required = 0;
+    for (const auto& stack : *matched) required += stack.count;
+    if (static_cast<std::size_t>(required) != supplied.size()) continue;
+    if (!recipe.requires_station.empty() && !state_.unlocked.contains(recipe.requires_station)) {
+      station_locked = true;
+      continue;
+    }
+    choice = &recipe;
+    used = *matched;
+  }
+  if (!choice) return station_locked ? "station_locked" : "no_matching_recipe";
+  return complete(*choice, used);
 }
 
 std::string_view Workshop::gather(std::string_view id) {
@@ -160,13 +289,13 @@ std::string_view Workshop::gather(std::string_view id) {
 bool Workshop::can_drop(const Stack& stack) const {
   const auto item = catalog_.items.find(stack.id);
   return stack.count > 0 && item != catalog_.items.end() &&
-         room(state_.loot, loot_slots, item->second.limit, stack.id) >= stack.count;
+         room(state_.loot, loot_slots, item->second.limit, fresh(stack)) >= stack.count;
 }
 
 bool Workshop::drop(const Stack& stack) {
   const auto item = catalog_.items.find(stack.id);
   return stack.count > 0 && item != catalog_.items.end() &&
-         add(state_.loot, loot_slots, item->second.limit, stack);
+         add(state_.loot, loot_slots, item->second.limit, fresh(stack));
 }
 
 bool Workshop::has_item(std::string_view id, int amount) const {
@@ -206,14 +335,12 @@ std::string_view Workshop::apply(const Action& action, const std::vector<std::st
   if (action.type == "pickup") {
     const auto loose = count(state_.loot, action.id);
     if (!loose) return "missing_item";
-    const auto amount = std::min(loose, room(state_.bag, catalog_.bag_slots, limit, action.id));
-    if (!amount) return "container_full";
-    return transfer(state_.loot, state_.bag, catalog_.bag_slots, limit, {action.id, amount});
+    return transfer(state_.loot, state_.bag, catalog_.bag_slots, limit, action.id, loose, true);
   }
   if (action.type == "store")
-    return transfer(state_.bag, state_.chest, catalog_.chest_slots, limit, {action.id, 1});
+    return transfer(state_.bag, state_.chest, catalog_.chest_slots, limit, action.id, 1);
   if (action.type == "take")
-    return transfer(state_.chest, state_.bag, catalog_.bag_slots, limit, {action.id, 1});
+    return transfer(state_.chest, state_.bag, catalog_.bag_slots, limit, action.id, 1);
   return "unknown_action";
 }
 

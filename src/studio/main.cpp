@@ -12,10 +12,13 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QHeaderView>
 #include <QInputDialog>
 #include <QJsonDocument>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -28,9 +31,12 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStatusBar>
+#include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -42,6 +48,7 @@
 #include "bridge.hpp"
 #include "i18n/language.hpp"
 #include "output_panel.hpp"
+#include "palette_dialog.hpp"
 #include "platform_project.hpp"
 #include "resource_panel.hpp"
 #include "scene_tree.hpp"
@@ -97,6 +104,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_png"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_sprite"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_provenance"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resolution"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_resource"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_runtime_dependency"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_source"),
@@ -105,6 +113,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_materials"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "invalid_voxel_world"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "io_error"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "merge_input_changed"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_file"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_manifest"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "missing_reference"),
@@ -114,6 +123,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_content_conflict"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "project_content_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_changed"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_too_large"),
@@ -181,12 +191,14 @@ class Workbench final : public QMainWindow {
     project_menu_ = menuBar()->addMenu(QString{});
     open_ = project_menu_->addAction(QString{}, this, &Workbench::chooseProject);
     open_->setShortcut(QKeySequence::Open);
+    reload_ = project_menu_->addAction(QString{}, this, [this] { openProject(root_); });
     create_ = project_menu_->addAction(QString{}, this, &Workbench::createProject);
     create_->setShortcut(QKeySequence::New);
     save_ = project_menu_->addAction(QString{}, this, &Workbench::saveProperty);
     save_->setShortcut(QKeySequence::Save);
     revert_ = project_menu_->addAction(QString{}, this, &Workbench::discardProperty);
     import_ = project_menu_->addAction(QString{}, this, &Workbench::importResource);
+    merge_ = project_menu_->addAction(QString{}, this, &Workbench::mergeProjectResources);
     export_ = project_menu_->addAction(QString{}, this, &Workbench::exportGame);
 #ifndef Q_OS_WIN
     export_->setVisible(false);
@@ -215,10 +227,18 @@ class Workbench final : public QMainWindow {
     stop_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     workshop_ = scene_menu_->addAction(QString{}, this, &Workbench::openWorkshop);
     workshop_->setShortcut(QKeySequence(Qt::Key_F6));
+    recipes_ = scene_menu_->addAction(QString{}, this, &Workbench::openRecipeGraph);
+    recipes_->setObjectName("expeditionRecipes");
     palette_ = scene_menu_->addAction(QString{}, this, &Workbench::changePalette);
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
     settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
+    plugins_ = settings_menu_->addAction(QString{}, this, [this] {
+      auto folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+      if (!folder.isEmpty()) folder = QDir(folder).filePath("plugins/palette");
+      PaletteDialog manager(folder, this);
+      manager.exec();
+    });
 
     toolbar_ = addToolBar(QString{});
     toolbar_->setObjectName("workspaceToolbar");
@@ -230,6 +250,7 @@ class Workbench final : public QMainWindow {
     toolbar_->addActions({play_, stop_, workshop_});
     toolbar_->addSeparator();
     project_label_ = new QLabel(toolbar_);
+    project_label_->setTextFormat(Qt::PlainText);
     toolbar_->addWidget(project_label_);
 
     viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
@@ -297,6 +318,26 @@ class Workbench final : public QMainWindow {
     refresh();
   }
 
+  bool startEditSmoke() {
+    if (!scene_ready_ || project_id_ != "scene-editing" || revision_ != 0) return false;
+    selectEntity("drifter");
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+      if (field_schema_.at(static_cast<qsizetype>(index)).toObject().value("id") != "vx") continue;
+      if (selectedIndex() < 0 || !fields_[index]->isEnabled() || committed_[index] != 8)
+        return false;
+      fields_[index]->setValue(31);
+      save_->trigger();
+      return busy_;
+    }
+    return false;
+  }
+
+  bool editSmokeSaved() const {
+    const auto index = selectedIndex();
+    return scene_ready_ && revision_ == 1 && index >= 0 &&
+           entities_.at(index).toObject().value("vx").toInt() == 31;
+  }
+
  signals:
   void inspectionFinished(bool ready);
 
@@ -352,17 +393,20 @@ class Workbench final : public QMainWindow {
   void retranslate() {
     project_menu_->setTitle(tr("&Project"));
     edit_menu_->setTitle(tr("&Edit"));
-    undo_->setText(tr("&Undo Scene Change"));
-    redo_->setText(tr("&Redo Scene Change"));
+    undo_->setText(tr("&Undo Change"));
+    redo_->setText(tr("&Redo Change"));
     scene_menu_->setTitle(tr("&Scene"));
     view_menu_->setTitle(tr("&View"));
     settings_menu_->setTitle(tr("Se&ttings"));
     settings_action_->setText(tr("Interface Language…"));
+    plugins_->setText(tr("Palette Plugins…"));
     open_->setText(tr("&Open Project…"));
+    reload_->setText(tr("Reload Project"));
     create_->setText(tr("&New Project…"));
     save_->setText(tr("&Save Property"));
     revert_->setText(tr("Discard Property Draft"));
     import_->setText(tr("Import Resource…"));
+    merge_->setText(tr("Merge Resources…"));
     export_->setText(tr("Export for Windows x64…"));
     clear_cache_->setText(tr("Clear Thumbnail Cache"));
     recover_->setText(tr("Recover Project…"));
@@ -376,6 +420,7 @@ class Workbench final : public QMainWindow {
     move_down_->setText(tr("Move Entity Down"));
     play_->setText(tr("&Play"));
     workshop_->setText(QCoreApplication::translate("WorkshopDialog", "Items and recipes"));
+    recipes_->setText(tr("Crafting Dependencies…"));
     palette_->setText(tr("Voxel Palette…"));
     stop_->setText(tr("S&top"));
     toolbar_->setWindowTitle(tr("Workspace"));
@@ -495,6 +540,217 @@ class Workbench final : public QMainWindow {
                                      tr("Supported files (*.json *.png *.txt *.md);;All files (*)"),
                                      nullptr, QFileDialog::DontUseNativeDialog);
     if (!source.isEmpty()) importFile(source);
+  }
+
+  void mergeProjectResources() {
+    if (busy_ || playing() || hasDraft() || !revision_ || resources_model_.isEmpty()) return;
+    const auto parent = QFileInfo(root_).absolutePath();
+    const auto options = QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog;
+    const auto base =
+        QFileDialog::getExistingDirectory(this, tr("Choose Common Ancestor"), parent, options);
+    if (base.isEmpty()) return;
+    const auto incoming =
+        QFileDialog::getExistingDirectory(this, tr("Choose Incoming Project"), parent, options);
+    if (incoming.isEmpty()) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Merge Resources"));
+    dialog.resize(460, 360);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(tr("Select up to eight resources to compare."), &dialog));
+    auto* list = new QListWidget(&dialog);
+    list->setSelectionMode(QAbstractItemView::MultiSelection);
+    for (const auto row : resources_model_) {
+      const auto resource = row.toObject();
+      const auto id = resource.value("id").toString();
+      auto* item = new QListWidgetItem(
+          QStringLiteral("%1  ·  %2").arg(id, resource.value("path").toString()), list);
+      item->setData(Qt::UserRole, id);
+    }
+    layout->addWidget(list);
+    auto* actions = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto* preview = actions->button(QDialogButtonBox::Ok);
+    preview->setText(tr("Preview Merge"));
+    preview->setEnabled(false);
+    connect(list, &QListWidget::itemSelectionChanged, &dialog, [list, preview] {
+      const auto count = list->selectedItems().size();
+      preview->setEnabled(count > 0 && count <= 8);
+    });
+    connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(actions);
+    if (dialog.exec() != QDialog::Accepted) return;
+    QJsonArray selected;
+    for (const auto* item : list->selectedItems())
+      selected.append(item->data(Qt::UserRole).toString());
+    setBusy(true);
+    bridge_.request(
+        base, "project.open", "read", {}, {},
+        [this, base, incoming, selected](const QJsonObject& ancestor) {
+          if (!mergeSourceReady(ancestor)) return;
+          const auto base_revision = ancestor.value("revision");
+          bridge_.request(
+              incoming, "project.open", "read", {}, {},
+              [this, base, incoming, selected, base_revision](const QJsonObject& other) {
+                if (!mergeSourceReady(other)) return;
+                previewResourceMerge({{"base_directory", base},
+                                      {"base_revision", base_revision},
+                                      {"other_directory", incoming},
+                                      {"other_revision", other.value("revision")},
+                                      {"resources", selected}});
+              });
+        });
+  }
+
+  bool mergeSourceReady(const QJsonObject& result) {
+    if (result.value("code") == "ok" && result.value("revision").isDouble() &&
+        result.value("project_id") == project_id_)
+      return true;
+    if (result.value("code") == "ok")
+      setStatus(QT_TR_NOOP("Choose a checkout of the current project."));
+    else
+      report({nullptr, {}, result});
+    setBusy(false);
+    return false;
+  }
+
+  void previewResourceMerge(const QJsonObject& input) {
+    bridge_.request(root_, "project.merge", "preview", revision_, input,
+                    [this, input](const QJsonObject& result) {
+                      if (result.value("code") == "merge_conflict") {
+                        showMergeConflicts(input, result);
+                        return;
+                      }
+                      if (result.value("code") != "ok") {
+                        report({nullptr, {}, result});
+                        setBusy(false);
+                        return;
+                      }
+                      if (!result.value("changed").toBool()) {
+                        setStatus(QT_TR_NOOP("The selected resources already agree."));
+                        setBusy(false);
+                        return;
+                      }
+                      QStringList names;
+                      for (const auto id : result.value("resources").toArray())
+                        names.append(id.toString());
+                      if (QMessageBox::question(
+                              this, tr("Merge Resources"),
+                              tr("Commit changes to these resources?\n%1").arg(names.join(u'\n')),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+                        cancelPreview("project.merge", input);
+                        return;
+                      }
+                      bridge_.request(root_, "project.merge", "apply", revision_, input,
+                                      [this](const QJsonObject& applied) {
+                                        if (applied.value("code") != "ok") {
+                                          report({nullptr, {}, applied});
+                                          setBusy(false);
+                                          return;
+                                        }
+                                        recordHistory(applied, selected_);
+                                        revision_ = applied.value("revision").toInteger();
+                                        setStatus(QT_TR_NOOP("Resource merge committed."));
+                                        refresh(false);
+                                      });
+                    });
+  }
+
+  bool chooseMergeVersions(QJsonObject& input, const QJsonObject& result) {
+    const auto versions = result.value("versions").toArray();
+    if (versions.isEmpty() || !result.value("merge_token").isString()) return false;
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Choose Conflict Versions"));
+    dialog.resize(830, 380);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(tr("Choose a version for each conflict."), &dialog));
+    auto* table = new QTableWidget(static_cast<int>(versions.size()), 5, &dialog);
+    table->setHorizontalHeaderLabels(
+        {tr("Resource"), tr("Field"), tr("Current Version"), tr("Incoming Version"), tr("Choice")});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->verticalHeader()->hide();
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    layout->addWidget(table);
+    auto* actions = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto* preview = actions->button(QDialogButtonBox::Ok);
+    preview->setText(tr("Preview Merge"));
+    preview->setEnabled(false);
+    std::vector<QComboBox*> choices;
+    int row = 0;
+    for (const auto entry : versions) {
+      const auto version = entry.toObject();
+      const auto summary = [&version](const char* side) {
+        const auto value = version.value(side);
+        return value.isNull() ? tr("Deleted") : value.toString();
+      };
+      const QStringList columns{version.value("resource").toString(),
+                                version.value("path").toString(), summary("current"),
+                                summary("incoming")};
+      for (int column = 0; column < columns.size(); ++column) {
+        auto* cell = new QTableWidgetItem(columns.at(column));
+        cell->setToolTip(cell->text().toHtmlEscaped());
+        table->setItem(row, column, cell);
+      }
+      auto* select = new QComboBox(table);
+      select->addItem(tr("Select version"));
+      select->addItem(tr("Current Version"), "current");
+      select->addItem(tr("Incoming Version"), "incoming");
+      choices.push_back(select);
+      table->setCellWidget(row++, 4, select);
+      connect(select, &QComboBox::currentIndexChanged, &dialog, [&choices, preview] {
+        preview->setEnabled(std::ranges::all_of(
+            choices, [](const QComboBox* choice) { return choice->currentIndex() > 0; }));
+      });
+    }
+    connect(actions, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(actions, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(actions);
+    if (dialog.exec() != QDialog::Accepted) return false;
+    auto resolutions = input.value("resolutions").toArray();
+    for (qsizetype index = 0; index < versions.size(); ++index) {
+      const auto version = versions.at(index).toObject();
+      resolutions.append(QJsonObject{
+          {"resource", version.value("resource")},
+          {"path", version.value("path")},
+          {"side", choices[static_cast<std::size_t>(index)]->currentData().toString()}});
+    }
+    input["resolutions"] = resolutions;
+    input["merge_token"] = result.value("merge_token");
+    return true;
+  }
+
+  void showMergeConflicts(QJsonObject input, const QJsonObject& result) {
+    QStringList ids, paths;
+    for (const auto conflict : result.value("conflicts").toArray()) {
+      const auto entry = conflict.toObject();
+      const auto id = entry.value("resource").toString();
+      ids.append(id);
+      paths.append(id + entry.value("path").toString());
+    }
+    QJsonArray selected;
+    for (const auto id : input.value("resources").toArray())
+      if (!ids.contains(id.toString())) selected.append(id);
+    QMessageBox summary(QMessageBox::Warning, tr("Resource Conflicts"),
+                        tr("The listed resources contain changes on both sides."),
+                        QMessageBox::Cancel, this);
+    summary.setDetailedText(paths.join(u'\n'));
+    auto* choose = summary.addButton(tr("Choose Conflict Versions"), QMessageBox::ActionRole);
+    QPushButton* continue_merge = nullptr;
+    if (!selected.isEmpty())
+      continue_merge =
+          summary.addButton(tr("Keep Conflicting Resources and Continue"), QMessageBox::AcceptRole);
+    summary.exec();
+    if (summary.clickedButton() == choose && chooseMergeVersions(input, result)) {
+      previewResourceMerge(input);
+    } else if (continue_merge && summary.clickedButton() == continue_merge) {
+      input["resources"] = selected;
+      input.remove("resolutions");
+      input.remove("merge_token");
+      previewResourceMerge(input);
+    } else {
+      cancelPreview("project.merge", input);
+    }
   }
 
   void exportGame() {
@@ -720,6 +976,7 @@ class Workbench final : public QMainWindow {
     field_schema_ = {};
     entities_ = {};
     resources_model_ = {};
+    has_expedition_ = false;
     resources_->setImportRecords({});
     resources_->setPreview({});
     selected_.clear();
@@ -744,6 +1001,12 @@ class Workbench final : public QMainWindow {
           project_id_ = result.value("project_id").toString();
           revision_ = result.value("revision").toInteger();
           resources_model_ = result.value("resources").toArray();
+          const auto entry = result.value("entry_scene");
+          has_expedition_ = std::ranges::any_of(resources_model_, [entry](const auto& row) {
+            const auto resource = row.toObject();
+            return resource.value("id") == entry &&
+                   resource.value("refs").toArray().contains("expedition");
+          });
           resources_->setResources(resources_model_);
           const auto imports = result.value("imports").toObject();
           const bool ok = imports.value("code") == "ok";
@@ -877,7 +1140,8 @@ class Workbench final : public QMainWindow {
   void recordHistory(const QJsonObject& result, const QString& next_selection) {
     if (!result.value("changed").toBool()) return;
     redo_history_.clear();
-    const auto change = result.value("scene_change").toObject();
+    auto change = result.value("scene_change").toObject();
+    if (change.isEmpty()) change = result.value("change").toObject();
     if (change.isEmpty()) {
       undo_history_.clear();
       return;
@@ -892,15 +1156,27 @@ class Workbench final : public QMainWindow {
         source.empty())
       return;
     auto request = source.back().change;
+    const bool project = request.contains("resources");
     if (!redo) {
-      const auto before = request.value("before");
-      request["before"] = request.value("after");
-      request["after"] = before;
+      const auto reverse = [](QJsonObject resource) {
+        const auto before = resource.value("before");
+        resource["before"] = resource.value("after");
+        resource["after"] = before;
+        return resource;
+      };
+      if (project) {
+        QJsonArray reversed;
+        for (const auto row : request.value("resources").toArray())
+          reversed.append(reverse(row.toObject()));
+        request["resources"] = reversed;
+      } else {
+        request = reverse(request);
+      }
     }
     setBusy(true);
     bridge_.request(
-        root_, "scene.restore", "apply", revision_, {{"change", request}},
-        [this, redo](const QJsonObject& result) {
+        root_, project ? "project.restore" : "scene.restore", "apply", revision_,
+        {{"change", request}}, [this, redo, project](const QJsonObject& result) {
           if (result.value("code") != "ok" || !result.value("changed").toBool() ||
               !result.value("revision").isDouble()) {
             report({nullptr, {}, result});
@@ -913,10 +1189,11 @@ class Workbench final : public QMainWindow {
           to.push_back(std::move(from.back()));
           from.pop_back();
           revision_ = result.value("revision").toInteger();
-          report({redo ? QT_TR_NOOP("Scene change redone.") : QT_TR_NOOP("Scene change undone."),
-                  {},
-                  {}});
-          readScene(false);
+          report({redo ? QT_TR_NOOP("Change redone.") : QT_TR_NOOP("Change undone."), {}, {}});
+          if (project)
+            refresh(false);
+          else
+            readScene(false);
         });
   }
 
@@ -1026,8 +1303,11 @@ class Workbench final : public QMainWindow {
     if (!dirty_ || busy_ || !revision_) return;
     const auto field = field_schema_.at(static_cast<qsizetype>(editing_)).toObject().value("id");
     const auto value = fields_[editing_]->value();
-    const QJsonObject input{
-        {"entity_id", selected_}, {"field", field}, {"value", value}, {"capture_change", true}};
+    const QJsonObject input{{"entity_id", selected_},
+                            {"field", field},
+                            {"value", value},
+                            {"expected_value", committed_[editing_]},
+                            {"capture_change", true}};
     setBusy(true);
     bridge_.request(root_, "scene.field.set", "preview", revision_, input,
                     [this, input](const QJsonObject& preview) {
@@ -1107,7 +1387,9 @@ class Workbench final : public QMainWindow {
                         cancelPreview("resource.field.set", input);
                         return;
                       }
-                      bridge_.request(root_, "resource.field.set", "apply", revision_, input,
+                      auto checked = input;
+                      checked["expected_value"] = preview.value("old_value");
+                      bridge_.request(root_, "resource.field.set", "apply", revision_, checked,
                                       [this](const QJsonObject& result) {
                                         if (result.value("code") != "ok" ||
                                             !result.value("revision").isDouble()) {
@@ -1180,6 +1462,19 @@ class Workbench final : public QMainWindow {
                     [&](const items::Action& action) { return session_->work(action); });
       viewport_->setFocus(Qt::OtherFocusReason);
     }
+  }
+
+  void openRecipeGraph() {
+    if (!recipes_->isEnabled()) return;
+    setBusy(true);
+    bridge_.request(root_, "expedition.recipes", "read", revision_, {},
+                    [this](const QJsonObject& result) {
+                      if (result.value("code") == "ok")
+                        show_recipe_graph(this, result);
+                      else
+                        report({nullptr, {}, result});
+                      setBusy(false);
+                    });
   }
 
   void play() {
@@ -1322,9 +1617,11 @@ class Workbench final : public QMainWindow {
     voxel_view_->setEnabled(!busy_);
     resources_->setEnabled(!busy_);
     open_->setEnabled(!busy_);
+    reload_->setEnabled(!busy_ && !root_.isEmpty());
     create_->setEnabled(!busy_);
     close_->setEnabled(!busy_ && !root_.isEmpty());
     import_->setEnabled(!busy_ && !playing() && !hasDraft() && revision_.has_value());
+    merge_->setEnabled(import_->isEnabled() && !resources_model_.isEmpty());
     export_->setEnabled(!busy_ && !playing() && (scene_ready_ || voxel_scene_) && !hasDraft() &&
                         revision_.has_value());
     clear_cache_->setEnabled(!busy_ && revision_.has_value());
@@ -1352,16 +1649,19 @@ class Workbench final : public QMainWindow {
     palette_->setEnabled(voxel_scene_ && !busy_ && !playing() && !hasDraft() && revision_);
     workshop_->setEnabled(
         !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
-    project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
+    recipes_->setEnabled(!busy_ && !playing() && revision_ && has_expedition_);
+    const auto name = voxel_scene_ && !voxel_scene_->title.empty()
+                          ? QString::fromStdString(voxel_scene_->title)
+                          : project_id_;
+    project_label_->setText(name.isEmpty() ? tr("No project open") : name);
     const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
     revision_label_->setText(revision + (hasDraft() ? tr(" · Unsaved") : QString{}));
     draft_label_->setText(
         dirty_ ? tr("Unsaved · %1 → %2").arg(committed_[editing_]).arg(fields_[editing_]->value())
                : QString{});
     draft_label_->setVisible(dirty_);
-    setWindowTitle(project_id_.isEmpty()
-                       ? tr("WDS Studio")
-                       : tr("%1%2 — WDS Studio").arg(project_id_, hasDraft() ? "*" : ""));
+    setWindowTitle(name.isEmpty() ? tr("WDS Studio")
+                                  : tr("%1%2 — WDS Studio").arg(name, hasDraft() ? "*" : ""));
   }
 
   LanguageSettings& language_;
@@ -1396,10 +1696,13 @@ class Workbench final : public QMainWindow {
   QDockWidget* assets_;
   QDockWidget* output_dock_;
   QAction* settings_action_;
+  QAction* plugins_;
   QAction* open_;
+  QAction* reload_;
   QAction* create_;
   QAction* close_;
   QAction* import_;
+  QAction* merge_;
   QAction* export_;
   QAction* clear_cache_;
   QAction* recover_;
@@ -1412,6 +1715,7 @@ class Workbench final : public QMainWindow {
   QAction* play_;
   QAction* stop_;
   QAction* workshop_;
+  QAction* recipes_;
   QAction* palette_;
   QAction* add_entity_;
   QAction* copy_entity_;
@@ -1435,8 +1739,103 @@ class Workbench final : public QMainWindow {
   bool dirty_ = false;
   bool voxel_dirty_ = false;
   bool scene_ready_ = false;
+  bool has_expedition_ = false;
   std::size_t editing_ = 0;
 };
+
+void run_recipe_smoke(QApplication& app, Workbench& window, const QString& project) {
+  QObject::connect(&window, &Workbench::inspectionFinished, &app, [&](bool ready) {
+    auto* action = window.findChild<QAction*>("expeditionRecipes");
+    if (!ready || !action || !action->isEnabled()) {
+      app.exit(1);
+      return;
+    }
+    auto* watch = new QTimer(&app);
+    QObject::connect(watch, &QTimer::timeout, &app, [&, watch] {
+      auto* dialog = window.findChild<QDialog*>("recipeGraph");
+      if (!dialog || !dialog->isVisible()) return;
+      watch->stop();
+      auto* selection = dialog->findChild<QComboBox*>("dependencyRecipe");
+      auto* tree = dialog->findChild<QTreeWidget*>("dependencyTree");
+      bool checked = false;
+      if (selection && tree && selection->findText("garden-stew") >= 0) {
+        selection->setCurrentText("garden-stew");
+        constexpr auto matching = Qt::MatchContains | Qt::MatchRecursive;
+        const auto links = tree->findItems("build-stove", matching);
+        checked = !tree->findItems("#aromatic", matching).empty() &&
+                  !tree->findItems("wind-garden / plot", matching).empty() && links.size() == 1;
+        if (checked) {
+          tree->itemActivated(links.front(), 0);
+          checked = selection->currentText() == "build-stove" &&
+                    !tree->findItems("hearth", matching).empty();
+        }
+      }
+      dialog->reject();
+      app.exit(checked ? 0 : 1);
+    });
+    watch->start(10);
+    action->trigger();
+  });
+  QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+  window.openProject(project);
+}
+
+bool weather_preview_ok(QWidget* viewport) {
+  if (!viewport || !viewport->isVisible()) return false;
+  const auto frame = [viewport] {
+    const auto image = viewport->grab().toImage();
+    return image.copy(image.width() / 4, image.height() / 5, image.width() / 2, image.height() / 2);
+  };
+  const auto press = [viewport](Qt::Key key) {
+    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+    QApplication::sendEvent(viewport, &event);
+  };
+  const auto clear = frame();
+  press(Qt::Key_P);
+  const auto rain = frame();
+  press(Qt::Key_L);
+  const auto night = frame();
+  press(Qt::Key_L);
+  return !clear.isNull() && !rain.isNull() && !night.isNull() && clear != rain && rain != night &&
+         frame() == rain;
+}
+
+int smoke_palette_manager(QWidget* parent, const QStringList& arguments) {
+  PaletteDialog manager(arguments[2], parent);
+  auto* source = manager.findChild<QLineEdit*>("paletteSource");
+  auto* color = manager.findChild<QLabel*>("paletteColor");
+  auto* error = manager.findChild<QLabel*>("paletteError");
+  auto* install = manager.findChild<QPushButton*>("paletteInstall");
+  auto* remove = manager.findChild<QPushButton*>("paletteRemove");
+  if (!source || !color || !error || !install || !remove) return 1;
+  constexpr std::array expected{0x526980U, 0x5269c0U, 0x526960U, 0x526960U, 0x526980U};
+  int phase = 0;
+  QTimer watch;
+  QObject::connect(&watch, &QTimer::timeout, &manager, [&] {
+    if (!source->isEnabled()) return;
+    const auto caption = color->text();
+    bool valid = false;
+    const auto rgb = caption.mid(1).toUInt(&valid, 16);
+    if (!valid || caption.size() != 7 || !caption.startsWith(u'#') || rgb != expected[phase] ||
+        error->text().isEmpty() != (phase != 3) ||
+        remove->isEnabled() != (phase > 0 && phase < 4)) {
+      manager.done(1);
+      return;
+    }
+    if (phase < 3) {
+      source->setText(arguments[phase + 3]);
+      install->click();
+    } else if (phase == 3) {
+      remove->click();
+    } else {
+      manager.done(0);
+    }
+    ++phase;
+  });
+  watch.start(20);
+  QTimer::singleShot(20000, &manager, [&] { manager.done(2); });
+  return manager.exec();
+}
 
 }  // namespace
 }  // namespace wds::studio
@@ -1448,16 +1847,44 @@ int main(int argc, char** argv) {
   const auto arguments = app.arguments();
   const bool smoke =
       (arguments.size() == 3 || arguments.size() == 4) && arguments.at(1) == "--smoke";
+  const bool edit_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-edit";
+  const bool recipe_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-recipes";
+  const bool weather_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-weather";
+  const bool plugin_smoke = arguments.size() == 6 && arguments.at(1) == "--smoke-plugins";
   QCoreApplication::setOrganizationName("WDS");
-  QCoreApplication::setApplicationName(smoke ? "WDS Studio Smoke" : "WDS Studio");
+  QCoreApplication::setApplicationName(
+      smoke || edit_smoke || recipe_smoke || weather_smoke || plugin_smoke ? "WDS Studio Smoke"
+                                                                           : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
   window.show();
+  if (plugin_smoke) return wds::studio::smoke_palette_manager(&window, arguments);
   if (smoke) {
     QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
       const auto frame = ready ? window.centralWidget()->grab() : QPixmap{};
       app.exit(!frame.isNull() && (arguments.size() == 3 || frame.save(arguments.at(3))) ? 0 : 1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
+  } else if (edit_smoke) {
+    bool editing = false;
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      if (!ready || editing) {
+        app.exit(ready && window.editSmokeSaved() ? 0 : 1);
+        return;
+      }
+      editing = true;
+      if (!window.startEditSmoke()) app.exit(1);
+    });
+    QTimer::singleShot(20000, &app, [&] { app.exit(2); });
+    window.openProject(arguments.at(2));
+  } else if (recipe_smoke) {
+    wds::studio::run_recipe_smoke(app, window, arguments.at(2));
+  } else if (weather_smoke) {
+    QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
+      auto* viewport = window.findChild<QWidget*>("voxelViewport");
+      app.exit(ready && wds::studio::weather_preview_ok(viewport) ? 0 : 1);
     });
     QTimer::singleShot(20000, &app, [&] { app.exit(2); });
     window.openProject(arguments.at(2));

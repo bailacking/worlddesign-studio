@@ -11,7 +11,7 @@ struct LoadResult {
   std::string location;
 };
 
-LoadResult read_workshop(const nlohmann::json& document, bool voxel);
+LoadResult read_workshop(const nlohmann::json& document, bool voxel, bool expedition = false);
 nlohmann::json state_json(const State& state);
 
 }  // namespace wds::items

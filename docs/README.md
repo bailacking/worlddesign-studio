@@ -37,6 +37,7 @@
 - [W17 世界与生态](project/w17-world-ecology.md)记录群系、村落、生态刷新和角色重放。
 - [W18–W24 原创远征](project/w18-w24-expeditions.md)记录连续玩法、跨世界存档、规模试演和平台验证。
 - [W17–W24 参考验收台账](project/w17-w24-reference-audit.md)记录 Java 原版实测、《饥荒》历史版缺证和限时验收的分段用时。
+- [W25–W32 玩法、协作与跨平台](project/w25-w32-systems.md)记录实现入口、回归证据和待验项。
 - [W8 礁灯投递验收](project/w8-acceptance.md)：独立游戏试玩、创作者接手和第二台机器签收。
 - [最终版 50 周开发计划](project/50-week-plan.md)：逐周目标和验收、零资产计时、共同调研与产能复核。
 - [W1 基线与需求台账](project/w1-baseline.md)：Windows 实测、核心需求与任务映射、验收机器与本周投入。

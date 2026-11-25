@@ -9,7 +9,30 @@
 
 namespace wds::voxel {
 
-enum class Block { air, grass, dirt, stone, copper, quartz, timber };
+enum class Block {
+  air,
+  grass,
+  dirt,
+  stone,
+  copper,
+  quartz,
+  timber,
+  rail,
+  spring,
+  water_low,
+  water_mid,
+  water_high,
+  flame,
+  vent,
+  lava_low,
+  lava_mid,
+  lava_high,
+  basalt
+};
+
+[[nodiscard]] constexpr bool solid(Block block) {
+  return (block >= Block::grass && block <= Block::timber) || block == Block::basalt;
+}
 
 struct BlockStyle {
   std::uint32_t color;
@@ -20,13 +43,24 @@ struct BlockStyle {
 struct Content {
   std::uint32_t sky = 0x87bce8;
   Block placement = Block::stone;
-  std::array<BlockStyle, 7> blocks{{{0, false},
-                                    {0x659645, true},
-                                    {0x90643e, true},
-                                    {0x87929f, true},
-                                    {0xad603f, true},
-                                    {0xd2cbd6, true},
-                                    {0x795239, true}}};
+  std::array<BlockStyle, 18> blocks{{{0, false},
+                                     {0x659645, true},
+                                     {0x90643e, true},
+                                     {0x87929f, true},
+                                     {0xad603f, true},
+                                     {0xd2cbd6, true},
+                                     {0x795239, true},
+                                     {0x37324a, false},
+                                     {0x196aa0, false},
+                                     {0x8cdaf5, false},
+                                     {0x58afdf, false},
+                                     {0x3582d4, false},
+                                     {0xf57b35, false},
+                                     {0xf6a447, false},
+                                     {0xd14c18, false},
+                                     {0xdc5818, false},
+                                     {0xe86a1a, false},
+                                     {0x3c3b4a, true}}};
 
   [[nodiscard]] const BlockStyle& style(Block block) const;
   bool operator==(const Content&) const = default;

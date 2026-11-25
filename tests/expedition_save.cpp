@@ -1,8 +1,49 @@
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <string_view>
 
 #include "expedition.hpp"
+
+namespace {
+
+using namespace wds::expedition;
+
+int farm(Expedition& run, const std::filesystem::path& file, std::string_view stage) {
+  if (stage == "farm-start") {
+    const std::array actions{Action{Command::gather, "seed-mat"},
+                             Action{Command::gather, "herbs"},
+                             Action{Command::gather, "bark-store"},
+                             Action{Command::craft, "build-stove"},
+                             Action{Command::east},
+                             Action{Command::use, "plot"},
+                             Action{Command::use, "trail"}};
+    for (const auto& action : actions)
+      if (run.apply(action) != "ok") return 12;
+    return save(run, file) ? 0 : 13;
+  }
+  if (!restore(run, file)) return 14;
+  if (stage == "farm-cook") {
+    if (run.region().id != "tide-terrace" || run.state().crops.at("plot") != 2) return 15;
+    const std::array actions{Action{Command::wait},
+                             Action{Command::wait},
+                             Action{Command::use, "return-path"},
+                             Action{Command::use, "plot"},
+                             Action{Command::east},
+                             Action{Command::cook, "kitchen", {"root", "herb"}}};
+    for (const auto& action : actions)
+      if (run.apply(action) != "ok") return 16;
+    return save(run, file) ? 0 : 17;
+  }
+  return stage == "farm-verify" && run.region().id == "wind-garden" &&
+                 run.position() == TilePoint{3, 1} && run.state().tick == 13 &&
+                 run.state().crops.at("plot") == -1 && run.workshop().has_item("stew") &&
+                 !run.workshop().has_item("root") && !run.workshop().has_item("herb")
+             ? 0
+             : 18;
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   using namespace wds::expedition;
@@ -12,6 +53,33 @@ int main(int argc, char** argv) {
   if (!loaded.expedition) return 2;
   auto& run = *loaded.expedition;
   const std::string_view stage(argv[3]);
+  if (stage.starts_with("farm-")) return farm(run, path, stage);
+  if (stage == "rules-save") {
+    if (run.apply({Command::supply, "herb"}) != "ok" || run.apply({Command::wait}) != "ok")
+      return 19;
+    return save(run, path) ? 0 : 20;
+  }
+  if (stage == "rules-open") {
+    return restore(run, path) && run.state().tick == 2 && run.state().hunger == 20 &&
+                   run.workshop().has_item("herb")
+               ? 0
+               : 21;
+  }
+  if (stage == "crew-save") {
+    const std::array actions{Action{Command::use, "briefing"}, Action{Command::east},
+                             Action{Command::use, "trail"}};
+    for (const auto& action : actions)
+      if (run.apply(action) != "ok") return 22;
+    return save(run, path) ? 0 : 23;
+  }
+  if (stage == "crew-open") {
+    return restore(run, path) && run.region().id == "tide-terrace" &&
+                   run.state().active_character == "coast-guide" &&
+                   run.state().unlocked_characters.contains("gardener") &&
+                   run.active_traits().venom_guard == 3
+               ? 0
+               : 24;
+  }
   if (stage == "start") {
     if (run.apply({Command::gather, "driftwood"}) != "ok" || run.apply({Command::east}) != "ok" ||
         run.apply({Command::use, "rising"}) != "ok" || run.apply({Command::east}) != "ok")
