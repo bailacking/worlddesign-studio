@@ -1808,12 +1808,16 @@ int smoke_palette_manager(QWidget* parent, const QStringList& arguments) {
   auto* install = manager.findChild<QPushButton*>("paletteInstall");
   auto* remove = manager.findChild<QPushButton*>("paletteRemove");
   if (!source || !color || !error || !install || !remove) return 1;
-  const QStringList expected{"#526980", "#5269c0", "#526960", "#526960", "#526980"};
+  constexpr std::array expected{0x526980U, 0x5269c0U, 0x526960U, 0x526960U, 0x526980U};
   int phase = 0;
   QTimer watch;
   QObject::connect(&watch, &QTimer::timeout, &manager, [&] {
     if (!source->isEnabled()) return;
-    if (color->text() != expected[phase] || error->text().isEmpty() != (phase != 3) ||
+    const auto caption = color->text();
+    bool valid = false;
+    const auto rgb = caption.mid(1).toUInt(&valid, 16);
+    if (!valid || caption.size() != 7 || !caption.startsWith(u'#') || rgb != expected[phase] ||
+        error->text().isEmpty() != (phase != 3) ||
         remove->isEnabled() != (phase > 0 && phase < 4)) {
       manager.done(1);
       return;
