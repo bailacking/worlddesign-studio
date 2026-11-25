@@ -351,7 +351,9 @@ bool play_scene(SceneSession& session, const char* title) {
 }
 
 bool play_voxel(VoxelScene& scene, const char* title) {
-  const auto caption = title ? std::string(title) : game_title(scene.source.project_id);
+  const auto caption = title                 ? std::string(title)
+                       : scene.title.empty() ? game_title(scene.source.project_id)
+                                             : scene.title;
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(900, 570, caption.c_str());
   if (!IsWindowReady()) return false;
@@ -513,7 +515,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (result.voxel_scene)
-    return wds::player::play_voxel(*result.voxel_scene, "WDS Voxel Preview") ? 0 : 1;
+    return wds::player::play_voxel(*result.voxel_scene, result.voxel_scene->title.empty()
+                                                            ? "WDS Voxel Preview"
+                                                            : nullptr)
+               ? 0
+               : 1;
   if (wds::player::play_scene(*result.session, "WDS Scene Preview")) return 0;
   std::cerr << "Unable to prepare graphics for playback.\n";
   return 1;

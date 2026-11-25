@@ -218,7 +218,7 @@ Copy-Item -Recurse examples/scene-motion build/studio-demo
 
 工作台默认使用简体中文。在 **设置 → 界面语言**（英文界面为 **Settings → Interface Language**）选择语言，点击 **应用** 即时切换。语言设置随下次启动恢复。工作台翻译随程序编译，`translations/qt_zh_CN.qm` 用于 Qt 文件选择等标准控件。
 
-Windows、Ubuntu 和 macOS 共用工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure`。测试离屏打开「礁灯投递」「方块工坊」「块石工场」和行为场景并绘制视口。Ubuntu 和 macOS 也用 Qt 6.8.3 从源码构建，配置时用 `-DQt6_DIR=<Qt6Config.cmake 所在目录>` 指定已安装的桌面 SDK。
+Windows、Ubuntu 和 macOS 共用工作台冒烟。将 Qt 的 `bin` 加入 `PATH` 后，运行 `ctest --test-dir build/studio -R '^workbench_.*smoke$' --output-on-failure`。测试离屏打开「礁灯投递」「方块工坊」「大帅的方块世界」和行为场景并绘制视口。Ubuntu 和 macOS 也用 Qt 6.8.3 从源码构建，配置时用 `-DQt6_DIR=<Qt6Config.cmake 所在目录>` 指定已安装的桌面 SDK。
 
 工作台安装组件包含项目 CLI 和 Qt 运行依赖。用 `cmake --install build/studio --component Workbench --prefix build/studio-installed --config Release` 安装。Windows、Ubuntu 从安装目录的 `bin` 启动工作台。macOS 可打开安装目录下的 `wds_studio_modern.app`。也可以执行 `python scripts/launch.py studio --build build/studio-installed`。
 
@@ -231,7 +231,7 @@ Windows、Ubuntu 和 macOS 共用工作台冒烟。将 Qt 的 `bin` 加入 `PATH
 | 入口 | 命令 |
 | --- | --- |
 | 工作台 | `python scripts/launch.py studio` |
-| 方块游戏「块石工场」 | `python scripts/launch.py voxel` |
+| 方块游戏「大帅的方块世界」 | `python scripts/launch.py voxel` |
 | 非方块游戏「风园」 | `python scripts/launch.py planar`，打开浏览器试玩。 |
 
 两个工作台入口支持 `--project <目录>`。浏览器入口在回环地址运行，终端会显示本地 URL，按 **Ctrl+C** 关闭。三个入口都支持 `--check` 验证启动路径。

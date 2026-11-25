@@ -4,7 +4,8 @@
   "revision": 0,
   "entry_scene": "yard",
   "resources": [
-    {"id": "yard", "kind": "scene", "path": "assets/yard.json", "refs": ["materials"]},
-    {"id": "materials", "kind": "text", "path": "assets/yard-colors.txt", "refs": []}
+    {"id": "yard", "kind": "scene", "path": "assets/yard.json", "refs": ["materials", "scene-title"]},
+    {"id": "materials", "kind": "text", "path": "assets/yard-colors.txt", "refs": []},
+    {"id": "scene-title", "kind": "data", "path": "assets/title.json", "refs": []}
   ]
 }

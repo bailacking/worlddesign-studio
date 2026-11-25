@@ -968,6 +968,20 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
         return {std::nullopt, "invalid_palette_plugin", "/palette_plugin", scene.path,
                 project.revision};
       initial.set_content(*transformed);
+      std::string title;
+      if (std::ranges::find(scene.refs, "scene-title") != scene.refs.end()) {
+        const auto asset = std::ranges::find(project.resources, "scene-title", &Resource::id);
+        if (asset != project.resources.end() && asset->kind == "data") {
+          const auto data = read_json(directory / asset->path);
+          if (const auto name = data.find("title"); name != data.end() && name->is_string()) {
+            const auto& text = name->get_ref<const std::string&>();
+            if (text.size() <= 128 && std::ranges::none_of(text, [](char ch) {
+                  return static_cast<unsigned char>(ch) < 32 || ch == 127;
+                }))
+              title = text;
+          }
+        }
+      }
       return {std::nullopt,
               "ok",
               {},
@@ -977,7 +991,8 @@ SceneResult start_scene(const fs::path& directory, std::uint64_t expected_revisi
                          {project.id, scene.id, scene.path, *bytes, {}},
                          project.revision,
                          std::move(workshop),
-                         provider}};
+                         provider,
+                         std::move(title)}};
     }
     const auto parsed =
         parse_scene(json, session.state_.entities, &session.controls_, &session.behavior_,

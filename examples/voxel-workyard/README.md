@@ -1,4 +1,6 @@
-# 块石工场
+# 大帅的方块世界
+
+工作台和独立播放器从 `assets/title.json` 读取游戏名。
 
 从仓库根目录运行 `python scripts/launch.py voxel`。构建目录与默认值 `build/native` 不同时，用 `--build` 指定。
 

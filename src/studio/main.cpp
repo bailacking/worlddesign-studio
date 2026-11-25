@@ -241,6 +241,7 @@ class Workbench final : public QMainWindow {
     toolbar_->addActions({play_, stop_, workshop_});
     toolbar_->addSeparator();
     project_label_ = new QLabel(toolbar_);
+    project_label_->setTextFormat(Qt::PlainText);
     toolbar_->addWidget(project_label_);
 
     viewport_ = new Viewport([this](const QString& id) { selectEntity(id); }, this);
@@ -1637,16 +1638,18 @@ class Workbench final : public QMainWindow {
     workshop_->setEnabled(
         !busy_ && ((voxel_scene_ && voxel_scene_->workshop) || (session_ && session_->workshop())));
     recipes_->setEnabled(!busy_ && !playing() && revision_ && has_expedition_);
-    project_label_->setText(project_id_.isEmpty() ? tr("No project open") : project_id_);
+    const auto name = voxel_scene_ && !voxel_scene_->title.empty()
+                          ? QString::fromStdString(voxel_scene_->title)
+                          : project_id_;
+    project_label_->setText(name.isEmpty() ? tr("No project open") : name);
     const auto revision = revision_ ? tr("Revision %1").arg(*revision_) : QString{};
     revision_label_->setText(revision + (hasDraft() ? tr(" · Unsaved") : QString{}));
     draft_label_->setText(
         dirty_ ? tr("Unsaved · %1 → %2").arg(committed_[editing_]).arg(fields_[editing_]->value())
                : QString{});
     draft_label_->setVisible(dirty_);
-    setWindowTitle(project_id_.isEmpty()
-                       ? tr("WDS Studio")
-                       : tr("%1%2 — WDS Studio").arg(project_id_, hasDraft() ? "*" : ""));
+    setWindowTitle(name.isEmpty() ? tr("WDS Studio")
+                                  : tr("%1%2 — WDS Studio").arg(name, hasDraft() ? "*" : ""));
   }
 
   LanguageSettings& language_;

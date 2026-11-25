@@ -123,6 +123,7 @@ struct VoxelScene {
   std::uint64_t revision;
   std::optional<items::Workshop> workshop{};
   std::string palette = "daylight";
+  std::string title{};
 
   bool edit(voxel::Vec3 feet, voxel::Vec3 eye, voxel::Vec3 direction, bool place);
 };
