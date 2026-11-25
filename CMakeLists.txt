@@ -177,6 +177,7 @@ if(WDS_BUILD_MODERN_STUDIO)
     src/studio/bridge.cpp
     src/studio/i18n/language.cpp
     src/studio/output_panel.cpp
+    src/studio/palette_dialog.cpp
     src/studio/resource_panel.cpp
     src/studio/scene_tree.cpp
     src/studio/theme/theme.cpp
@@ -186,7 +187,22 @@ if(WDS_BUILD_MODERN_STUDIO)
   )
   set_target_properties(wds_studio_modern PROPERTIES AUTOMOC ON)
   target_link_libraries(wds_studio_modern PRIVATE Qt6::Widgets wds_project wds_compile_options)
-  add_dependencies(wds_studio_modern wds_cli)
+  add_executable(wds_palette_tool examples/plugin-sdk/native_demo.cpp)
+  target_link_libraries(wds_palette_tool PRIVATE wds_m0 ${CMAKE_DL_LIBS})
+  target_compile_definitions(wds_palette_tool PRIVATE
+    WDS_PALETTE_MODULE_SUFFIX="${CMAKE_SHARED_MODULE_SUFFIX}")
+  if(MINGW)
+    target_link_options(wds_palette_tool PRIVATE -municode)
+  endif()
+  foreach(palette IN ITEMS daylight overcast obsolete)
+    add_library(wds_test_palette_${palette} MODULE examples/plugin-sdk/native_palette.cpp)
+    target_compile_definitions(wds_test_palette_${palette} PRIVATE WDS_BUILD_PALETTE)
+  endforeach()
+  target_compile_definitions(wds_test_palette_daylight PRIVATE WDS_SAMPLE_ABI=1 WDS_SAMPLE_BLUE=0xc0)
+  target_compile_definitions(wds_test_palette_overcast PRIVATE WDS_SAMPLE_ABI=1 WDS_SAMPLE_BLUE=0x60)
+  target_compile_definitions(wds_test_palette_obsolete PRIVATE WDS_SAMPLE_ABI=0 WDS_SAMPLE_BLUE=0xff)
+  add_dependencies(wds_studio_modern wds_cli wds_palette_tool
+    wds_test_palette_daylight wds_test_palette_overcast wds_test_palette_obsolete)
   qt_add_resources(wds_studio_modern studio_theme PREFIX "/studio" BASE "src/studio"
     FILES src/studio/theme/workbench.qss)
   qt_add_translations(wds_studio_modern
@@ -198,10 +214,13 @@ if(WDS_BUILD_MODERN_STUDIO)
     list(APPEND studio_deploy_options DEPLOY_TOOL_OPTIONS --include-plugins qoffscreen)
   elseif(APPLE)
     # The bundle uses the same sibling CLI lookup as the other standalone builds.
-    set_property(TARGET wds_studio_modern APPEND PROPERTY LINK_DEPENDS "$<TARGET_FILE:wds_cli>")
+    set_property(TARGET wds_studio_modern APPEND PROPERTY LINK_DEPENDS
+      "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE:wds_palette_tool>")
     add_custom_command(TARGET wds_studio_modern POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE_DIR:wds_studio_modern>"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:wds_palette_tool>" "$<TARGET_FILE_DIR:wds_studio_modern>"
       VERBATIM)
   else()
     set_target_properties(wds_studio_modern PROPERTIES
@@ -216,12 +235,13 @@ if(WDS_BUILD_MODERN_STUDIO)
     BUNDLE DESTINATION . COMPONENT Workbench
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
   if(APPLE)
-    install(PROGRAMS "$<TARGET_FILE:wds_cli>"
+    install(PROGRAMS "$<TARGET_FILE:wds_cli>" "$<TARGET_FILE:wds_palette_tool>"
       DESTINATION "wds_studio_modern.app/Contents/MacOS" COMPONENT Workbench)
     install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
       DESTINATION "wds_studio_modern.app/Contents/PlugIns/platforms" COMPONENT Workbench)
   else()
-    install(TARGETS wds_cli RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
+    install(TARGETS wds_cli wds_palette_tool
+      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Workbench)
     if(UNIX)
       install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
         DESTINATION "plugins/platforms" COMPONENT Workbench)
@@ -341,7 +361,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME workbench_install COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/workbench_install.py"
       --cmake "${CMAKE_COMMAND}" --build "${CMAKE_CURRENT_BINARY_DIR}"
-      --qt-config "${Qt6_DIR}" --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>")
+      --qt-config "${Qt6_DIR}" --bindir "${CMAKE_INSTALL_BINDIR}" --config "$<CONFIG>"
+      --palettes "$<TARGET_FILE:wds_test_palette_daylight>"
+      "$<TARGET_FILE:wds_test_palette_overcast>" "$<TARGET_FILE:wds_test_palette_obsolete>")
     set_tests_properties(workbench_install PROPERTIES TIMEOUT 170)
   endif()
   add_test(NAME expedition_replay COMMAND "${Python3_EXECUTABLE}"

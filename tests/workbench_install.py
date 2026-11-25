@@ -66,6 +66,9 @@ def verify(args):
                        env=environment, check=True, timeout=30)
         subprocess.run([studio, "--smoke-weather", examples / "voxel-workyard"], cwd=root,
                        env=environment, check=True, timeout=30)
+        subprocess.run([studio, "--smoke-plugins", root / "palette store", *args.palettes],
+                       cwd=root, env=environment, check=True, timeout=30)
+        assert not any((root / "palette store").iterdir())
         subprocess.run([studio, "--smoke-edit", project], cwd=root, env=environment,
                        check=True, timeout=30)
         result = subprocess.run(
@@ -89,4 +92,5 @@ if __name__ == "__main__":
     parser.add_argument("--qt-config", required=True, type=Path)
     parser.add_argument("--bindir", required=True)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--palettes", required=True, nargs=3, type=Path)
     verify(parser.parse_args())

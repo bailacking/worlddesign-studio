@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string_view>
 
@@ -94,9 +95,7 @@ fs::path installed_palette(const fs::path& root) {
 class PendingPalette {
  public:
   explicit PendingPalette(const fs::path& root)
-      : staging_(root / ".palette-staging"), library_(staging_ / palette_file) {
-    if (!fs::create_directory(staging_)) throw std::runtime_error("store_busy");
-  }
+      : staging_(reserve(root)), library_(staging_ / palette_file) {}
   PendingPalette(const PendingPalette&) = delete;
   PendingPalette& operator=(const PendingPalette&) = delete;
 
@@ -109,6 +108,15 @@ class PendingPalette {
   const fs::path& library() const { return library_; }
 
  private:
+  static fs::path reserve(const fs::path& root) {
+    std::random_device random;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+      auto path = root / (".palette-staging-" + std::to_string(random()));
+      if (fs::create_directory(path)) return path;
+    }
+    throw std::runtime_error("store_busy");
+  }
+
   fs::path staging_;
   fs::path library_;
 };
@@ -138,14 +146,15 @@ int main(int argc, char** argv) {
         install_palette(directory, argv[3]);
         return 0;
       }
-      if (argc == 3 && command == "--preview") {
+      if (argc == 3 && (command == "--preview" || command == "--status")) {
         const auto palette = installed_palette(directory);
-        std::cout << std::hex << (fs::exists(palette) ? preview(palette) : default_rgb) << '\n';
+        const bool installed = fs::exists(palette);
+        if (command == "--status") std::cout << (installed ? "installed " : "built-in ");
+        std::cout << std::hex << (installed ? preview(palette) : default_rgb) << '\n';
         return 0;
       }
       if (argc == 3 && command == "--remove") {
         const auto palette = installed_palette(directory);
-        const PendingPalette pending(directory);
         fs::remove(palette);
         return 0;
       }

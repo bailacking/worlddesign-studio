@@ -31,6 +31,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
@@ -47,6 +48,7 @@
 #include "bridge.hpp"
 #include "i18n/language.hpp"
 #include "output_panel.hpp"
+#include "palette_dialog.hpp"
 #include "platform_project.hpp"
 #include "resource_panel.hpp"
 #include "scene_tree.hpp"
@@ -230,6 +232,12 @@ class Workbench final : public QMainWindow {
     view_menu_ = menuBar()->addMenu(QString{});
     settings_menu_ = menuBar()->addMenu(QString{});
     settings_action_ = settings_menu_->addAction(QString{}, this, &Workbench::showSettings);
+    plugins_ = settings_menu_->addAction(QString{}, this, [this] {
+      auto folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+      if (!folder.isEmpty()) folder = QDir(folder).filePath("plugins/palette");
+      PaletteDialog manager(folder, this);
+      manager.exec();
+    });
 
     toolbar_ = addToolBar(QString{});
     toolbar_->setObjectName("workspaceToolbar");
@@ -390,6 +398,7 @@ class Workbench final : public QMainWindow {
     view_menu_->setTitle(tr("&View"));
     settings_menu_->setTitle(tr("Se&ttings"));
     settings_action_->setText(tr("Interface Language…"));
+    plugins_->setText(tr("Palette Plugins…"));
     open_->setText(tr("&Open Project…"));
     reload_->setText(tr("Reload Project"));
     create_->setText(tr("&New Project…"));
@@ -1684,6 +1693,7 @@ class Workbench final : public QMainWindow {
   QDockWidget* assets_;
   QDockWidget* output_dock_;
   QAction* settings_action_;
+  QAction* plugins_;
   QAction* open_;
   QAction* reload_;
   QAction* create_;
@@ -1787,6 +1797,39 @@ bool weather_preview_ok(QWidget* viewport) {
          frame() == rain;
 }
 
+int smoke_palette_manager(QWidget* parent, const QStringList& arguments) {
+  PaletteDialog manager(arguments[2], parent);
+  auto* source = manager.findChild<QLineEdit*>("paletteSource");
+  auto* color = manager.findChild<QLabel*>("paletteColor");
+  auto* error = manager.findChild<QLabel*>("paletteError");
+  auto* install = manager.findChild<QPushButton*>("paletteInstall");
+  auto* remove = manager.findChild<QPushButton*>("paletteRemove");
+  if (!source || !color || !error || !install || !remove) return 1;
+  const QStringList expected{"#526980", "#5269c0", "#526960", "#526960", "#526980"};
+  int phase = 0;
+  QTimer watch;
+  QObject::connect(&watch, &QTimer::timeout, &manager, [&] {
+    if (!source->isEnabled()) return;
+    if (color->text() != expected[phase] || error->text().isEmpty() != (phase != 3) ||
+        remove->isEnabled() != (phase > 0 && phase < 4)) {
+      manager.done(1);
+      return;
+    }
+    if (phase < 3) {
+      source->setText(arguments[phase + 3]);
+      install->click();
+    } else if (phase == 3) {
+      remove->click();
+    } else {
+      manager.done(0);
+    }
+    ++phase;
+  });
+  watch.start(20);
+  QTimer::singleShot(20000, &manager, [&] { manager.done(2); });
+  return manager.exec();
+}
+
 }  // namespace
 }  // namespace wds::studio
 
@@ -1800,13 +1843,16 @@ int main(int argc, char** argv) {
   const bool edit_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-edit";
   const bool recipe_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-recipes";
   const bool weather_smoke = arguments.size() == 3 && arguments.at(1) == "--smoke-weather";
+  const bool plugin_smoke = arguments.size() == 6 && arguments.at(1) == "--smoke-plugins";
   QCoreApplication::setOrganizationName("WDS");
   QCoreApplication::setApplicationName(
-      smoke || edit_smoke || recipe_smoke || weather_smoke ? "WDS Studio Smoke" : "WDS Studio");
+      smoke || edit_smoke || recipe_smoke || weather_smoke || plugin_smoke ? "WDS Studio Smoke"
+                                                                           : "WDS Studio");
   wds::studio::theme::apply(app);
   wds::studio::LanguageSettings language;
   wds::studio::Workbench window(language);
   window.show();
+  if (plugin_smoke) return wds::studio::smoke_palette_manager(&window, arguments);
   if (smoke) {
     QObject::connect(&window, &wds::studio::Workbench::inspectionFinished, &app, [&](bool ready) {
       const auto frame = ready ? window.centralWidget()->grab() : QPixmap{};

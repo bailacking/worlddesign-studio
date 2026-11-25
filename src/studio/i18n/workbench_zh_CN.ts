@@ -523,6 +523,10 @@
             <translation>界面语言…</translation>
         </message>
         <message>
+            <source>Palette Plugins…</source>
+            <translation>配色插件…</translation>
+        </message>
+        <message>
             <source>&amp;Open Project…</source>
             <translation>打开项目(&amp;O)…</translation>
         </message>
@@ -1053,6 +1057,26 @@
             <source>E board cart near rail · F advance water and fire</source>
             <translation>靠近轨道按 E 登车 · 按 F 推进一轮水火</translation>
         </message>
+    </context>
+    <context>
+        <name>PaletteManager</name>
+        <message><source>Palette Plugins</source><translation>配色插件</translation></message>
+        <message><source>Choose a trusted native palette module.</source><translation>请选择你信任的原生配色模块。</translation></message>
+        <message><source>Module file</source><translation>模块文件</translation></message>
+        <message><source>Browse…</source><translation>浏览…</translation></message>
+        <message><source>Remove</source><translation>卸载</translation></message>
+        <message><source>Close</source><translation>关闭</translation></message>
+        <message><source>Install</source><translation>安装</translation></message>
+        <message><source>Replace</source><translation>替换</translation></message>
+        <message><source>Built-in palette</source><translation>内置配色</translation></message>
+        <message><source>Native module installed</source><translation>已安装原生模块</translation></message>
+        <message><source>Select Palette Module</source><translation>选择配色模块</translation></message>
+        <message><source>Modules (*.dll *.so *.dylib)</source><translation>模块 (*.dll *.so *.dylib)</translation></message>
+        <message><source>The plugin tool could not start.</source><translation>插件工具无法启动。</translation></message>
+        <message><source>Incompatible plugin version.</source><translation>插件版本不兼容。</translation></message>
+        <message><source>Plugin operation failed.</source><translation>插件操作失败。</translation></message>
+        <message><source>Invalid plugin status.</source><translation>插件状态无效。</translation></message>
+        <message><source>The plugin folder is unavailable.</source><translation>插件目录不可用。</translation></message>
     </context>
     <context>
         <name>RecipeGraph</name>
