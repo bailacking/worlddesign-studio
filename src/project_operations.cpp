@@ -388,8 +388,10 @@ Json dispatch(const fs::path& directory, std::string_view id, std::string_view m
     return result;
   }
   if (id.starts_with("resource.field.")) {
-    const FieldEdit edit{text(input, "resource_id"), text(input, "field"), revision,
-                         number<std::int64_t>(input, "value")};
+    FieldEdit edit{text(input, "resource_id"), text(input, "field"), revision,
+                   number<std::int64_t>(input, "value")};
+    if (input.contains("expected_value"))
+      edit.expected_value = number<std::int64_t>(input, "expected_value");
     return Json::parse(field_result_json(edit_field(directory, edit, apply)));
   }
   if (id.starts_with("scene.field.")) {

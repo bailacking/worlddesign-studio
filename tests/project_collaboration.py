@@ -164,6 +164,26 @@ def test(cli, git_binary, root):
     drifter = next(row for row in read(external / SCENE)["entities"] if row["id"] == "drifter")
     assert drifter["vx"] == 31 and drifter["y"] == 63
 
+    data_path = external / "assets/tuning.json"
+    data_draft = {"resource_id": "tuning", "field": "steps_to_converge", "value": 40}
+    preview = request("resource.field.set", data_draft, 1, "preview", project=external)
+    assert preview["old_value"] == 30
+    changed = read(data_path)
+    changed.update(steps_to_converge=35, title="External edit")
+    put(data_path, changed)
+    guarded = {**data_draft, "expected_value": preview["old_value"]}
+    external_data, external_manifest = data_path.read_bytes(), (external / MANIFEST).read_bytes()
+    for mode in ("preview", "apply"):
+        result = request("resource.field.set", guarded, 1, mode, "project_content_conflict",
+                         project=external)
+        assert result["location"] == "assets/tuning.json/steps_to_converge"
+    assert data_path.read_bytes() == external_data
+    assert (external / MANIFEST).read_bytes() == external_manifest
+    saved = request("resource.field.set", {**guarded, "expected_value": 35}, 1, "apply",
+                    project=external)
+    assert saved["revision"] == 2
+    assert read(data_path) == {**changed, "steps_to_converge": 40}
+
     local = root / "semantic-local"
     remote = root / "semantic-incoming"
     shutil.copytree(baseline, local)

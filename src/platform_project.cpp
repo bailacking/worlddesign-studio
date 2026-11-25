@@ -1123,6 +1123,8 @@ FieldResult edit_field(const fs::path& root, const FieldEdit& edit, bool apply) 
     const auto field = data.find(edit.field);
     const auto old = field == data.end() ? std::nullopt : integer(*field);
     if (!old) return {"invalid_field", edit.field, revision};
+    if (edit.expected_value && old != edit.expected_value)
+      return {"project_content_conflict", resource->path + "/" + edit.field, revision};
     FieldResult result{"ok", edit.field, revision, old, edit.value, *old != edit.value};
     if (!result.changed) return result;
     if (revision == max_revision) return {"revision_exhausted", "/revision", revision};
@@ -2483,16 +2485,16 @@ Json build_operation_specs() {
                         {"resource_id", "data resource identifier"},
                         {"field", "top-level field"},
                         {"expected_revision", "integer"},
-                        {"value", "integer"}};
+                        {"value", "integer"},
+                        {"expected_value", "optional integer matching the current field value"}};
   auto edit_errors = read_errors;
   for (const auto* code :
        {"invalid_argument", "revision_conflict", "invalid_resource", "invalid_field",
-        "edit_too_large", "revision_exhausted", "invalid_expedition"})
+        "edit_too_large", "revision_exhausted", "invalid_expedition", "project_content_conflict"})
     edit_errors.push_back(code);
   add("resource.field.preview", "project preview-field DIRECTORY RESOURCE FIELD REVISION VALUE",
       false, edit_input, edit_errors);
   edit_errors.push_back("project_busy");
-  edit_errors.push_back("project_content_conflict");
   add("resource.field.set", "project set-field DIRECTORY RESOURCE FIELD REVISION VALUE", true,
       edit_input, edit_errors);
   add("scene.inspect", "project scene DIRECTORY REVISION", false,

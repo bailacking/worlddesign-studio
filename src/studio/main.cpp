@@ -123,6 +123,7 @@ QString diagnostic(const QJsonObject& result) {
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "revision_exhausted"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_content_conflict"),
+      QT_TRANSLATE_NOOP("ProjectDiagnostic", "project_content_conflict"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "scene_too_large"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_changed"),
       QT_TRANSLATE_NOOP("ProjectDiagnostic", "source_too_large"),
@@ -1386,7 +1387,9 @@ class Workbench final : public QMainWindow {
                         cancelPreview("resource.field.set", input);
                         return;
                       }
-                      bridge_.request(root_, "resource.field.set", "apply", revision_, input,
+                      auto checked = input;
+                      checked["expected_value"] = preview.value("old_value");
+                      bridge_.request(root_, "resource.field.set", "apply", revision_, checked,
                                       [this](const QJsonObject& result) {
                                         if (result.value("code") != "ok" ||
                                             !result.value("revision").isDouble()) {

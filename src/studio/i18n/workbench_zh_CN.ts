@@ -203,6 +203,10 @@
             <translation>场景内容已变更，请重新打开项目</translation>
         </message>
         <message>
+            <source>project_content_conflict</source>
+            <translation>文件内容已变更，请重新预览后再提交</translation>
+        </message>
+        <message>
             <source>import_too_large</source>
             <translation>导入超出清单或事务大小限制</translation>
         </message>

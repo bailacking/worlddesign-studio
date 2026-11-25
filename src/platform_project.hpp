@@ -39,6 +39,7 @@ struct FieldEdit {
   std::string field;
   std::uint64_t revision;
   std::int64_t value;
+  std::optional<std::int64_t> expected_value = std::nullopt;
   bool operator==(const FieldEdit&) const = default;
 };
 
